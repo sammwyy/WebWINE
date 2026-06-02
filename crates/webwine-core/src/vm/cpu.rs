@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct X86Cpu {
     pub eax: u32,
     pub ebx: u32,
@@ -11,6 +11,18 @@ pub struct X86Cpu {
     pub eip: u32,
     pub eflags: u32,
     pub last_error: u32,
+    pub xmm: [[u8; 16]; 8],
+}
+
+impl Default for X86Cpu {
+    fn default() -> Self {
+        X86Cpu {
+            eax: 0, ebx: 0, ecx: 0, edx: 0,
+            esi: 0, edi: 0, ebp: 0, esp: 0,
+            eip: 0, eflags: 0, last_error: 0,
+            xmm: [[0u8; 16]; 8],
+        }
+    }
 }
 
 impl X86Cpu {
