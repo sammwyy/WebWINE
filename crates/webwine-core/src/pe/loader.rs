@@ -40,6 +40,24 @@ pub fn load_pe(
     let pe = PE::parse(bytes)
         .map_err(|e| VmError::Pe(e.to_string()))?;
 
+    // We are an x86 (i386) user-mode interpreter. Reject anything else up front
+    // with a clear message — otherwise a 64-bit image would be decoded as 32-bit
+    // garbage and crash mysteriously (its image base also truncates to 32 bits).
+    let machine = pe.header.coff_header.machine;
+    if machine != 0x014C {
+        let arch = match machine {
+            0x8664 => "x86-64 (64-bit)",
+            0x01C0 | 0x01C4 => "ARM",
+            0xAA64 => "ARM64",
+            _ => "non-x86",
+        };
+        return Err(VmError::Unsupported(format!(
+            "{arch} executable — WebWINE only runs 32-bit x86 (i386) PE32 images. \
+             Most modern Windows system binaries (calc, cmd, mspaint) are 64-bit; \
+             use a 32-bit build."
+        )));
+    }
+
     let oh = pe
         .header
         .optional_header

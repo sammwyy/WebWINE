@@ -51,6 +51,14 @@ pub enum UiEvent {
     DestroyWindow { hwnd: u32 },
     ClearClient { hwnd: u32 },
     DrawText { hwnd: u32, x: i32, y: i32, text: String, color: u32 },
+    // GDI raster drawing on a window's client canvas. Colors are COLORREF (0x00BBGGRR).
+    FillRect { hwnd: u32, x: i32, y: i32, w: i32, h: i32, color: u32 },
+    Rect { hwnd: u32, x: i32, y: i32, w: i32, h: i32, fill: u32, stroke: u32 },
+    Ellipse { hwnd: u32, x: i32, y: i32, w: i32, h: i32, fill: u32, stroke: u32 },
+    Line { hwnd: u32, x1: i32, y1: i32, x2: i32, y2: i32, color: u32 },
+    SetPixel { hwnd: u32, x: i32, y: i32, color: u32 },
+    // System sounds.
+    Beep { freq: u32, duration: u32 },
 }
 
 /// A queued window message (WM_*).
@@ -85,6 +93,11 @@ pub struct WindowEntry {
     pub needs_paint: bool,
     pub width: i32,
     pub height: i32,
+    // GDI device-context state (hdc == hwnd in our model).
+    pub pen_color: u32,
+    pub brush_color: u32,
+    pub cur_x: i32,
+    pub cur_y: i32,
 }
 
 impl GuiState {

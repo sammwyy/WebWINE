@@ -15,6 +15,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "MessageBoxW", msgbox_w),
         ("user32.dll", "MessageBoxExA", msgbox_a),
         ("user32.dll", "MessageBoxExW", msgbox_w),
+        ("user32.dll", "MessageBeep", |c| {
+            c.ui_events.push(UiEvent::Beep { freq: 800, duration: 200 });
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         ("user32.dll", "RegisterClassA", register_class_a),
         ("user32.dll", "RegisterClassW", register_class_a),
         ("user32.dll", "RegisterClassExA", register_class_ex_a),
@@ -84,21 +89,22 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
-        // gdi32 text drawing
+        // gdi32 drawing
         ("gdi32.dll", "TextOutA", text_out_a),
         ("gdi32.dll", "TextOutW", text_out_w),
-        ("gdi32.dll", "SetTextColor", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("gdi32.dll", "SetBkMode", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("gdi32.dll", "GetStockObject", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
+        ("gdi32.dll", "SetTextColor", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("gdi32.dll", "SetBkMode",    |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("gdi32.dll", "GetStockObject", get_stock_object),
+        ("gdi32.dll", "CreateSolidBrush", create_solid_brush),
+        ("gdi32.dll", "CreatePen",    create_pen),
+        ("gdi32.dll", "SelectObject", select_object),
+        ("gdi32.dll", "DeleteObject", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("gdi32.dll", "MoveToEx",     move_to_ex),
+        ("gdi32.dll", "LineTo",       line_to),
+        ("gdi32.dll", "Rectangle",    gdi_rectangle),
+        ("gdi32.dll", "Ellipse",      gdi_ellipse),
+        ("gdi32.dll", "SetPixel",     gdi_set_pixel),
+        ("user32.dll", "FillRect",    fill_rect),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -190,6 +196,10 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
             needs_paint: true,
             width: w,
             height: h,
+            pen_color: 0x00_0000,        // black
+            brush_color: 0xFF_FFFF,      // white
+            cur_x: 0,
+            cur_y: 0,
         },
     );
 
@@ -501,5 +511,136 @@ fn text_out_w(ctx: &mut ApiContext) -> Handled {
         color: 0,
     });
     ctx.ret_stdcall(1, 5);
+    Handled::Ok
+}
+
+// ── GDI objects & drawing ────────────────────────────────────────────────────
+// We encode GDI objects in their handle value: 0x0B<rgb> = solid brush,
+// 0x0C<rgb> = pen. hdc == hwnd (BeginPaint/GetDC return the hwnd).
+
+const BRUSH_TAG: u32 = 0x0B00_0000;
+const PEN_TAG: u32 = 0x0C00_0000;
+const OBJ_MASK: u32 = 0x00FF_FFFF;
+
+fn create_solid_brush(ctx: &mut ApiContext) -> Handled {
+    let color = ctx.arg(0) & OBJ_MASK;
+    ctx.ret_stdcall(BRUSH_TAG | color, 1);
+    Handled::Ok
+}
+
+fn create_pen(ctx: &mut ApiContext) -> Handled {
+    let color = ctx.arg(2) & OBJ_MASK; // CreatePen(style, width, color)
+    ctx.ret_stdcall(PEN_TAG | color, 3);
+    Handled::Ok
+}
+
+fn get_stock_object(ctx: &mut ApiContext) -> Handled {
+    // WHITE_BRUSH=0, LTGRAY=1, GRAY=2, DKGRAY=3, BLACK_BRUSH=4, NULL_BRUSH=5,
+    // BLACK_PEN=7, WHITE_PEN=6
+    let obj = match ctx.arg(0) {
+        0 => BRUSH_TAG | 0xFFFFFF,
+        1 => BRUSH_TAG | 0xC0C0C0,
+        2 => BRUSH_TAG | 0x808080,
+        3 => BRUSH_TAG | 0x404040,
+        4 => BRUSH_TAG | 0x000000,
+        6 => PEN_TAG | 0xFFFFFF,
+        7 => PEN_TAG | 0x000000,
+        _ => BRUSH_TAG | 0xFFFFFF,
+    };
+    ctx.ret_stdcall(obj, 1);
+    Handled::Ok
+}
+
+fn select_object(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let obj = ctx.arg(1);
+    let mut prev = 0;
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        if obj & 0xFF00_0000 == PEN_TAG {
+            prev = PEN_TAG | w.pen_color;
+            w.pen_color = obj & OBJ_MASK;
+        } else if obj & 0xFF00_0000 == BRUSH_TAG {
+            prev = BRUSH_TAG | w.brush_color;
+            w.brush_color = obj & OBJ_MASK;
+        }
+    }
+    ctx.ret_stdcall(prev, 2);
+    Handled::Ok
+}
+
+fn move_to_ex(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let x = ctx.arg(1) as i32;
+    let y = ctx.arg(2) as i32;
+    let lppt = ctx.arg(3);
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        if lppt != 0 {
+            let _ = ctx.memory.write_u32(lppt, w.cur_x as u32);
+            let _ = ctx.memory.write_u32(lppt + 4, w.cur_y as u32);
+        }
+        w.cur_x = x;
+        w.cur_y = y;
+    }
+    ctx.ret_stdcall(1, 4);
+    Handled::Ok
+}
+
+fn line_to(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let x = ctx.arg(1) as i32;
+    let y = ctx.arg(2) as i32;
+    if let Some(w) = ctx.gui.windows.get(&hwnd) {
+        let (x1, y1, color) = (w.cur_x, w.cur_y, w.pen_color);
+        ctx.ui_events.push(UiEvent::Line { hwnd, x1, y1, x2: x, y2: y, color });
+    }
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.cur_x = x; w.cur_y = y; }
+    ctx.ret_stdcall(1, 3);
+    Handled::Ok
+}
+
+fn gdi_rectangle(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let (l, t, r, b) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
+    if let Some(w) = ctx.gui.windows.get(&hwnd) {
+        let (fill, stroke) = (w.brush_color, w.pen_color);
+        ctx.ui_events.push(UiEvent::Rect { hwnd, x: l, y: t, w: r - l, h: b - t, fill, stroke });
+    }
+    ctx.ret_stdcall(1, 5);
+    Handled::Ok
+}
+
+fn gdi_ellipse(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let (l, t, r, b) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
+    if let Some(w) = ctx.gui.windows.get(&hwnd) {
+        let (fill, stroke) = (w.brush_color, w.pen_color);
+        ctx.ui_events.push(UiEvent::Ellipse { hwnd, x: l, y: t, w: r - l, h: b - t, fill, stroke });
+    }
+    ctx.ret_stdcall(1, 5);
+    Handled::Ok
+}
+
+fn gdi_set_pixel(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let x = ctx.arg(1) as i32;
+    let y = ctx.arg(2) as i32;
+    let color = ctx.arg(3) & OBJ_MASK;
+    ctx.ui_events.push(UiEvent::SetPixel { hwnd, x, y, color });
+    ctx.ret_stdcall(color, 4);
+    Handled::Ok
+}
+
+// FillRect(hdc, const RECT*, hbrush) — user32
+fn fill_rect(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let rp = ctx.arg(1);
+    let brush = ctx.arg(2);
+    let color = if brush & 0xFF00_0000 == BRUSH_TAG { brush & OBJ_MASK } else { 0xFFFFFF };
+    let l = ctx.memory.read_u32(rp).unwrap_or(0) as i32;
+    let t = ctx.memory.read_u32(rp + 4).unwrap_or(0) as i32;
+    let r = ctx.memory.read_u32(rp + 8).unwrap_or(0) as i32;
+    let b = ctx.memory.read_u32(rp + 12).unwrap_or(0) as i32;
+    ctx.ui_events.push(UiEvent::FillRect { hwnd, x: l, y: t, w: r - l, h: b - t, color });
+    ctx.ret_stdcall(1, 3);
     Handled::Ok
 }

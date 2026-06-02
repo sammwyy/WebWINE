@@ -229,6 +229,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "CreateProcessA", create_process_a),
         ("kernel32.dll", "CreateProcessW", create_process_w),
         ("kernel32.dll", "GetExitCodeProcess", get_exit_code_process),
+        ("kernel32.dll", "Beep", beep),
         ("kernel32.dll", "InterlockedIncrement", interlocked_inc),
         ("kernel32.dll", "InterlockedDecrement", interlocked_dec),
         ("kernel32.dll", "InterlockedExchange", interlocked_xchg),
@@ -628,6 +629,15 @@ fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
     if out != 0 {
         let _ = ctx.memory.write_u32(out, 0);
     } // assume exited 0
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+// Beep(dwFreq, dwDuration) — emit a UI beep for the frontend (Web Audio).
+fn beep(ctx: &mut ApiContext) -> Handled {
+    let freq = ctx.arg(0);
+    let duration = ctx.arg(1);
+    ctx.ui_events.push(crate::vm::process::UiEvent::Beep { freq, duration });
     ctx.ret_stdcall(1, 2);
     Handled::Ok
 }

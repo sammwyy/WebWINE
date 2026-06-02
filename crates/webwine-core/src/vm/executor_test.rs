@@ -104,6 +104,51 @@ fn gui_sample_creates_window_and_paints() {
 }
 
 #[test]
+fn graphics_sample_emits_gdi_and_beep() {
+    use crate::vm::process::UiEvent;
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../samples/target/i686-pc-windows-msvc/debug/"
+    );
+    let bytes = std::fs::read(format!("{dir}graphics.exe"))
+        .unwrap_or_else(|e| panic!("graphics.exe not built: {e}"));
+
+    let mut vm = WebWineVm::new();
+    vm.mount_file("C:\\Users\\guest\\Desktop\\graphics.exe", bytes).unwrap();
+    let pid = vm.launch_process("C:\\Users\\guest\\Desktop\\graphics.exe").unwrap();
+
+    let mut ui: Vec<UiEvent> = Vec::new();
+    for _ in 0..50 {
+        let r = vm.run_process_slice(pid, 300_000).unwrap();
+        ui.extend(r.ui_events);
+        if matches!(r.state, ProcessState::WaitingForInput
+            | ProcessState::Exited { .. } | ProcessState::Crashed { .. }) { break; }
+    }
+
+    assert!(ui.iter().any(|e| matches!(e, UiEvent::Beep { .. })), "expected a beep");
+    assert!(ui.iter().any(|e| matches!(e, UiEvent::CreateWindow { .. })), "expected a window");
+    assert!(ui.iter().any(|e| matches!(e, UiEvent::Rect { .. })), "expected Rectangle");
+    assert!(ui.iter().any(|e| matches!(e, UiEvent::Ellipse { .. })), "expected Ellipse");
+    assert!(ui.iter().any(|e| matches!(e, UiEvent::Line { .. })), "expected LineTo");
+}
+
+#[test]
+fn rejects_x64_executable() {
+    // A PE32+ (x86-64) image must be rejected with a clear error, not crash.
+    // Synthesize a minimal header with machine = 0x8664.
+    let mut buf = vec![0u8; 0x200];
+    buf[0] = b'M'; buf[1] = b'Z';
+    let pe_off = 0x80usize;
+    buf[0x3C] = pe_off as u8;
+    buf[pe_off] = b'P'; buf[pe_off + 1] = b'E';
+    buf[pe_off + 4] = 0x64; buf[pe_off + 5] = 0x86; // machine = 0x8664
+    let mut vm = WebWineVm::new();
+    vm.mount_file("C:\\Users\\guest\\Desktop\\x64.exe", buf).unwrap();
+    let err = vm.launch_process("C:\\Users\\guest\\Desktop\\x64.exe");
+    assert!(err.is_err(), "x64 image should be rejected");
+}
+
+#[test]
 fn spawn_sample_launches_child() {
     let dir = concat!(
         env!("CARGO_MANIFEST_DIR"),

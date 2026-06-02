@@ -92,7 +92,13 @@ export type UiEvent =
   | { kind: "set_window_text"; hwnd: number; title: string }
   | { kind: "destroy_window"; hwnd: number }
   | { kind: "clear_client"; hwnd: number }
-  | { kind: "draw_text"; hwnd: number; x: number; y: number; text: string; color: number };
+  | { kind: "draw_text"; hwnd: number; x: number; y: number; text: string; color: number }
+  | { kind: "fill_rect"; hwnd: number; x: number; y: number; w: number; h: number; color: number }
+  | { kind: "rect"; hwnd: number; x: number; y: number; w: number; h: number; fill: number; stroke: number }
+  | { kind: "ellipse"; hwnd: number; x: number; y: number; w: number; h: number; fill: number; stroke: number }
+  | { kind: "line"; hwnd: number; x1: number; y1: number; x2: number; y2: number; color: number }
+  | { kind: "set_pixel"; hwnd: number; x: number; y: number; color: number }
+  | { kind: "beep"; freq: number; duration: number };
 
 export interface SliceResult {
   pid: number;

@@ -8,6 +8,7 @@ members = [
     "06_files",
     "07_gui",
     "08_spawn",
+    "09_graphics",
 ]
 resolver = "2"
 

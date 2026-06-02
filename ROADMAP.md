@@ -21,7 +21,16 @@ No-CRT, `println!`-style CRT console, and Win32 GUI binaries run end to end.
 
 Toward real apps: the realistic path is incremental fidelity (CPU edge cases, broader
 + more accurate Win32/CRT surface, GDI→canvas), driven by specific target binaries.
-Modern apps (UWP/x64 calc) are out of scope; classic x86 apps are a long-term goal.
+
+Architecture limit: WebWINE is a 32-bit x86 (i386) interpreter. **Modern Windows
+system binaries (calc/cmd/mspaint on Win10) are x86-64** and are now rejected with a
+clear message instead of crashing. 32-bit (XP-era / SysWOW64 / 32-bit-built) PE32
+images are the supported target. True x64 support would require a separate 64-bit
+interpreter — a large future effort.
+
+Extras now working: GDI raster drawing (Rectangle/Ellipse/LineTo/SetPixel/FillRect)
+rendered to a per-window canvas, and system beeps (Beep/MessageBeep) via Web Audio.
+DirectX/OpenGL/3D is out of scope; 2D GDI is the graphics path.
 
 ## Milestone 1 — Browser Desktop and VFS
 **Goal:** Upload files, browse them inside a virtual desktop.
