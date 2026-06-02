@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use webwine_core::{WebWineVm, DirEntry, LogEvent};
+use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo};
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -48,6 +48,15 @@ impl Runtime {
         self.vm
             .read_file(path)
             .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = inspectPe)]
+    pub fn inspect_pe(&mut self, path: &str) -> Result<JsValue, JsValue> {
+        let info: PeInfo = self
+            .vm
+            .inspect_pe(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen(js_name = drainLogs)]

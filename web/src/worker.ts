@@ -5,13 +5,15 @@ type InMsg =
   | { type: "mount_file"; path: string; bytes: ArrayBuffer }
   | { type: "create_dir"; path: string }
   | { type: "list_dir"; requestId: string; path: string }
-  | { type: "read_file"; requestId: string; path: string };
+  | { type: "read_file"; requestId: string; path: string }
+  | { type: "inspect_pe"; requestId: string; path: string };
 
 type OutMsg =
   | { type: "ready" }
   | { type: "error"; requestId?: string; message: string }
   | { type: "dir_list"; requestId: string; entries: DirectoryEntry[] }
   | { type: "file_data"; requestId: string; path: string; bytes: ArrayBuffer }
+  | { type: "pe_info"; requestId: string; info: PeInfo }
   | { type: "logs"; events: LogEvent[] };
 
 export interface DirectoryEntry {
@@ -26,6 +28,35 @@ export interface LogEvent {
   target: string;
   message: string;
   pid?: number;
+}
+
+export interface PeSection {
+  name: string;
+  virtual_address: number;
+  virtual_size: number;
+  raw_size: number;
+  readable: boolean;
+  writable: boolean;
+  executable: boolean;
+}
+
+export interface PeImportModule {
+  dll: string;
+  functions: string[];
+}
+
+export interface PeInfo {
+  machine: string;
+  machine_id: number;
+  subsystem: string;
+  subsystem_id: number;
+  is_pe32: boolean;
+  is_dll: boolean;
+  image_base: number;
+  entry_point_rva: number;
+  size_of_image: number;
+  sections: PeSection[];
+  imports: PeImportModule[];
 }
 
 let runtime: Runtime | null = null;
@@ -78,6 +109,10 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
         path: msg.path,
         bytes: bytes.buffer as ArrayBuffer,
       });
+    } else if (msg.type === "inspect_pe") {
+      const info = runtime.inspectPe(msg.path) as PeInfo;
+      flushLogs();
+      send({ type: "pe_info", requestId: msg.requestId, info });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -16,6 +16,10 @@ pub enum VmError {
     PermissionDenied,
     #[error("process not found: pid={0}")]
     ProcessNotFound(u32),
+    #[error("pe parse error: {0}")]
+    Pe(String),
+    #[error("not a pe executable: {0}")]
+    NotPe(String),
     #[error("unsupported: {0}")]
     Unsupported(String),
 }

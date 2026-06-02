@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::fs::vfs::{DirEntry, VirtualFileSystem};
 use crate::logs::{LogBuffer, LogEvent, LogLevel};
+use crate::pe::inspector::{inspect_bytes, PeInfo};
 
 pub struct WebWineVm {
     pub fs: VirtualFileSystem,
@@ -42,6 +43,27 @@ impl WebWineVm {
 
     pub fn read_file(&self, guest_path: &str) -> Result<Vec<u8>> {
         self.fs.read_file(guest_path)
+    }
+
+    pub fn inspect_pe(&mut self, guest_path: &str) -> Result<PeInfo> {
+        let bytes = self.fs.read_file(guest_path)?;
+        let info = inspect_bytes(&bytes)?;
+        self.logs.log(
+            LogLevel::Info,
+            "pe",
+            &format!(
+                "parsed {} — {} {} image_base=0x{:08X} entry=0x{:08X} sections={} imports={}",
+                guest_path,
+                info.machine,
+                info.subsystem,
+                info.image_base,
+                info.entry_point_rva,
+                info.sections.len(),
+                info.imports.iter().map(|m| m.functions.len()).sum::<usize>(),
+            ),
+            None,
+        );
+        Ok(info)
     }
 
     pub fn drain_logs(&mut self) -> Vec<LogEvent> {

@@ -67,8 +67,8 @@ function buildRow(
     if (entry.kind === "directory") {
       navigate(entry.path);
     } else if (entry.name.toLowerCase().endsWith(".exe")) {
-      import("./process-window.js").then((m) =>
-        m.openProcessWindow(entry.path, runtime)
+      import("./pe-inspector.js").then((m) =>
+        m.openPeInspector(entry.path, runtime)
       );
     } else {
       import("./raw-viewer.js").then((m) =>

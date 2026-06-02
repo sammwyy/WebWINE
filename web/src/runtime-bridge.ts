@@ -1,4 +1,4 @@
-import type { DirectoryEntry, LogEvent } from "./worker.js";
+import type { DirectoryEntry, LogEvent, PeInfo } from "./worker.js";
 import { appendLogs } from "./log.js";
 
 type PendingRequest = {
@@ -90,6 +90,17 @@ export class RuntimeBridge {
         reject,
       });
       this.send({ type: "read_file", requestId, path });
+    });
+  }
+
+  async inspectPe(path: string): Promise<PeInfo> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { info: PeInfo }).info),
+        reject,
+      });
+      this.send({ type: "inspect_pe", requestId, path });
     });
   }
 }
