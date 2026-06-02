@@ -24,6 +24,8 @@ async function main() {
 
   initUpload(runtime, () => refreshDesktop(runtime));
   initDesktopContextMenu(runtime);
+  // Guest processes that create files emit this; reflect changes on the desktop.
+  window.addEventListener("webwine:fs-changed", () => refreshDesktop(runtime));
   await refreshDesktop(runtime);
 }
 

@@ -1,8 +1,31 @@
 use super::{ApiContext, Handled, WinApiRegistry};
 use crate::vm::handles::{
-    CURRENT_PROCESS, CURRENT_THREAD, INVALID_HANDLE, STD_ERROR_HANDLE, STD_INPUT_HANDLE,
-    STD_OUTPUT_HANDLE,
+    KernelObject, CURRENT_PROCESS, CURRENT_THREAD, INVALID_HANDLE, STD_ERROR_HANDLE,
+    STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
+
+// Default working directory for relative guest paths.
+const CWD: &str = "C:\\Users\\guest\\Desktop";
+
+// Win32 error codes used by the file APIs.
+const ERROR_FILE_NOT_FOUND: u32 = 2;
+const ERROR_FILE_EXISTS: u32 = 80;
+
+const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFF_FFFF;
+
+/// Resolve a guest path to an absolute `X:\...` form, applying the default
+/// working directory for relative paths and stripping the `\\?\` verbatim prefix.
+fn resolve_path(raw: &str) -> String {
+    let r = raw.replace('/', "\\");
+    let r = r.strip_prefix("\\\\?\\").unwrap_or(&r);
+    if r.len() >= 2 && r.as_bytes()[1] == b':' {
+        r.to_string()
+    } else {
+        format!("{CWD}\\{}", r.trim_start_matches('\\'))
+    }
+}
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
@@ -96,7 +119,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
         ("kernel32.dll", "GetCurrentDirectoryA", r0_2),
         ("kernel32.dll", "GetFullPathNameW", r0_4),
-        ("kernel32.dll", "GetFileAttributesW", |c| { c.ret_stdcall(0xFFFF_FFFF, 1); Handled::Ok }),
+        ("kernel32.dll", "GetFileAttributesW", get_file_attributes_w),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteConsoleW", write_console_w),
         ("kernel32.dll", "GetEnvironmentStringsW", r0_0),
@@ -144,8 +167,18 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("kernel32.dll", "FindClose", r1_1),
-        ("kernel32.dll", "CreateFileA", stub_invalid_handle),
-        ("kernel32.dll", "CreateFileW", stub_invalid_handle),
+        ("kernel32.dll", "CreateFileA", create_file_a),
+        ("kernel32.dll", "CreateFileW", create_file_w),
+        ("kernel32.dll", "ReadFile", read_file),
+        ("kernel32.dll", "WriteFile", write_file),
+        ("kernel32.dll", "GetFileSize", get_file_size),
+        ("kernel32.dll", "GetFileSizeEx", get_file_size),
+        ("kernel32.dll", "SetFilePointer", set_file_pointer),
+        ("kernel32.dll", "CreateDirectoryA", create_directory_a),
+        ("kernel32.dll", "CreateDirectoryW", create_directory_w),
+        ("kernel32.dll", "DeleteFileA", delete_file_a),
+        ("kernel32.dll", "DeleteFileW", delete_file_w),
+        ("kernel32.dll", "GetFileAttributesA", get_file_attributes_a),
         ("kernel32.dll", "GetFileType", get_file_type),
         ("kernel32.dll", "SetHandleInformation", r1_3),
         ("kernel32.dll", "DuplicateHandle", dup_handle),
@@ -219,7 +252,29 @@ fn write_file(ctx: &mut ApiContext) -> Handled {
         .memory
         .read_bytes(buf, count as usize)
         .unwrap_or_default();
-    route_output(handle, &bytes, ctx);
+
+    // VFS-backed file handle?
+    let file = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) => Some((path.clone(), *cursor)),
+        _ => None,
+    };
+
+    if let Some((path, cursor)) = file {
+        let mut content = ctx.fs.read_file(&path).unwrap_or_default();
+        let start = cursor as usize;
+        let end = start + bytes.len();
+        if content.len() < end {
+            content.resize(end, 0);
+        }
+        content[start..end].copy_from_slice(&bytes);
+        let _ = ctx.fs.mount_file(&path, content);
+        if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(handle) {
+            *cursor += bytes.len() as u64;
+        }
+    } else {
+        route_output(handle, &bytes, ctx);
+    }
+
     if out != 0 {
         let _ = ctx.memory.write_u32(out, bytes.len() as u32);
     }
@@ -269,19 +324,41 @@ fn route_output(handle: u32, bytes: &[u8], ctx: &mut ApiContext) {
 }
 
 fn read_file(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
     let buf = ctx.arg(1);
     let max = ctx.arg(2);
     let out = ctx.arg(3);
-    // drain stdin
-    let n = max.min(ctx.console.stdin.len() as u32) as usize;
-    let data: Vec<u8> = ctx.console.stdin.drain(..n).collect();
-    if !data.is_empty() {
-        let _ = ctx.memory.write_bytes(buf, &data);
-    }
+
+    let file = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) => Some((path.clone(), *cursor)),
+        _ => None,
+    };
+
+    let n = if let Some((path, cursor)) = file {
+        let content = ctx.fs.read_file(&path).unwrap_or_default();
+        let start = (cursor as usize).min(content.len());
+        let n = (max as usize).min(content.len() - start);
+        if n > 0 {
+            let _ = ctx.memory.write_bytes(buf, &content[start..start + n]);
+            if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(handle) {
+                *cursor += n as u64;
+            }
+        }
+        n
+    } else {
+        // console stdin
+        let n = max.min(ctx.console.stdin.len() as u32) as usize;
+        let data: Vec<u8> = ctx.console.stdin.drain(..n).collect();
+        if !data.is_empty() {
+            let _ = ctx.memory.write_bytes(buf, &data);
+        }
+        n
+    };
+
     if out != 0 {
         let _ = ctx.memory.write_u32(out, n as u32);
     }
-    ctx.ret_stdcall(if n > 0 { 1 } else { 0 }, 5);
+    ctx.ret_stdcall(1, 5);
     Handled::Ok
 }
 
@@ -290,6 +367,160 @@ fn close_handle(ctx: &mut ApiContext) -> Handled {
     ctx.handles.remove(h);
     ctx.ret_stdcall(1, 1);
     Handled::Ok
+}
+
+// ── file APIs (Milestone 7) ──────────────────────────────────────────────────
+
+const CREATE_NEW: u32 = 1;
+const CREATE_ALWAYS: u32 = 2;
+const OPEN_EXISTING: u32 = 3;
+const TRUNCATE_EXISTING: u32 = 5;
+
+fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
+    let access = ctx.arg(1);
+    let disposition = ctx.arg(4);
+    let path = resolve_path(&name);
+    let exists = ctx.fs.node_exists(&path);
+    let writable = access & 0x4000_0000 != 0; // GENERIC_WRITE
+
+    // disposition rules
+    if disposition == OPEN_EXISTING && !exists {
+        ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
+        ctx.ret_stdcall(INVALID_HANDLE, nargs);
+        return Handled::Ok;
+    }
+    if disposition == CREATE_NEW && exists {
+        ctx.cpu.last_error = ERROR_FILE_EXISTS;
+        ctx.ret_stdcall(INVALID_HANDLE, nargs);
+        return Handled::Ok;
+    }
+
+    let truncate = disposition == CREATE_ALWAYS || disposition == TRUNCATE_EXISTING;
+    if !exists || truncate {
+        if ctx.fs.mount_file(&path, Vec::new()).is_err() {
+            ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
+            ctx.ret_stdcall(INVALID_HANDLE, nargs);
+            return Handled::Ok;
+        }
+    }
+
+    let h = ctx.handles.insert(KernelObject::VfsFile { path, cursor: 0, writable });
+    ctx.cpu.last_error = 0;
+    ctx.ret_stdcall(h, nargs);
+    Handled::Ok
+}
+
+fn create_file_a(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.cstr(ctx.arg(0));
+    create_file(ctx, name, 7)
+}
+
+fn create_file_w(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.wstr(ctx.arg(0));
+    create_file(ctx, name, 7)
+}
+
+fn get_file_size(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let high = ctx.arg(1);
+    let size = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, .. }) => {
+            ctx.fs.read_file(path).map(|b| b.len()).unwrap_or(0) as u32
+        }
+        _ => 0,
+    };
+    if high != 0 {
+        let _ = ctx.memory.write_u32(high, 0);
+    }
+    ctx.ret_stdcall(size, 2);
+    Handled::Ok
+}
+
+fn set_file_pointer(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let dist = ctx.arg(1) as i32 as i64;
+    let method = ctx.arg(3); // FILE_BEGIN=0, FILE_CURRENT=1, FILE_END=2
+
+    let (cur, size) = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) => (
+            *cursor as i64,
+            ctx.fs.read_file(path).map(|b| b.len()).unwrap_or(0) as i64,
+        ),
+        _ => {
+            ctx.ret_stdcall(INVALID_HANDLE, 4);
+            return Handled::Ok;
+        }
+    };
+    let base = match method { 1 => cur, 2 => size, _ => 0 };
+    let new_pos = (base + dist).max(0) as u64;
+    if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(handle) {
+        *cursor = new_pos;
+    }
+    ctx.ret_stdcall(new_pos as u32, 4);
+    Handled::Ok
+}
+
+fn create_directory(ctx: &mut ApiContext, name: String) -> Handled {
+    let path = resolve_path(&name);
+    if ctx.fs.node_exists(&path) {
+        ctx.cpu.last_error = 183; // ERROR_ALREADY_EXISTS
+        ctx.ret_stdcall(0, 2);
+        return Handled::Ok;
+    }
+    let ok = ctx.fs.create_dir(&path).is_ok();
+    ctx.ret_stdcall(ok as u32, 2);
+    Handled::Ok
+}
+
+fn create_directory_a(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.cstr(ctx.arg(0));
+    create_directory(ctx, name)
+}
+
+fn create_directory_w(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.wstr(ctx.arg(0));
+    create_directory(ctx, name)
+}
+
+fn delete_file(ctx: &mut ApiContext, name: String) -> Handled {
+    let path = resolve_path(&name);
+    let ok = ctx.fs.delete_node(&path).is_ok();
+    ctx.ret_stdcall(ok as u32, 1);
+    Handled::Ok
+}
+
+fn delete_file_a(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.cstr(ctx.arg(0));
+    delete_file(ctx, name)
+}
+
+fn delete_file_w(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.wstr(ctx.arg(0));
+    delete_file(ctx, name)
+}
+
+fn get_file_attributes(ctx: &mut ApiContext, name: String) -> Handled {
+    let path = resolve_path(&name);
+    let attr = if !ctx.fs.node_exists(&path) {
+        ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
+        INVALID_FILE_ATTRIBUTES
+    } else if ctx.fs.read_file(&path).is_ok() {
+        FILE_ATTRIBUTE_NORMAL
+    } else {
+        FILE_ATTRIBUTE_DIRECTORY
+    };
+    ctx.ret_stdcall(attr, 1);
+    Handled::Ok
+}
+
+fn get_file_attributes_a(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.cstr(ctx.arg(0));
+    get_file_attributes(ctx, name)
+}
+
+fn get_file_attributes_w(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.wstr(ctx.arg(0));
+    get_file_attributes(ctx, name)
 }
 
 fn get_last_error(ctx: &mut ApiContext) -> Handled {

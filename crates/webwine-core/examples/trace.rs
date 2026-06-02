@@ -7,7 +7,54 @@ use webwine_core::WebWineVm;
 
 const TRAMPOLINE_BASE: u32 = 0x7FFE_0000;
 
+fn disasm_mode() {
+    use iced_x86::{OpKind, Register};
+    let exe = std::env::args().nth(2).expect("exe path");
+    let addr = u32::from_str_radix(
+        std::env::args().nth(3).expect("addr").trim_start_matches("0x"), 16).expect("hex addr");
+    let count: usize = std::env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(40);
+
+    let bytes = std::fs::read(&exe).expect("read exe");
+    let mut vm = WebWineVm::new();
+    vm.mount_file("C:\\x.exe", bytes).unwrap();
+    let pid = vm.launch_process("C:\\x.exe").unwrap();
+    let proc = vm.processes.get(pid).unwrap();
+
+    let mut ip = addr;
+    for _ in 0..count {
+        let win = match proc.memory.read_instruction_window(ip) { Ok(b) => b, Err(_) => break };
+        let mut dec = Decoder::with_ip(32, win, ip as u64, DecoderOptions::NONE);
+        let mut ins = Instruction::default();
+        dec.decode_out(&mut ins);
+        let mut ops = String::new();
+        for i in 0..ins.op_count() {
+            ops.push_str(&match ins.op_kind(i) {
+                OpKind::Register => format!("{:?} ", ins.op_register(i)),
+                OpKind::Memory => {
+                    let seg = if ins.memory_segment() == Register::FS { "FS:" } else { "" };
+                    format!("[{seg}{:?}+{:?}*{}+0x{:X}] ",
+                        ins.memory_base(), ins.memory_index(), ins.memory_index_scale(),
+                        ins.memory_displacement32())
+                }
+                OpKind::Immediate8 => format!("0x{:X} ", ins.immediate8()),
+                OpKind::Immediate8to32 => format!("0x{:X} ", ins.immediate8to32()),
+                OpKind::Immediate32 => format!("0x{:X} ", ins.immediate32()),
+                OpKind::NearBranch32 => format!("0x{:X} ", ins.near_branch32()),
+                k => format!("{k:?} "),
+            });
+        }
+        println!("0x{:08X}: {:<10?} {}", ip, ins.mnemonic(), ops.trim());
+        ip += ins.len() as u32;
+    }
+}
+
 fn main() {
+    // disasm mode: trace disasm <exe> <hexAddr> <count>
+    if std::env::args().nth(1).as_deref() == Some("disasm") {
+        disasm_mode();
+        return;
+    }
+
     let path = std::env::args().nth(1).unwrap_or_else(|| {
         concat!(
             env!("CARGO_MANIFEST_DIR"),

@@ -123,12 +123,15 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
         title(`exited (${code})`);
         write(`\n[process exited with code ${code}]\n`, "term-exit");
         cursor.style.display = "none";
+        // guest may have created files — refresh desktop/explorers
+        window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
       },
       crashed: (reason) => {
         running = false;
         title("crashed");
         write(`\n[process crashed: ${reason}]\n`, "term-crash");
         cursor.style.display = "none";
+        window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
       },
     });
 

@@ -2,6 +2,22 @@
 
 A browser-based Windows-like runtime. Rust/WASM owns the VM. TypeScript owns the UI.
 
+## Status
+
+- M1 Browser Desktop and VFS — **done**
+- M2 PE Inspection — **done**
+- M3 Minimal PE Loader — **done**
+- M4 x86 Interpreter — **done** (integer + SSE/x87 stubs, CMPXCHG/XADD, atomics)
+- M5 Console API Support — **done** (real MSVC UCRT binaries run: `_initterm`, TLS, NtWriteFile)
+- M6 Process Management — **partial** (per-process state/streams/handles, kill; round-robin scheduling pending)
+- M7 Filesystem APIs — **done** (CreateFile/Read/Write/CloseHandle/GetFileSize/SetFilePointer/CreateDirectory/DeleteFile on the VFS; guest-created files appear on the desktop)
+- M8 Early Win32 UI — **partial** (MessageBox → real dialog window; CreateWindowEx/message loop pending)
+- M9 Persistent Virtual Disk — pending
+
+Known gap: full-std Rust binaries that format via `core::fmt` (e.g. `filesystem.exe`)
+still hit std-internals fidelity issues during stdio setup. No-CRT and `println!`-style
+CRT binaries run end to end.
+
 ## Milestone 1 — Browser Desktop and VFS
 **Goal:** Upload files, browse them inside a virtual desktop.
 
