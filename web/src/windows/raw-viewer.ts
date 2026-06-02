@@ -3,7 +3,7 @@ import type { RuntimeBridge } from "../runtime-bridge.js";
 
 export function openRawViewer(path: string, runtime: RuntimeBridge) {
   const fileName = path.split("\\").pop() ?? path;
-  const { body, setTitle } = createWindow({ title: fileName, width: 640, height: 460 });
+  const { body, setTitle } = createWindow({ title: fileName, icon: "📄", width: 640, height: 460 });
 
   setTitle(`${fileName} — Raw Viewer`);
 

@@ -4,6 +4,8 @@ import type { DirectoryEntry } from "../worker.js";
 export function openProperties(entry: DirectoryEntry) {
   const { body, setTitle } = createWindow({
     title: `${entry.name} — Properties`,
+    icon: "🛈",
+    variant: "dialog",
     width: 360,
     height: 260,
   });

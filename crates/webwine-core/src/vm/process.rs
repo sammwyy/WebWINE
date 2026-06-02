@@ -39,6 +39,19 @@ impl ConsoleStreams {
     pub fn drain_stderr(&mut self) -> Vec<u8> { std::mem::take(&mut self.stderr) }
 }
 
+/// UI requests emitted by guest code (e.g. MessageBox) for the frontend to
+/// render as real windows rather than console text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UiEvent {
+    MessageBox {
+        title: String,
+        text:  String,
+        /// MB_* style flags (icon / button set) passed to MessageBox.
+        style: u32,
+    },
+}
+
 pub struct GuestProcess {
     pub pid:         u32,
     pub path:        String,
@@ -50,6 +63,7 @@ pub struct GuestProcess {
     pub cpu:         X86Cpu,
     pub handles:     HandleTable,
     pub console:     ConsoleStreams,
+    pub ui_events:   Vec<UiEvent>,
     pub state:       ProcessState,
 }
 

@@ -1,141 +1,153 @@
 import { createWindow } from "./manager.js";
 import type { RuntimeBridge } from "../runtime-bridge.js";
-import type { ProcessInfo } from "../worker.js";
-import { log } from "../log.js";
+import type { LogEvent, UiEvent } from "../worker.js";
+import { showMessageBox } from "./message-box.js";
 
-export function openProcessConsole(path: string, runtime: RuntimeBridge) {
+interface ConsoleOptions {
+  debug?: boolean;
+}
+
+export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: ConsoleOptions = {}) {
+  const debug = opts.debug ?? false;
   const fileName = path.split("\\").pop() ?? path;
+
   const { body, setTitle } = createWindow({
-    title: `${fileName} — Launching…`,
-    width: 680,
-    height: 500,
+    title: `${fileName}`,
+    icon: debug ? "🐞" : "🖥️",
+    width: 660,
+    height: 420,
   });
 
-  body.className += " process-console-body";
+  // cmd-style terminal: a single focusable monospace surface. Output and the
+  // currently-typed stdin line live in the same stream (no input box).
+  body.className += " term-body";
+  const term = document.createElement("div");
+  term.className = "term";
+  term.tabIndex = 0;
 
-  const peBar = document.createElement("div");
-  peBar.className = "pc-pe-bar";
-  peBar.textContent = "Loading PE…";
+  const output = document.createElement("span");
+  output.className = "term-output";
+  const inputLine = document.createElement("span");
+  inputLine.className = "term-input";
+  const cursor = document.createElement("span");
+  cursor.className = "term-cursor";
+  cursor.textContent = "█";
 
-  const outputArea = document.createElement("div");
-  outputArea.className = "pc-output";
+  term.append(output, inputLine, cursor);
+  body.append(term);
 
-  const pre = document.createElement("pre");
-  pre.className = "pc-stream";
-  outputArea.appendChild(pre);
-
-  const footer = document.createElement("div");
-  footer.className = "pc-footer";
-
-  const stdinInput = document.createElement("input");
-  stdinInput.className = "pc-stdin";
-  stdinInput.type = "text";
-  stdinInput.placeholder = "stdin (not yet enabled)";
-  stdinInput.disabled = true;
-
-  const sendBtn = document.createElement("button");
-  sendBtn.className = "pc-btn";
-  sendBtn.textContent = "Send";
-  sendBtn.disabled = true;
-
-  const killBtn = document.createElement("button");
-  killBtn.className = "pc-btn pc-btn-danger";
-  killBtn.textContent = "Kill";
-  killBtn.disabled = true;
-
-  footer.append(stdinInput, sendBtn, killBtn);
-  body.append(peBar, outputArea, footer);
-
-  function appendLine(text: string, cls?: string) {
-    for (const rawLine of text.split("\n")) {
-      const line = rawLine.replace(/\r$/, "");
-      if (line === "" && text.endsWith("\n")) continue;
-      const span = document.createElement("span");
-      if (cls) span.className = cls;
-      span.textContent = line + "\n";
-      pre.appendChild(span);
-    }
-    outputArea.scrollTop = outputArea.scrollHeight;
+  // ── title state ──────────────────────────────────────────────────────────
+  function title(state: string) {
+    const tag = debug ? " | debug" : "";
+    setTitle(`${fileName} | pid ${pid ?? "?"} | ${state}${tag}`);
   }
 
-  function appendRaw(text: string, cls?: string) {
-    if (!text) return;
+  // ── output helpers ─────────────────────────────────────────────────────────
+  let pid: number | null = null;
+  let running = false;
+
+  function write(text: string, cls?: string) {
     const span = document.createElement("span");
     if (cls) span.className = cls;
     span.textContent = text;
-    pre.appendChild(span);
-    outputArea.scrollTop = outputArea.scrollHeight;
+    output.append(span);
+    term.scrollTop = term.scrollHeight;
   }
 
-  function setStatus(label: string) {
-    const title = `${fileName}${label}`;
-    setTitle(title);
-    peBar.textContent = peBar.textContent!.replace(/ — .*$/, "") + ` — ${label}`;
+  function writeLog(ev: LogEvent) {
+    // [target] message — coloured by level
+    write(`[${ev.target}] `, `term-log term-log-${ev.level} term-log-target`);
+    write(`${ev.message}\n`, `term-log term-log-${ev.level}`);
   }
 
-  runtime.launchProcess(path).then(({ pid, info }) => {
-    const base = `0x${info.image_base.toString(16).toUpperCase().padStart(8, "0")}`;
-    const entry = `0x${info.entry_point.toString(16).toUpperCase().padStart(8, "0")}`;
-    peBar.textContent = `PID ${pid}  base ${base}  entry ${entry}`;
-    setTitle(`${fileName} — PID ${pid} — Running`);
-    killBtn.disabled = false;
+  // ── inline stdin ─────────────────────────────────────────────────────────
+  let lineBuf = "";
+  function renderInput() {
+    inputLine.textContent = lineBuf;
+  }
 
-    appendLine(`[loader] process created — PID ${pid}  base ${base}  entry ${entry}`, "pc-line-pe");
+  term.addEventListener("keydown", (e) => {
+    if (!running || pid === null) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const line = lineBuf + "\n";
+      write(lineBuf + "\n", debug ? "term-stdin" : undefined);
+      lineBuf = "";
+      renderInput();
+      runtime.writeStdin(pid, line);
+    } else if (e.key === "Backspace") {
+      e.preventDefault();
+      lineBuf = lineBuf.slice(0, -1);
+      renderInput();
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      lineBuf += e.key;
+      renderInput();
+    }
+  });
 
-    // wire kill button
-    killBtn.addEventListener("click", () => {
-      runtime.killProcess(pid);
-      killBtn.disabled = true;
-      stdinInput.disabled = true;
-      sendBtn.disabled = true;
-      setStatus("Killed");
-      appendLine("[process] killed by user", "pc-line-warn");
-      log("process", `pid=${pid} killed by user`);
-    });
+  term.addEventListener("mousedown", () => term.focus());
 
-    // wire stdin
-    stdinInput.disabled = false;
-    sendBtn.disabled = false;
-    stdinInput.placeholder = "stdin";
-    sendBtn.addEventListener("click", () => {
-      const text = stdinInput.value;
-      if (!text) return;
-      stdinInput.value = "";
-      appendLine(`> ${text}`, "pc-line-stdin");
-      runtime.writeStdin(pid, text + "\n");
-    });
-    stdinInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendBtn.click(); });
+  // ── launch + wire ──────────────────────────────────────────────────────────
+  title("starting");
+  runtime.launchProcess(path).then(({ pid: newPid, launchLogs }) => {
+    pid = newPid;
+    running = true;
+    title("running");
+    term.focus();
 
-    // register output callbacks
+    if (debug) {
+      for (const ev of launchLogs) writeLog(ev);
+    }
+
     runtime.onProcessOutput(pid, {
-      stdout: (text) => appendRaw(text, "pc-line-out"),
-      stderr: (text) => appendRaw(text, "pc-line-err-stream"),
+      stdout: (text) => {
+        if (debug) {
+          for (const line of splitKeepLast(text)) {
+            if (line.content) write("[stdout] ", "term-log term-log-info term-log-target");
+            write(line.content + (line.nl ? "\n" : ""), "term-stdout-dbg");
+          }
+        } else {
+          write(text);
+        }
+      },
+      stderr: (text) => write(text, debug ? "term-stderr-dbg" : "term-stderr"),
+      ui: (events: UiEvent[]) => {
+        for (const ev of events) {
+          if (ev.kind === "message_box") void showMessageBox(ev);
+        }
+      },
+      log: debug ? (events) => { for (const ev of events) writeLog(ev); } : undefined,
       exited: (code) => {
-        killBtn.disabled = true;
-        stdinInput.disabled = true;
-        sendBtn.disabled = true;
-        setStatus(`Exited (${code})`);
-        appendLine(`[process] exited with code ${code}`, code === 0 ? "pc-line-pe" : "pc-line-warn");
-        log("process", `pid=${pid} exited code=${code}`);
+        running = false;
+        title(`exited (${code})`);
+        write(`\n[process exited with code ${code}]\n`, "term-exit");
+        cursor.style.display = "none";
       },
       crashed: (reason) => {
-        killBtn.disabled = true;
-        stdinInput.disabled = true;
-        sendBtn.disabled = true;
-        setStatus("Crashed");
-        appendLine(`[cpu] crashed: ${reason}`, "pc-line-err");
-        log("process", `pid=${pid} crashed: ${reason}`, "error");
+        running = false;
+        title("crashed");
+        write(`\n[process crashed: ${reason}]\n`, "term-crash");
+        cursor.style.display = "none";
       },
     });
 
-    // start execution
-    appendLine("[cpu] starting execution…", "pc-line-pe");
     runtime.runProcess(pid);
-
   }).catch((err) => {
-    setTitle(`${fileName} — Error`);
-    peBar.textContent = "Failed to load";
-    appendLine(`[error] ${err}`, "pc-line-err");
-    log("process", `failed to launch ${fileName}: ${err}`, "error");
+    title("error");
+    write(`\n[failed to launch: ${err}]\n`, "term-crash");
   });
+}
+
+// Split text into lines, marking which ended with a newline — so the debug
+// "[stdout]" prefix is only emitted once per actual line.
+function splitKeepLast(text: string): { content: string; nl: boolean }[] {
+  const parts = text.split("\n");
+  const out: { content: string; nl: boolean }[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const isLast = i === parts.length - 1;
+    if (isLast && parts[i] === "") continue;
+    out.push({ content: parts[i], nl: !isLast });
+  }
+  return out;
 }

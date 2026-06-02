@@ -4,6 +4,7 @@ use crate::vm::cpu::X86Cpu;
 use crate::vm::handles::HandleTable;
 use crate::vm::memory::GuestMemory;
 use crate::vm::process::ConsoleStreams;
+pub use crate::vm::process::UiEvent;
 
 pub enum Handled {
     Ok,
@@ -22,6 +23,7 @@ pub struct ApiContext<'a> {
     pub memory:    &'a mut GuestMemory,
     pub handles:   &'a mut HandleTable,
     pub console:   &'a mut ConsoleStreams,
+    pub ui_events: &'a mut Vec<UiEvent>,
     pub heap_next: &'a mut u32,
     pub fs:        &'a mut VirtualFileSystem,
     pub logs:      &'a mut LogBuffer,

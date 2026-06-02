@@ -3,7 +3,7 @@ import type { RuntimeBridge } from "../runtime-bridge.js";
 import type { DirectoryEntry } from "../worker.js";
 
 export function openExplorer(path: string, runtime: RuntimeBridge) {
-  const { body, setTitle } = createWindow({ title: path, width: 560, height: 400 });
+  const { body, setTitle } = createWindow({ title: path, icon: "📁", width: 560, height: 400 });
 
   function navigate(target: string) {
     setTitle(target);

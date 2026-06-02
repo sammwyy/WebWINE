@@ -5,7 +5,7 @@ import { log } from "../log.js";
 
 export function openPeInspector(path: string, runtime: RuntimeBridge) {
   const fileName = path.split("\\").pop() ?? path;
-  const { body, setTitle } = createWindow({ title: fileName, width: 660, height: 520 });
+  const { body, setTitle } = createWindow({ title: fileName, icon: "🔬", width: 660, height: 520 });
 
   body.innerHTML = `<div class="pe-loading">Parsing PE headers…</div>`;
 

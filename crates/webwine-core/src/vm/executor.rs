@@ -109,6 +109,7 @@ fn handle_trampoline(
             memory: &mut proc.memory,
             handles: &mut proc.handles,
             console: &mut proc.console,
+            ui_events: &mut proc.ui_events,
             heap_next: &mut proc.heap_next,
             fs,
             logs,
@@ -1581,6 +1582,7 @@ fn exec_sse_ctrl(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -
 // run result
 
 use serde::{Deserialize, Serialize};
+use crate::vm::process::UiEvent;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SliceResult {
@@ -1589,6 +1591,7 @@ pub struct SliceResult {
     pub stderr: String,
     pub state: ProcessState,
     pub instructions: u32,
+    pub ui_events: Vec<UiEvent>,
 }
 
 impl SliceResult {
@@ -1599,6 +1602,7 @@ impl SliceResult {
             stderr: String::from_utf8_lossy(&proc.console.drain_stderr()).into_owned(),
             state: proc.state.clone(),
             instructions: 0,
+            ui_events: std::mem::take(&mut proc.ui_events),
         }
     }
 }

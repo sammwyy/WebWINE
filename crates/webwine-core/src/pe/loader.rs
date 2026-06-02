@@ -205,6 +205,7 @@ pub fn load_pe(
         cpu,
         handles: HandleTable::new(pid),
         console: ConsoleStreams::new(),
+        ui_events: Vec::new(),
         state: ProcessState::Created,
     })
 }

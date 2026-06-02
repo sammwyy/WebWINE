@@ -136,59 +136,82 @@ html, body {
   pointer-events: none;
 }
 
-.float-window {
+/* Unified window chrome — light Win32 look for every surface */
+
+.window {
   position: absolute;
-  min-width: 320px;
-  min-height: 200px;
-  background: var(--window-bg);
-  border: 1px solid var(--window-border);
+  background: #f0f0f0;
+  border: 1px solid #707070;
   border-radius: 6px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
   pointer-events: all;
   overflow: hidden;
-  resize: both;
 }
 
-.float-window-titlebar {
+.window--window {
+  min-width: 320px;
+  min-height: 180px;
+}
+
+.window--resizable { resize: both; }
+
+.window--dialog {
+  min-width: 280px;
+}
+
+.window-titlebar {
   display: flex;
   align-items: center;
-  background: var(--window-title-bg);
-  padding: 0 10px;
-  height: 28px;
+  gap: 7px;
+  background: linear-gradient(#fafafa, #e8e8e8);
+  padding: 0 6px 0 10px;
+  height: 30px;
   cursor: move;
   user-select: none;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--window-border);
+  border-bottom: 1px solid #d0d0d0;
 }
 
-.float-window-title {
+.window-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+
+.window-title {
   flex: 1;
   font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.float-window-close {
-  background: none;
+.window-close {
+  width: 24px;
+  height: 22px;
+  background: transparent;
   border: none;
-  color: var(--text-muted);
+  color: #333;
   cursor: pointer;
-  font-size: 14px;
-  padding: 0 4px;
+  font-size: 12px;
+  border-radius: 3px;
   line-height: 1;
 }
 
-.float-window-close:hover {
-  color: #f38ba8;
-}
+.window-close:hover { background: #e81123; color: #fff; }
 
-.float-window-body {
+.window-body {
   flex: 1;
   overflow: auto;
   padding: 0;
+  background: #ffffff;
+  color: #1a1a1a;
+  /* Re-theme content tokens to the light window palette. Content components
+     written against these vars adapt without per-rule changes. */
+  --text: #1a1a1a;
+  --text-muted: #6a6a6a;
+  --window-border: #d8d8d8;
+  --window-bg: #ffffff;
 }
 
 pre.raw-viewer-content {
@@ -537,40 +560,20 @@ details[open] .pe-import-dll-name::before {
   opacity: 0.45;
 }
 
-/* input dialog */
+/* dialog content (rendered inside a dialog-variant window) */
 
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 99998;
-  background: rgba(0,0,0,0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dialog-box {
-  background: var(--window-bg);
-  border: 1px solid var(--window-border);
-  border-radius: 6px;
-  padding: 18px 20px;
-  min-width: 280px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+.dialog-content {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.dialog-title {
-  font-size: 13px;
-  color: var(--text);
+  gap: 14px;
+  padding: 16px;
 }
 
 .dialog-input {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--window-border);
+  background: #fff;
+  border: 1px solid #adadad;
   border-radius: 3px;
-  color: var(--text);
+  color: #1a1a1a;
   font-family: inherit;
   font-size: 13px;
   padding: 6px 10px;
@@ -578,7 +581,8 @@ details[open] .pe-import-dll-name::before {
 }
 
 .dialog-input:focus {
-  border-color: var(--accent);
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px #0078d4 inset;
 }
 
 .dialog-buttons {
@@ -588,112 +592,94 @@ details[open] .pe-import-dll-name::before {
 }
 
 .dialog-btn {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid var(--window-border);
+  min-width: 84px;
+  background: #fdfdfd;
+  border: 1px solid #adadad;
   border-radius: 3px;
-  color: var(--text);
+  color: #1a1a1a;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
   padding: 5px 14px;
 }
 
-.dialog-btn:hover {
-  background: rgba(255,255,255,0.12);
+.dialog-btn:hover { background: #e5f1fb; border-color: #0078d4; }
+
+.dialog-btn-default {
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px #0078d4 inset;
 }
 
-.dialog-btn-ok {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+/* message box content */
+
+.msgbox-body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
 }
 
-.dialog-btn-ok:hover {
-  background: var(--accent-hover);
+.msgbox-icon { font-size: 28px; line-height: 1; flex-shrink: 0; }
+
+.msgbox-text {
+  font-size: 13px;
+  color: #1a1a1a;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-top: 3px;
 }
 
-/* process console window */
+/* cmd-style terminal console */
 
-.process-console-body {
+.term-body {
   display: flex;
   flex-direction: column;
+  padding: 0;
+  background: #0c0c0c;
 }
 
-.pc-pe-bar {
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 10px;
-  color: var(--text-muted);
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--window-border);
-  background: rgba(0,0,0,0.2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 0;
-}
-
-.pc-output {
+.term {
   flex: 1;
   overflow-y: auto;
-  background: #0d0d12;
-  padding: 4px 0;
-}
-
-.pc-stream {
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  display: block;
-  padding: 0 8px;
-}
-
-.pc-stream .pc-line-pe   { color: #89b4fa; }
-.pc-stream .pc-line-warn { color: #f9e2af; }
-.pc-stream .pc-line-err  { color: #f38ba8; }
-.pc-stream .pc-line-out  { color: #a6e3a1; }
-.pc-stream .pc-line-err-stream { color: #f38ba8; }
-
-.pc-footer {
-  display: flex;
-  gap: 6px;
+  background: #0c0c0c;
+  color: #cccccc;
+  font-family: "Cascadia Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.35;
   padding: 6px 8px;
-  border-top: 1px solid var(--window-border);
-  background: rgba(0,0,0,0.15);
-  flex-shrink: 0;
-}
-
-.pc-stdin {
-  flex: 1;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--window-border);
-  border-radius: 3px;
-  color: var(--text);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
-  padding: 4px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
   outline: none;
+  cursor: text;
 }
 
-.pc-stdin:focus { border-color: var(--accent); }
-.pc-stdin:disabled { opacity: 0.4; }
+.term-output, .term-input { white-space: pre-wrap; }
 
-.pc-btn {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid var(--window-border);
-  border-radius: 3px;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 11px;
-  font-family: inherit;
-  padding: 4px 12px;
+/* stderr in plain mode — Windows consoles show it same colour, but a subtle
+   tint helps distinguish */
+.term-stderr { color: #f0a0a0; }
+
+/* exit / crash banners */
+.term-exit  { color: #6a9955; }
+.term-crash { color: #f14c4c; }
+
+/* blinking block cursor */
+.term-cursor {
+  color: #cccccc;
+  animation: term-blink 1s steps(1) infinite;
 }
+@keyframes term-blink { 50% { opacity: 0; } }
 
-.pc-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
-.pc-btn:disabled { opacity: 0.35; cursor: default; }
-
-.pc-btn-danger { border-color: #f38ba8; color: #f38ba8; }
-.pc-btn-danger:hover:not(:disabled) { background: rgba(243,139,168,0.12); }
+/* debug-mode styling */
+.term-stdin       { color: #569cd6; }       /* echoed typed input */
+.term-stdout-dbg  { color: #d4d4d4; }
+.term-stderr-dbg  { color: #f0a0a0; }
+.term-log         { font-size: 12px; }
+.term-log-target  { opacity: 0.85; }
+.term-log-trace   { color: #6a6a6a; }
+.term-log-debug   { color: #9cdcfe; }
+.term-log-info    { color: #4ec9b0; }
+.term-log-warn    { color: #dcdcaa; }
+.term-log-error   { color: #f14c4c; }
 
 /* properties window */
 

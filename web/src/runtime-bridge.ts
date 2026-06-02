@@ -1,5 +1,14 @@
-import type { DirectoryEntry, LogEvent, PeInfo, ProcessInfo } from "./worker.js";
+import type { DirectoryEntry, LogEvent, PeInfo, ProcessInfo, UiEvent } from "./worker.js";
 import { appendLogs } from "./log.js";
+
+export interface ProcessHandlers {
+  stdout?: (text: string) => void;
+  stderr?: (text: string) => void;
+  ui?: (events: UiEvent[]) => void;
+  log?: (events: LogEvent[]) => void;
+  exited?: (code: number) => void;
+  crashed?: (reason: string) => void;
+}
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -25,19 +34,9 @@ export class RuntimeBridge {
   }
 
   // per-pid output callbacks, set by process console windows
-  private pidHandlers = new Map<number, {
-    stdout?: (text: string) => void;
-    stderr?: (text: string) => void;
-    exited?: (code: number) => void;
-    crashed?: (reason: string) => void;
-  }>();
+  private pidHandlers = new Map<number, ProcessHandlers>();
 
-  onProcessOutput(pid: number, handlers: {
-    stdout?: (text: string) => void;
-    stderr?: (text: string) => void;
-    exited?: (code: number) => void;
-    crashed?: (reason: string) => void;
-  }) {
+  onProcessOutput(pid: number, handlers: ProcessHandlers) {
     this.pidHandlers.set(pid, handlers);
   }
 
@@ -60,6 +59,19 @@ export class RuntimeBridge {
     if (msg.type === "process_stderr") {
       const h = this.pidHandlers.get(msg.pid as number);
       h?.stderr?.(msg.text as string);
+      return;
+    }
+    if (msg.type === "process_ui") {
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.ui?.(msg.events as UiEvent[]);
+      return;
+    }
+    if (msg.type === "process_log") {
+      // route to the debug console for this pid, and always to the global panel
+      const events = msg.events as LogEvent[];
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.log?.(events);
+      appendLogs(events);
       return;
     }
     if (msg.type === "process_exited") {
@@ -141,13 +153,15 @@ export class RuntimeBridge {
     this.send({ type: "rename_node", path, new_name: newName });
   }
 
-  async launchProcess(path: string): Promise<{ pid: number; info: ProcessInfo }> {
+  async launchProcess(path: string): Promise<{ pid: number; info: ProcessInfo; launchLogs: LogEvent[] }> {
     const requestId = this.nextId();
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, {
         resolve: (r) => {
-          const msg = r as { pid: number; info: ProcessInfo };
-          resolve({ pid: msg.pid, info: msg.info });
+          const msg = r as { pid: number; info: ProcessInfo; launchLogs: LogEvent[] };
+          const launchLogs = msg.launchLogs ?? [];
+          appendLogs(launchLogs); // global system-log panel
+          resolve({ pid: msg.pid, info: msg.info, launchLogs });
         },
         reject,
       });

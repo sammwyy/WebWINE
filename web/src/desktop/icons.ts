@@ -133,6 +133,12 @@ function buildIconMenu(entry: DirectoryEntry, runtime: RuntimeBridge) {
       ),
     });
     items.push({
+      label: "Run as debug",
+      action: () => import("../windows/process-console.js").then((m) =>
+        m.openProcessConsole(entry.path, runtime, { debug: true })
+      ),
+    });
+    items.push({
       label: "Inspect",
       action: () => import("../windows/pe-inspector.js").then((m) =>
         m.openPeInspector(entry.path, runtime)

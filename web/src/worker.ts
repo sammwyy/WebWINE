@@ -20,9 +20,11 @@ type OutMsg =
   | { type: "dir_list"; requestId: string; entries: DirectoryEntry[] }
   | { type: "file_data"; requestId: string; path: string; bytes: ArrayBuffer }
   | { type: "pe_info"; requestId: string; info: PeInfo }
-  | { type: "process_launched"; requestId: string; pid: number; info: ProcessInfo }
+  | { type: "process_launched"; requestId: string; pid: number; info: ProcessInfo; launchLogs: LogEvent[] }
   | { type: "process_stdout"; pid: number; text: string }
   | { type: "process_stderr"; pid: number; text: string }
+  | { type: "process_ui"; pid: number; events: UiEvent[] }
+  | { type: "process_log"; pid: number; events: LogEvent[] }
   | { type: "process_exited"; pid: number; exit_code: number }
   | { type: "process_crashed"; pid: number; reason: string }
   | { type: "logs"; events: LogEvent[] };
@@ -81,12 +83,16 @@ export interface PeInfo {
   imports: PeImportModule[];
 }
 
+export type UiEvent =
+  | { kind: "message_box"; title: string; text: string; style: number };
+
 export interface SliceResult {
   pid: number;
   stdout: string;
   stderr: string;
   state: ProcessInfo["state"];
   instructions: number;
+  ui_events: UiEvent[];
 }
 
 let runtime: Runtime | null = null;
@@ -109,10 +115,16 @@ async function runProcessLoop(pid: number) {
 
   while (true) {
     const result = runtime.runProcessSlice(pid, BUDGET) as SliceResult;
-    flushLogs();
+
+    // Attribute logs drained during this process's run to it (for debug mode),
+    // and still forward to the global system-log panel via the bridge.
+    const logs = runtime.drainLogs() as LogEvent[];
+    if (logs.length > 0) send({ type: "process_log", pid, events: logs });
 
     if (result.stdout) send({ type: "process_stdout", pid, text: result.stdout });
     if (result.stderr) send({ type: "process_stderr", pid, text: result.stderr });
+    if (result.ui_events && result.ui_events.length > 0)
+      send({ type: "process_ui", pid, events: result.ui_events });
 
     const s = result.state.state;
     if (s === "exited") {
@@ -172,9 +184,10 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       send({ type: "pe_info", requestId: msg.requestId, info });
     } else if (msg.type === "launch_process") {
       const pid = runtime.launchProcess(msg.path) as number;
-      flushLogs();
+      // Loader/PE logs produced during launch — handed to the console for debug mode.
+      const launchLogs = runtime.drainLogs() as LogEvent[];
       const info = runtime.getProcessInfo(pid) as ProcessInfo;
-      send({ type: "process_launched", requestId: msg.requestId, pid, info });
+      send({ type: "process_launched", requestId: msg.requestId, pid, info, launchLogs });
     } else if (msg.type === "run_process") {
       runProcessLoop(msg.pid);
     } else if (msg.type === "write_stdin") {
