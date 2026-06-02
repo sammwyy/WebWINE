@@ -140,8 +140,9 @@ fn calloc(ctx: &mut ApiContext) -> Handled {
 }
 
 fn realloc(ctx: &mut ApiContext) -> Handled {
+    let old = ctx.arg(0);
     let size = ctx.arg(1);
-    let ptr = ctx.heap_alloc(size);
+    let ptr = ctx.heap_realloc(old, size);
     ctx.ret_cdecl(ptr);
     Handled::Ok
 }

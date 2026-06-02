@@ -9,6 +9,9 @@ export function appendLogs(events: LogEvent[]) {
   if (!out) return;
 
   for (const ev of events) {
+    // Trace-level events (e.g. per-API-call tracing) are only shown in the
+    // per-process debug console, not the global system-log panel.
+    if (ev.level === "trace") continue;
     const line = document.createElement("div");
     line.className = `log-line log-${ev.level}`;
 

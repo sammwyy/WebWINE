@@ -201,6 +201,7 @@ pub fn load_pe(
         entry_point,
         heap_base: HEAP_BASE,
         heap_next: HEAP_BASE,
+        heap_sizes: std::collections::HashMap::new(),
         memory: mem,
         cpu,
         handles: HandleTable::new(pid),

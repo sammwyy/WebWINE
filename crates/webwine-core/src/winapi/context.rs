@@ -34,6 +34,7 @@ pub struct ApiContext<'a> {
     pub ui_events: &'a mut Vec<UiEvent>,
     pub gui:       &'a mut GuiState,
     pub heap_next: &'a mut u32,
+    pub heap_sizes: &'a mut std::collections::HashMap<u32, u32>,
     pub fs:        &'a mut VirtualFileSystem,
     pub logs:      &'a mut LogBuffer,
     pub pid:       u32,
@@ -72,12 +73,39 @@ impl<'a> ApiContext<'a> {
         self.memory.read_wstr(va)
     }
 
-    /// Simple bump allocator on the process heap.
+    /// Bump allocator on the process heap, tracking sizes so realloc can copy.
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
         if size == 0 { return 0; }
-        let aligned = (size + 7) & !7;
+        let aligned = (size + 15) & !15;
         let ptr = *self.heap_next;
         *self.heap_next = self.heap_next.wrapping_add(aligned);
+        self.heap_sizes.insert(ptr, size);
         ptr
+    }
+
+    /// Reallocate `old` to `new_size`, preserving contents. Grows the last
+    /// block in place; otherwise allocates a fresh block and copies.
+    pub fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32 {
+        if old == 0 { return self.heap_alloc(new_size); }
+        if new_size == 0 { return 0; }
+        let old_size = self.heap_sizes.get(&old).copied().unwrap_or(0);
+        let aligned_old = (old_size + 15) & !15;
+
+        // Most-recent allocation? Extend in place.
+        if old.wrapping_add(aligned_old) == *self.heap_next {
+            *self.heap_next = old.wrapping_add((new_size + 15) & !15);
+            self.heap_sizes.insert(old, new_size);
+            return old;
+        }
+
+        // Otherwise allocate and copy the overlap.
+        let new_ptr = self.heap_alloc(new_size);
+        let copy = old_size.min(new_size) as usize;
+        if copy > 0 {
+            if let Ok(bytes) = self.memory.read_bytes(old, copy) {
+                let _ = self.memory.write_bytes(new_ptr, &bytes);
+            }
+        }
+        new_ptr
     }
 }

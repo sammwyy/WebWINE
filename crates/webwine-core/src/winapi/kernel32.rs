@@ -66,7 +66,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "InterlockedFlushSList", r0_1),
         ("kernel32.dll", "GetProcessAffinityMask", r1_3),
         ("kernel32.dll", "GetNativeSystemInfo", r0_1),
-        ("kernel32.dll", "GetCurrentDirectoryW", r0_2),
+        ("kernel32.dll", "GetCurrentDirectoryW", get_current_directory_w),
         ("kernel32.dll", "SetThreadErrorMode", r1_2),
         ("kernel32.dll", "GetThreadPriority", r0_1),
         ("kernel32.dll", "AddVectoredExceptionHandler", r1_2),
@@ -117,8 +117,9 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetEnvironmentVariableA", r0_3),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
-        ("kernel32.dll", "GetCurrentDirectoryA", r0_2),
-        ("kernel32.dll", "GetFullPathNameW", r0_4),
+        ("kernel32.dll", "GetCurrentDirectoryA", get_current_directory_a),
+        ("kernel32.dll", "GetFullPathNameW", get_full_path_name_w),
+        ("kernel32.dll", "GetFullPathNameA", get_full_path_name_a),
         ("kernel32.dll", "GetFileAttributesW", get_file_attributes_w),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteConsoleW", write_console_w),
@@ -523,6 +524,90 @@ fn get_file_attributes_w(ctx: &mut ApiContext) -> Handled {
     get_file_attributes(ctx, name)
 }
 
+// GetFullPathNameW(lpFileName, nBufferLength, lpBuffer, lpFilePart) — resolve
+// to an absolute path. Rust std calls this to canonicalize before CreateFile.
+fn get_full_path_name_w(ctx: &mut ApiContext) -> Handled {
+    let input = ctx.wstr(ctx.arg(0));
+    let buf_len = ctx.arg(1); // WCHARs
+    let out = ctx.arg(2);
+    let file_part = ctx.arg(3);
+
+    let full = resolve_path(&input);
+    let wide: Vec<u16> = full.encode_utf16().collect();
+    let needed = wide.len() as u32;
+
+    if out != 0 && buf_len > needed {
+        for (i, &c) in wide.iter().enumerate() {
+            let _ = ctx.memory.write_u16(out + (i as u32) * 2, c);
+        }
+        let _ = ctx.memory.write_u16(out + needed * 2, 0);
+        if file_part != 0 {
+            let last = full.rfind('\\').map(|i| i + 1).unwrap_or(0) as u32;
+            let _ = ctx.memory.write_u32(file_part, out + last * 2);
+        }
+        ctx.ret_stdcall(needed, 4);
+    } else {
+        ctx.ret_stdcall(needed + 1, 4); // required size incl. null
+    }
+    Handled::Ok
+}
+
+fn get_full_path_name_a(ctx: &mut ApiContext) -> Handled {
+    let input = ctx.cstr(ctx.arg(0));
+    let buf_len = ctx.arg(1);
+    let out = ctx.arg(2);
+    let file_part = ctx.arg(3);
+
+    let full = resolve_path(&input);
+    let bytes = full.as_bytes();
+    let needed = bytes.len() as u32;
+
+    if out != 0 && buf_len > needed {
+        let _ = ctx.memory.write_bytes(out, bytes);
+        let _ = ctx.memory.write_u8(out + needed, 0);
+        if file_part != 0 {
+            let last = full.rfind('\\').map(|i| i + 1).unwrap_or(0) as u32;
+            let _ = ctx.memory.write_u32(file_part, out + last);
+        }
+        ctx.ret_stdcall(needed, 4);
+    } else {
+        ctx.ret_stdcall(needed + 1, 4);
+    }
+    Handled::Ok
+}
+
+fn get_current_directory_w(ctx: &mut ApiContext) -> Handled {
+    let buf_len = ctx.arg(0);
+    let out = ctx.arg(1);
+    let wide: Vec<u16> = CWD.encode_utf16().collect();
+    let needed = wide.len() as u32;
+    if out != 0 && buf_len > needed {
+        for (i, &c) in wide.iter().enumerate() {
+            let _ = ctx.memory.write_u16(out + (i as u32) * 2, c);
+        }
+        let _ = ctx.memory.write_u16(out + needed * 2, 0);
+        ctx.ret_stdcall(needed, 2);
+    } else {
+        ctx.ret_stdcall(needed + 1, 2);
+    }
+    Handled::Ok
+}
+
+fn get_current_directory_a(ctx: &mut ApiContext) -> Handled {
+    let buf_len = ctx.arg(0);
+    let out = ctx.arg(1);
+    let bytes = CWD.as_bytes();
+    let needed = bytes.len() as u32;
+    if out != 0 && buf_len > needed {
+        let _ = ctx.memory.write_bytes(out, bytes);
+        let _ = ctx.memory.write_u8(out + needed, 0);
+        ctx.ret_stdcall(needed, 2);
+    } else {
+        ctx.ret_stdcall(needed + 1, 2);
+    }
+    Handled::Ok
+}
+
 fn get_last_error(ctx: &mut ApiContext) -> Handled {
     let e = ctx.cpu.last_error;
     ctx.ret_stdcall(e, 0);
@@ -553,8 +638,10 @@ fn heap_free(ctx: &mut ApiContext) -> Handled {
 }
 
 fn heap_realloc(ctx: &mut ApiContext) -> Handled {
+    // HeapReAlloc(hHeap, dwFlags, lpMem, dwBytes)
+    let old = ctx.arg(2);
     let size = ctx.arg(3);
-    let ptr = ctx.heap_alloc(size);
+    let ptr = ctx.heap_realloc(old, size);
     ctx.ret_stdcall(ptr, 4);
     Handled::Ok
 }

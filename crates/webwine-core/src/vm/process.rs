@@ -102,6 +102,7 @@ pub struct GuestProcess {
     pub entry_point: u32,
     pub heap_base:   u32,
     pub heap_next:   u32,   // bump allocator pointer
+    pub heap_sizes:  std::collections::HashMap<u32, u32>, // ptr -> size, for realloc
     pub memory:      GuestMemory,
     pub cpu:         X86Cpu,
     pub handles:     HandleTable,

@@ -96,8 +96,8 @@ fn main() {
             }
         };
         history.push(format!(
-            "  [{i}] eip=0x{:08X} esp=0x{:08X} ebp=0x{:08X} eax=0x{:08X} ecx=0x{:08X}  {}",
-            eip, proc.cpu.esp, proc.cpu.ebp, proc.cpu.eax, proc.cpu.ecx, disasm
+            "  [{i}] eip=0x{:08X} eax=0x{:08X} ecx=0x{:08X} edx=0x{:08X} esi=0x{:08X} edi=0x{:08X} ebp=0x{:08X}  {}",
+            eip, proc.cpu.eax, proc.cpu.ecx, proc.cpu.edx, proc.cpu.esi, proc.cpu.edi, proc.cpu.ebp, disasm
         ));
         if history.len() > 80 { history.remove(0); }
 

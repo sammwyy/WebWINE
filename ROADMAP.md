@@ -14,9 +14,14 @@ A browser-based Windows-like runtime. Rust/WASM owns the VM. TypeScript owns the
 - M8 Early Win32 UI — **done** (MessageBox dialogs; RegisterClass/CreateWindowEx → real windows; working message loop GetMessage/DispatchMessage with WndProc callbacks; WM_PAINT → TextOut rendering; close → WM_CLOSE/WM_DESTROY/WM_QUIT)
 - M9 Persistent Virtual Disk — pending
 
-Known gap: full-std Rust binaries that format via `core::fmt` (e.g. `filesystem.exe`)
-still hit std-internals fidelity issues during stdio setup. No-CRT and `println!`-style
-CRT binaries run end to end.
+Known gap: full-std Rust binaries that do path/filesystem work (e.g. `filesystem.exe`)
+still hit successive std-internals fidelity issues — each fix (GetFullPathNameW,
+HeapReAlloc copy semantics, …) reveals the next. This is the Wine-class long road.
+No-CRT, `println!`-style CRT console, and Win32 GUI binaries run end to end.
+
+Toward real apps: the realistic path is incremental fidelity (CPU edge cases, broader
++ more accurate Win32/CRT surface, GDI→canvas), driven by specific target binaries.
+Modern apps (UWP/x64 calc) are out of scope; classic x86 apps are a long-term goal.
 
 ## Milestone 1 — Browser Desktop and VFS
 **Goal:** Upload files, browse them inside a virtual desktop.

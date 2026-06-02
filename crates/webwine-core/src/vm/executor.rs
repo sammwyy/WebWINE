@@ -109,6 +109,10 @@ fn handle_trampoline(
     depth: u32,
 ) -> Flow {
     let va = proc.cpu.eip;
+    // Trace every API call (shown in "Run as debug" and useful for diagnosis).
+    if let Some((dll, name)) = api.lookup_name(va) {
+        logs.log(LogLevel::Trace, "api", &format!("{dll}!{name}"), Some(proc.pid));
+    }
     let result = {
         let mut ctx = ApiContext {
             cpu: &mut proc.cpu,
@@ -118,6 +122,7 @@ fn handle_trampoline(
             ui_events: &mut proc.ui_events,
             gui: &mut proc.gui,
             heap_next: &mut proc.heap_next,
+            heap_sizes: &mut proc.heap_sizes,
             fs,
             logs,
             pid: proc.pid,

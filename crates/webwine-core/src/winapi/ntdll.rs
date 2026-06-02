@@ -42,8 +42,9 @@ fn rtl_free(ctx: &mut ApiContext) -> Handled {
 }
 
 fn rtl_realloc(ctx: &mut ApiContext) -> Handled {
+    let old = ctx.arg(2);
     let size = ctx.arg(3);
-    let ptr = ctx.heap_alloc(size);
+    let ptr = ctx.heap_realloc(old, size);
     ctx.ret_stdcall(ptr, 4); Handled::Ok
 }
 
