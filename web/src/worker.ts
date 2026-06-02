@@ -12,6 +12,7 @@ type InMsg =
   | { type: "launch_process"; requestId: string; path: string }
   | { type: "run_process"; pid: number }
   | { type: "write_stdin"; pid: number; text: string }
+  | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
   | { type: "kill_process"; pid: number };
 
 type OutMsg =
@@ -84,7 +85,13 @@ export interface PeInfo {
 }
 
 export type UiEvent =
-  | { kind: "message_box"; title: string; text: string; style: number };
+  | { kind: "message_box"; title: string; text: string; style: number }
+  | { kind: "create_window"; hwnd: number; title: string; x: number; y: number; width: number; height: number }
+  | { kind: "show_window"; hwnd: number; show: boolean }
+  | { kind: "set_window_text"; hwnd: number; title: string }
+  | { kind: "destroy_window"; hwnd: number }
+  | { kind: "clear_client"; hwnd: number }
+  | { kind: "draw_text"; hwnd: number; x: number; y: number; text: string; color: number };
 
 export interface SliceResult {
   pid: number;
@@ -192,6 +199,10 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       runProcessLoop(msg.pid);
     } else if (msg.type === "write_stdin") {
       runtime.writeProcessStdin(msg.pid, msg.text);
+    } else if (msg.type === "post_message") {
+      runtime.postWindowMessage(msg.pid, msg.hwnd, msg.message, msg.wparam, msg.lparam);
+      // Resume the (suspended) message loop.
+      runProcessLoop(msg.pid);
     } else if (msg.type === "kill_process") {
       runtime.killProcess(msg.pid);
       flushLogs();

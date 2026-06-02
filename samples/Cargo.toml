@@ -6,6 +6,7 @@ members = [
     "04_processes",
     "05_minimal",
     "06_files",
+    "07_gui",
 ]
 resolver = "2"
 

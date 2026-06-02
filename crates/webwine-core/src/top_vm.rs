@@ -96,6 +96,21 @@ impl WebWineVm {
         Ok(())
     }
 
+    /// Post a window message to a process (e.g. WM_CLOSE when the user closes a
+    /// guest window). Wakes the process if it was blocked in GetMessage.
+    pub fn post_window_message(
+        &mut self, pid: u32, hwnd: u32, message: u32, wparam: u32, lparam: u32,
+    ) -> Result<()> {
+        use crate::vm::process::{GuestMsg, ProcessState};
+        let proc = self.processes.get_mut(pid)
+            .ok_or(VmError::ProcessNotFound(pid))?;
+        proc.gui.queue.push_back(GuestMsg { hwnd, message, wparam, lparam });
+        if matches!(proc.state, ProcessState::WaitingForInput) {
+            proc.state = ProcessState::Running;
+        }
+        Ok(())
+    }
+
     pub fn get_process_info(&self, pid: u32) -> Result<ProcessInfo> {
         self.processes.get(pid).map(|p| p.info())
             .ok_or(VmError::ProcessNotFound(pid))

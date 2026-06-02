@@ -117,6 +117,15 @@ impl Runtime {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = postWindowMessage)]
+    pub fn post_window_message(
+        &mut self, pid: u32, hwnd: u32, message: u32, wparam: u32, lparam: u32,
+    ) -> Result<(), JsValue> {
+        self.vm
+            .post_window_message(pid, hwnd, message, wparam, lparam)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = drainLogs)]
     pub fn drain_logs(&mut self) -> Result<JsValue, JsValue> {
         let events: Vec<LogEvent> = self.vm.drain_logs();

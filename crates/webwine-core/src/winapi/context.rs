@@ -3,8 +3,8 @@ use crate::logs::LogBuffer;
 use crate::vm::cpu::X86Cpu;
 use crate::vm::handles::HandleTable;
 use crate::vm::memory::GuestMemory;
-use crate::vm::process::ConsoleStreams;
-pub use crate::vm::process::UiEvent;
+use crate::vm::process::{ConsoleStreams, GuiState};
+pub use crate::vm::process::{GuestMsg, UiEvent};
 
 pub enum Handled {
     Ok,
@@ -16,6 +16,14 @@ pub enum Handled {
     /// CRT's C++ initializer tables, which our synchronous handlers can't call
     /// directly.
     CallChain(Vec<u32>),
+    /// The call blocks (e.g. GetMessage with an empty queue). The executor
+    /// suspends the process (WaitingForInput) WITHOUT advancing past the call,
+    /// so it re-dispatches when the process is resumed.
+    Block,
+    /// Call a guest function `func(args...)` (stdcall, callee cleans its args),
+    /// then return from the current API with the function's result in EAX,
+    /// cleaning `ret_args` stdcall args. Used by DispatchMessage → WndProc.
+    Invoke { func: u32, args: Vec<u32>, ret_args: u32 },
 }
 
 pub struct ApiContext<'a> {
@@ -24,6 +32,7 @@ pub struct ApiContext<'a> {
     pub handles:   &'a mut HandleTable,
     pub console:   &'a mut ConsoleStreams,
     pub ui_events: &'a mut Vec<UiEvent>,
+    pub gui:       &'a mut GuiState,
     pub heap_next: &'a mut u32,
     pub fs:        &'a mut VirtualFileSystem,
     pub logs:      &'a mut LogBuffer,

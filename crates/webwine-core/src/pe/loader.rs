@@ -206,6 +206,7 @@ pub fn load_pe(
         handles: HandleTable::new(pid),
         console: ConsoleStreams::new(),
         ui_events: Vec::new(),
+        gui: crate::vm::process::GuiState::new(),
         state: ProcessState::Created,
     })
 }

@@ -42,6 +42,11 @@ pub fn run_slice(
         if proc.cpu.eip >= TRAMPOLINE_BASE {
             match handle_trampoline(proc, api, fs, logs, 0) {
                 Flow::Continue => {}
+                Flow::Block => {
+                    // Suspend at the call site; resumed when a message arrives.
+                    proc.state = ProcessState::WaitingForInput;
+                    break;
+                }
                 Flow::Exit(code) => {
                     proc.state = ProcessState::Exited { exit_code: code };
                     break;
@@ -88,6 +93,7 @@ const CALL_SENTINEL: u32 = 0xFFFF_FF00;
 
 enum Flow {
     Continue,
+    Block,
     Exit(u32),
     Fault(String),
 }
@@ -110,6 +116,7 @@ fn handle_trampoline(
             handles: &mut proc.handles,
             console: &mut proc.console,
             ui_events: &mut proc.ui_events,
+            gui: &mut proc.gui,
             heap_next: &mut proc.heap_next,
             fs,
             logs,
@@ -137,6 +144,24 @@ fn handle_trampoline(
             proc.cpu.eip = ret;
             Flow::Continue
         }
+        Some(Handled::Block) => {
+            // Leave EIP at the trampoline so the call re-dispatches on resume.
+            Flow::Block
+        }
+        Some(Handled::Invoke { func, args, ret_args }) => {
+            // Call the guest function (stdcall: callee cleans its own args).
+            match call_guest_fn_args(proc, api, fs, logs, func, &args, depth + 1) {
+                Flow::Continue => {}
+                other => return other,
+            }
+            let result = proc.cpu.eax;
+            // Return from the current API (e.g. DispatchMessage), stdcall cleanup.
+            let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
+            proc.cpu.esp = proc.cpu.esp.wrapping_add(4 + 4 * ret_args);
+            proc.cpu.eax = result;
+            proc.cpu.eip = ret;
+            Flow::Continue
+        }
         Some(Handled::Unimplemented) | None => {
             let name = api
                 .lookup_name(va)
@@ -157,8 +182,7 @@ fn handle_trampoline(
     }
 }
 
-/// Call a guest function (cdecl, no args) and run until it returns.
-/// Pushes a sentinel return address; the matching `ret` lands on it.
+/// Call a guest function with no args (cdecl). Used by `_initterm`.
 fn call_guest_fn(
     proc: &mut GuestProcess,
     api: &WinApiRegistry,
@@ -167,9 +191,31 @@ fn call_guest_fn(
     target: u32,
     depth: u32,
 ) -> Flow {
+    call_guest_fn_args(proc, api, fs, logs, target, &[], depth)
+}
+
+/// Call a guest function `target(args...)` and run until it returns.
+/// Args are pushed right-to-left, then a sentinel return address; the matching
+/// `ret` lands on the sentinel. For stdcall callees the callee cleans the args;
+/// for cdecl with no args the stack is balanced regardless.
+fn call_guest_fn_args(
+    proc: &mut GuestProcess,
+    api: &WinApiRegistry,
+    fs: &mut VirtualFileSystem,
+    logs: &mut LogBuffer,
+    target: u32,
+    args: &[u32],
+    depth: u32,
+) -> Flow {
+    for &arg in args.iter().rev() {
+        proc.cpu.esp = proc.cpu.esp.wrapping_sub(4);
+        if proc.memory.write_u32(proc.cpu.esp, arg).is_err() {
+            return Flow::Fault("stack overflow pushing call args".into());
+        }
+    }
     proc.cpu.esp = proc.cpu.esp.wrapping_sub(4);
     if proc.memory.write_u32(proc.cpu.esp, CALL_SENTINEL).is_err() {
-        return Flow::Fault("stack overflow setting up init call".into());
+        return Flow::Fault("stack overflow setting up guest call".into());
     }
     proc.cpu.eip = target;
 
@@ -180,7 +226,7 @@ fn call_guest_fn(
         }
         budget -= 1;
         if budget == 0 {
-            return Flow::Fault(format!("init function 0x{target:08X} did not return"));
+            return Flow::Fault(format!("guest function 0x{target:08X} did not return"));
         }
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {

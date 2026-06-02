@@ -610,6 +610,24 @@ details[open] .pe-import-dll-name::before {
   box-shadow: 0 0 0 1px #0078d4 inset;
 }
 
+/* guest (Win32 CreateWindow) client area */
+
+.guestwin-client {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  overflow: hidden;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: #000;
+}
+
+.guestwin-text {
+  position: absolute;
+  white-space: pre;
+}
+
 /* message box content */
 
 .msgbox-body {

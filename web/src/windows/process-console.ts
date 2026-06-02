@@ -1,7 +1,7 @@
 import { createWindow } from "./manager.js";
 import type { RuntimeBridge } from "../runtime-bridge.js";
 import type { LogEvent, UiEvent } from "../worker.js";
-import { showMessageBox } from "./message-box.js";
+import { handleUiEvents } from "./guest-windows.js";
 
 interface ConsoleOptions {
   debug?: boolean;
@@ -100,7 +100,7 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
       for (const ev of launchLogs) writeLog(ev);
     }
 
-    runtime.onProcessOutput(pid, {
+    runtime.onProcessOutput(newPid, {
       stdout: (text) => {
         if (debug) {
           for (const line of splitKeepLast(text)) {
@@ -112,11 +112,7 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
         }
       },
       stderr: (text) => write(text, debug ? "term-stderr-dbg" : "term-stderr"),
-      ui: (events: UiEvent[]) => {
-        for (const ev of events) {
-          if (ev.kind === "message_box") void showMessageBox(ev);
-        }
-      },
+      ui: (events: UiEvent[]) => handleUiEvents(newPid, events, runtime),
       log: debug ? (events) => { for (const ev of events) writeLog(ev); } : undefined,
       exited: (code) => {
         running = false;

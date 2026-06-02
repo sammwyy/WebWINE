@@ -39,17 +39,60 @@ impl ConsoleStreams {
     pub fn drain_stderr(&mut self) -> Vec<u8> { std::mem::take(&mut self.stderr) }
 }
 
-/// UI requests emitted by guest code (e.g. MessageBox) for the frontend to
-/// render as real windows rather than console text.
+/// UI requests emitted by guest code for the frontend to render as real
+/// windows rather than console text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UiEvent {
-    MessageBox {
-        title: String,
-        text:  String,
-        /// MB_* style flags (icon / button set) passed to MessageBox.
-        style: u32,
-    },
+    MessageBox { title: String, text: String, style: u32 },
+    CreateWindow { hwnd: u32, title: String, x: i32, y: i32, width: i32, height: i32 },
+    ShowWindow { hwnd: u32, show: bool },
+    SetWindowText { hwnd: u32, title: String },
+    DestroyWindow { hwnd: u32 },
+    ClearClient { hwnd: u32 },
+    DrawText { hwnd: u32, x: i32, y: i32, text: String, color: u32 },
+}
+
+/// A queued window message (WM_*).
+#[derive(Debug, Clone)]
+pub struct GuestMsg {
+    pub hwnd: u32,
+    pub message: u32,
+    pub wparam: u32,
+    pub lparam: u32,
+}
+
+/// Per-process Win32 GUI state: registered window classes, live windows, and
+/// the thread message queue.
+pub struct GuiState {
+    pub next_hwnd: u32,
+    pub classes: std::collections::HashMap<String, u32>, // class name -> WndProc VA
+    pub windows: std::collections::HashMap<u32, WindowEntry>, // hwnd -> window
+    pub queue: std::collections::VecDeque<GuestMsg>,
+    pub quit: Option<u32>,
+}
+
+pub struct WindowEntry {
+    pub wndproc: u32,
+    pub needs_paint: bool,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl GuiState {
+    pub fn new() -> Self {
+        GuiState {
+            next_hwnd: 0x0001_0010,
+            classes: std::collections::HashMap::new(),
+            windows: std::collections::HashMap::new(),
+            queue: std::collections::VecDeque::new(),
+            quit: None,
+        }
+    }
+}
+
+impl Default for GuiState {
+    fn default() -> Self { Self::new() }
 }
 
 pub struct GuestProcess {
@@ -64,6 +107,7 @@ pub struct GuestProcess {
     pub handles:     HandleTable,
     pub console:     ConsoleStreams,
     pub ui_events:   Vec<UiEvent>,
+    pub gui:         GuiState,
     pub state:       ProcessState,
 }
 

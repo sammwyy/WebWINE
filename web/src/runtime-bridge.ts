@@ -177,6 +177,10 @@ export class RuntimeBridge {
     this.send({ type: "write_stdin", pid, text });
   }
 
+  postWindowMessage(pid: number, hwnd: number, message: number, wparam = 0, lparam = 0): void {
+    this.send({ type: "post_message", pid, hwnd, message, wparam, lparam });
+  }
+
   killProcess(pid: number): void {
     this.send({ type: "kill_process", pid });
   }
