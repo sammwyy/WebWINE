@@ -8,7 +8,9 @@ type InMsg =
   | { type: "read_file"; requestId: string; path: string }
   | { type: "inspect_pe"; requestId: string; path: string }
   | { type: "delete_node"; path: string }
-  | { type: "rename_node"; path: string; new_name: string };
+  | { type: "rename_node"; path: string; new_name: string }
+  | { type: "launch_process"; requestId: string; path: string }
+  | { type: "kill_process"; pid: number };
 
 type OutMsg =
   | { type: "ready" }
@@ -16,6 +18,7 @@ type OutMsg =
   | { type: "dir_list"; requestId: string; entries: DirectoryEntry[] }
   | { type: "file_data"; requestId: string; path: string; bytes: ArrayBuffer }
   | { type: "pe_info"; requestId: string; info: PeInfo }
+  | { type: "process_launched"; requestId: string; pid: number; info: ProcessInfo }
   | { type: "logs"; events: LogEvent[] };
 
 export interface DirectoryEntry {
@@ -45,6 +48,17 @@ export interface PeSection {
 export interface PeImportModule {
   dll: string;
   functions: string[];
+}
+
+export interface ProcessInfo {
+  pid: number;
+  path: string;
+  image_base: number;
+  entry_point: number;
+  state: { state: "created" } | { state: "running" } | { state: "blocked" }
+       | { state: "waiting_for_input" }
+       | { state: "exited"; exit_code: number }
+       | { state: "crashed"; reason: string };
 }
 
 export interface PeInfo {
@@ -115,6 +129,14 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       const info = runtime.inspectPe(msg.path) as PeInfo;
       flushLogs();
       send({ type: "pe_info", requestId: msg.requestId, info });
+    } else if (msg.type === "launch_process") {
+      const pid = runtime.launchProcess(msg.path) as number;
+      flushLogs();
+      const info = runtime.getProcessInfo(pid) as ProcessInfo;
+      send({ type: "process_launched", requestId: msg.requestId, pid, info });
+    } else if (msg.type === "kill_process") {
+      runtime.killProcess(msg.pid);
+      flushLogs();
     } else if (msg.type === "delete_node") {
       runtime.deleteNode(msg.path);
       flushLogs();

@@ -8,3 +8,4 @@ thiserror = "1"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 goblin = { version = "0.9", default-features = false, features = ["pe32", "pe64"] }
+bitflags = "2"

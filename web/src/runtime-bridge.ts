@@ -1,4 +1,4 @@
-import type { DirectoryEntry, LogEvent, PeInfo } from "./worker.js";
+import type { DirectoryEntry, LogEvent, PeInfo, ProcessInfo } from "./worker.js";
 import { appendLogs } from "./log.js";
 
 type PendingRequest = {
@@ -99,6 +99,24 @@ export class RuntimeBridge {
 
   async renameNode(path: string, newName: string): Promise<void> {
     this.send({ type: "rename_node", path, new_name: newName });
+  }
+
+  async launchProcess(path: string): Promise<{ pid: number; info: ProcessInfo }> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => {
+          const msg = r as { pid: number; info: ProcessInfo };
+          resolve({ pid: msg.pid, info: msg.info });
+        },
+        reject,
+      });
+      this.send({ type: "launch_process", requestId, path });
+    });
+  }
+
+  killProcess(pid: number): void {
+    this.send({ type: "kill_process", pid });
   }
 
   async inspectPe(path: string): Promise<PeInfo> {

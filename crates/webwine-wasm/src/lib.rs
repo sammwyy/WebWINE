@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo};
+use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo};
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -71,6 +71,35 @@ impl Runtime {
             .inspect_pe(path)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = launchProcess)]
+    pub fn launch_process(&mut self, path: &str) -> Result<u32, JsValue> {
+        self.vm
+            .launch_process(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = getProcessInfo)]
+    pub fn get_process_info(&self, pid: u32) -> Result<JsValue, JsValue> {
+        let info: ProcessInfo = self
+            .vm
+            .get_process_info(pid)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = listProcesses)]
+    pub fn list_processes(&self) -> Result<JsValue, JsValue> {
+        let list: Vec<ProcessInfo> = self.vm.list_processes();
+        serde_wasm_bindgen::to_value(&list).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = killProcess)]
+    pub fn kill_process(&mut self, pid: u32) -> Result<(), JsValue> {
+        self.vm
+            .kill_process(pid)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen(js_name = drainLogs)]
