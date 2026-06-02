@@ -4,5 +4,12 @@ members = [
     "02_win32_msgbox",
     "03_filesystem",
     "04_processes",
+    "05_minimal",
 ]
 resolver = "2"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

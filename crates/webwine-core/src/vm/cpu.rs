@@ -1,0 +1,74 @@
+#[derive(Debug, Clone, Default)]
+pub struct X86Cpu {
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
+    pub esi: u32,
+    pub edi: u32,
+    pub ebp: u32,
+    pub esp: u32,
+    pub eip: u32,
+    pub eflags: u32,
+    pub last_error: u32,
+}
+
+impl X86Cpu {
+    pub fn new() -> Self {
+        X86Cpu { eflags: 0x202, ..Default::default() }
+    }
+}
+
+// EFLAGS bit positions
+pub const CF: u32 = 1 << 0;
+pub const PF: u32 = 1 << 2;
+pub const AF: u32 = 1 << 4;
+pub const ZF: u32 = 1 << 6;
+pub const SF: u32 = 1 << 7;
+pub const DF: u32 = 1 << 10;
+pub const OF: u32 = 1 << 11;
+
+pub fn get_cf(f: u32) -> bool { f & CF != 0 }
+pub fn get_pf(f: u32) -> bool { f & PF != 0 }
+pub fn get_zf(f: u32) -> bool { f & ZF != 0 }
+pub fn get_sf(f: u32) -> bool { f & SF != 0 }
+pub fn get_df(f: u32) -> bool { f & DF != 0 }
+pub fn get_of(f: u32) -> bool { f & OF != 0 }
+
+fn set(f: &mut u32, bit: u32, v: bool) {
+    if v { *f |= bit } else { *f &= !bit }
+}
+
+pub fn set_szp(f: &mut u32, r: u32) {
+    set(f, SF, r >> 31 != 0);
+    set(f, ZF, r == 0);
+    set(f, PF, r.count_ones() % 2 == 0);
+}
+
+pub fn set_add32(f: &mut u32, a: u32, b: u32, r: u32) {
+    set(f, CF, (r as u64) < (a as u64) + (b as u64));
+    set(f, OF, (!(a ^ b) & (a ^ r) & 0x8000_0000) != 0);
+    set_szp(f, r);
+}
+
+pub fn set_sub32(f: &mut u32, a: u32, b: u32, r: u32) {
+    set(f, CF, (a as u64) < (b as u64));
+    set(f, OF, ((a ^ b) & (a ^ r) & 0x8000_0000) != 0);
+    set_szp(f, r);
+}
+
+pub fn set_add8(f: &mut u32, a: u8, b: u8, r: u8) {
+    set(f, CF, (r as u16) < (a as u16) + (b as u16));
+    set(f, OF, (!(a ^ b) & (a ^ r) & 0x80) != 0);
+    set(f, SF, r >> 7 != 0);
+    set(f, ZF, r == 0);
+    set(f, PF, r.count_ones() % 2 == 0);
+}
+
+pub fn set_sub8(f: &mut u32, a: u8, b: u8, r: u8) {
+    set(f, CF, (a as u16) < (b as u16));
+    set(f, OF, ((a ^ b) & (a ^ r) & 0x80) != 0);
+    set(f, SF, r >> 7 != 0);
+    set(f, ZF, r == 0);
+    set(f, PF, r.count_ones() % 2 == 0);
+}

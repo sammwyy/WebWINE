@@ -1,6 +1,7 @@
 import { createWindow } from "./manager.js";
 import type { RuntimeBridge } from "../runtime-bridge.js";
 import type { ProcessInfo } from "../worker.js";
+import { log } from "../log.js";
 
 export function openProcessConsole(path: string, runtime: RuntimeBridge) {
   const fileName = path.split("\\").pop() ?? path;
@@ -29,7 +30,7 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge) {
   const stdinInput = document.createElement("input");
   stdinInput.className = "pc-stdin";
   stdinInput.type = "text";
-  stdinInput.placeholder = "stdin";
+  stdinInput.placeholder = "stdin (not yet enabled)";
   stdinInput.disabled = true;
 
   const sendBtn = document.createElement("button");
@@ -45,65 +46,96 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge) {
   footer.append(stdinInput, sendBtn, killBtn);
   body.append(peBar, outputArea, footer);
 
-  function line(text: string, cls?: string) {
+  function appendLine(text: string, cls?: string) {
+    for (const rawLine of text.split("\n")) {
+      const line = rawLine.replace(/\r$/, "");
+      if (line === "" && text.endsWith("\n")) continue;
+      const span = document.createElement("span");
+      if (cls) span.className = cls;
+      span.textContent = line + "\n";
+      pre.appendChild(span);
+    }
+    outputArea.scrollTop = outputArea.scrollHeight;
+  }
+
+  function appendRaw(text: string, cls?: string) {
+    if (!text) return;
     const span = document.createElement("span");
     if (cls) span.className = cls;
-    span.textContent = text + "\n";
+    span.textContent = text;
     pre.appendChild(span);
     outputArea.scrollTop = outputArea.scrollHeight;
   }
 
-  function stateLabel(info: ProcessInfo): string {
-    const s = info.state;
-    if (s.state === "exited")  return `Exited (${s.exit_code})`;
-    if (s.state === "crashed") return `Crashed: ${s.reason}`;
-    return s.state.charAt(0).toUpperCase() + s.state.slice(1);
-  }
-
-  function updateKillBtn(info: ProcessInfo) {
-    const runnable = info.state.state === "created" || info.state.state === "running";
-    killBtn.disabled = !runnable;
+  function setStatus(label: string) {
+    const title = `${fileName}${label}`;
+    setTitle(title);
+    peBar.textContent = peBar.textContent!.replace(/ — .*$/, "") + ` — ${label}`;
   }
 
   runtime.launchProcess(path).then(({ pid, info }) => {
-    setTitle(`${fileName} — PID ${pid} — ${stateLabel(info)}`);
+    const base = `0x${info.image_base.toString(16).toUpperCase().padStart(8, "0")}`;
+    const entry = `0x${info.entry_point.toString(16).toUpperCase().padStart(8, "0")}`;
+    peBar.textContent = `PID ${pid}  base ${base}  entry ${entry}`;
+    setTitle(`${fileName} — PID ${pid} — Running`);
+    killBtn.disabled = false;
 
-    peBar.textContent =
-      `PID ${pid}  │  base 0x${info.image_base.toString(16).toUpperCase().padStart(8,"0")}` +
-      `  entry 0x${info.entry_point.toString(16).toUpperCase().padStart(8,"0")}` +
-      `  ${stateLabel(info)}`;
+    appendLine(`[loader] process created — PID ${pid}  base ${base}  entry ${entry}`, "pc-line-pe");
 
-    updateKillBtn(info);
-
+    // wire kill button
     killBtn.addEventListener("click", () => {
       runtime.killProcess(pid);
       killBtn.disabled = true;
-      setTitle(`${fileName} — PID ${pid} — Killed`);
-      peBar.textContent = peBar.textContent!.replace(/\w+$/, "Killed");
-      line("[process] killed by user", "pc-line-warn");
+      stdinInput.disabled = true;
+      sendBtn.disabled = true;
+      setStatus("Killed");
+      appendLine("[process] killed by user", "pc-line-warn");
+      log("process", `pid=${pid} killed by user`);
     });
 
-    // stdin send
+    // wire stdin
     stdinInput.disabled = false;
     sendBtn.disabled = false;
+    stdinInput.placeholder = "stdin";
     sendBtn.addEventListener("click", () => {
       const text = stdinInput.value;
       if (!text) return;
       stdinInput.value = "";
-      line(`> ${text}`, "pc-line-stdin");
-      // stdin write will be wired in Milestone 5
+      appendLine(`> ${text}`, "pc-line-stdin");
+      runtime.writeStdin(pid, text + "\n");
     });
-    stdinInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") sendBtn.click();
+    stdinInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendBtn.click(); });
+
+    // register output callbacks
+    runtime.onProcessOutput(pid, {
+      stdout: (text) => appendRaw(text, "pc-line-out"),
+      stderr: (text) => appendRaw(text, "pc-line-err-stream"),
+      exited: (code) => {
+        killBtn.disabled = true;
+        stdinInput.disabled = true;
+        sendBtn.disabled = true;
+        setStatus(`Exited (${code})`);
+        appendLine(`[process] exited with code ${code}`, code === 0 ? "pc-line-pe" : "pc-line-warn");
+        log("process", `pid=${pid} exited code=${code}`);
+      },
+      crashed: (reason) => {
+        killBtn.disabled = true;
+        stdinInput.disabled = true;
+        sendBtn.disabled = true;
+        setStatus("Crashed");
+        appendLine(`[cpu] crashed: ${reason}`, "pc-line-err");
+        log("process", `pid=${pid} crashed: ${reason}`, "error");
+      },
     });
 
-    // note about execution engine
-    line(`[loader] process created — PID ${pid}`, "pc-line-pe");
-    line(`[loader] EIP=0x${info.entry_point.toString(16).toUpperCase().padStart(8,"0")}`, "pc-line-pe");
-    line(`[cpu] execution engine not yet available — Milestone 4`, "pc-line-warn");
+    // start execution
+    appendLine("[cpu] starting execution…", "pc-line-pe");
+    runtime.runProcess(pid);
+
   }).catch((err) => {
     setTitle(`${fileName} — Error`);
     peBar.textContent = "Failed to load";
-    line(`[error] ${err}`, "pc-line-err");
+    appendLine(`[error] ${err}`, "pc-line-err");
+    log("process", `failed to launch ${fileName}: ${err}`, "error");
   });
 }

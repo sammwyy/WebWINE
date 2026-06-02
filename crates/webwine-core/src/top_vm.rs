@@ -3,22 +3,26 @@ use crate::fs::vfs::{DirEntry, VirtualFileSystem};
 use crate::logs::{LogBuffer, LogEvent, LogLevel};
 use crate::pe::inspector::{inspect_bytes, PeInfo};
 use crate::pe::loader::load_pe;
-use crate::process::{ProcessInfo, ProcessTable};
-use crate::winapi::WinApiDispatcher;
+use crate::vm::executor::{run_slice, SliceResult};
+use crate::vm::process::{ProcessInfo, ProcessTable};
+use crate::winapi::{register_all, WinApiRegistry};
 
 pub struct WebWineVm {
     pub fs:        VirtualFileSystem,
     pub logs:      LogBuffer,
-    pub api:       WinApiDispatcher,
+    pub api:       WinApiRegistry,
     pub processes: ProcessTable,
 }
 
 impl WebWineVm {
     pub fn new() -> Self {
+        let mut api = WinApiRegistry::new();
+        register_all(&mut api);
+
         let mut vm = WebWineVm {
-            fs:        VirtualFileSystem::new(),
-            logs:      LogBuffer::default(),
-            api:       WinApiDispatcher::new(),
+            fs: VirtualFileSystem::new(),
+            logs: LogBuffer::default(),
+            api,
             processes: ProcessTable::new(),
         };
         vm.logs.log(LogLevel::Info, "vm", "WebWINE VM initialized", None);
@@ -28,15 +32,13 @@ impl WebWineVm {
     pub fn mount_file(&mut self, guest_path: &str, bytes: Vec<u8>) -> Result<()> {
         let size = bytes.len();
         self.fs.mount_file(guest_path, bytes)?;
-        self.logs.log(LogLevel::Info, "fs",
-            &format!("mounted {guest_path} ({size} bytes)"), None);
+        self.logs.log(LogLevel::Info, "fs", &format!("mounted {guest_path} ({size} bytes)"), None);
         Ok(())
     }
 
     pub fn create_dir(&mut self, guest_path: &str) -> Result<()> {
         self.fs.create_dir(guest_path)?;
-        self.logs.log(LogLevel::Info, "fs",
-            &format!("created dir {guest_path}"), None);
+        self.logs.log(LogLevel::Info, "fs", &format!("created dir {guest_path}"), None);
         Ok(())
     }
 
@@ -50,15 +52,13 @@ impl WebWineVm {
 
     pub fn delete_node(&mut self, guest_path: &str) -> Result<()> {
         self.fs.delete_node(guest_path)?;
-        self.logs.log(LogLevel::Info, "fs",
-            &format!("deleted {guest_path}"), None);
+        self.logs.log(LogLevel::Info, "fs", &format!("deleted {guest_path}"), None);
         Ok(())
     }
 
     pub fn rename_node(&mut self, guest_path: &str, new_name: &str) -> Result<()> {
         self.fs.rename_node(guest_path, new_name)?;
-        self.logs.log(LogLevel::Info, "fs",
-            &format!("renamed {guest_path} -> {new_name}"), None);
+        self.logs.log(LogLevel::Info, "fs", &format!("renamed {guest_path} -> {new_name}"), None);
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl WebWineVm {
         let bytes = self.fs.read_file(guest_path)?;
         let info = inspect_bytes(&bytes)?;
         self.logs.log(LogLevel::Info, "pe", &format!(
-            "parsed {} — {} {} image_base=0x{:08X} entry=0x{:08X} sections={} imports={}",
+            "parsed {} — {} {} base=0x{:08X} entry=0x{:08X} sections={} imports={}",
             guest_path, info.machine, info.subsystem,
             info.image_base, info.entry_point_rva,
             info.sections.len(),
@@ -83,10 +83,21 @@ impl WebWineVm {
         Ok(pid)
     }
 
+    pub fn run_process_slice(&mut self, pid: u32, budget: u32) -> Result<SliceResult> {
+        let proc = self.processes.get_mut(pid)
+            .ok_or(VmError::ProcessNotFound(pid))?;
+        run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)
+    }
+
+    pub fn write_stdin(&mut self, pid: u32, text: &str) -> Result<()> {
+        let proc = self.processes.get_mut(pid)
+            .ok_or(VmError::ProcessNotFound(pid))?;
+        proc.console.stdin.extend(text.bytes());
+        Ok(())
+    }
+
     pub fn get_process_info(&self, pid: u32) -> Result<ProcessInfo> {
-        self.processes
-            .get(pid)
-            .map(|p| p.info())
+        self.processes.get(pid).map(|p| p.info())
             .ok_or(VmError::ProcessNotFound(pid))
     }
 
@@ -95,12 +106,11 @@ impl WebWineVm {
     }
 
     pub fn kill_process(&mut self, pid: u32) -> Result<()> {
-        use crate::process::ProcessState;
+        use crate::vm::process::ProcessState;
         let proc = self.processes.get_mut(pid)
             .ok_or(VmError::ProcessNotFound(pid))?;
         proc.state = ProcessState::Exited { exit_code: 1 };
-        self.logs.log(LogLevel::Info, "process",
-            &format!("pid={pid} killed"), None);
+        self.logs.log(LogLevel::Info, "process", &format!("pid={pid} killed"), None);
         Ok(())
     }
 
@@ -110,7 +120,5 @@ impl WebWineVm {
 }
 
 impl Default for WebWineVm {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }

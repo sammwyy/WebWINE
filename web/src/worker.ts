@@ -10,6 +10,8 @@ type InMsg =
   | { type: "delete_node"; path: string }
   | { type: "rename_node"; path: string; new_name: string }
   | { type: "launch_process"; requestId: string; path: string }
+  | { type: "run_process"; pid: number }
+  | { type: "write_stdin"; pid: number; text: string }
   | { type: "kill_process"; pid: number };
 
 type OutMsg =
@@ -19,6 +21,10 @@ type OutMsg =
   | { type: "file_data"; requestId: string; path: string; bytes: ArrayBuffer }
   | { type: "pe_info"; requestId: string; info: PeInfo }
   | { type: "process_launched"; requestId: string; pid: number; info: ProcessInfo }
+  | { type: "process_stdout"; pid: number; text: string }
+  | { type: "process_stderr"; pid: number; text: string }
+  | { type: "process_exited"; pid: number; exit_code: number }
+  | { type: "process_crashed"; pid: number; reason: string }
   | { type: "logs"; events: LogEvent[] };
 
 export interface DirectoryEntry {
@@ -75,6 +81,14 @@ export interface PeInfo {
   imports: PeImportModule[];
 }
 
+export interface SliceResult {
+  pid: number;
+  stdout: string;
+  stderr: string;
+  state: ProcessInfo["state"];
+  instructions: number;
+}
+
 let runtime: Runtime | null = null;
 
 function send(msg: OutMsg) {
@@ -86,6 +100,33 @@ function flushLogs() {
   const events = runtime.drainLogs() as LogEvent[];
   if (events.length > 0) {
     send({ type: "logs", events });
+  }
+}
+
+async function runProcessLoop(pid: number) {
+  if (!runtime) return;
+  const BUDGET = 50_000;
+
+  while (true) {
+    const result = runtime.runProcessSlice(pid, BUDGET) as SliceResult;
+    flushLogs();
+
+    if (result.stdout) send({ type: "process_stdout", pid, text: result.stdout });
+    if (result.stderr) send({ type: "process_stderr", pid, text: result.stderr });
+
+    const s = result.state.state;
+    if (s === "exited") {
+      send({ type: "process_exited", pid, exit_code: (result.state as { state: "exited"; exit_code: number }).exit_code });
+      break;
+    }
+    if (s === "crashed") {
+      send({ type: "process_crashed", pid, reason: (result.state as { state: "crashed"; reason: string }).reason });
+      break;
+    }
+    if (s !== "running" && s !== "created") break;
+
+    // yield to event loop so we don't block the worker
+    await new Promise<void>((r) => setTimeout(r, 0));
   }
 }
 
@@ -134,6 +175,10 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       flushLogs();
       const info = runtime.getProcessInfo(pid) as ProcessInfo;
       send({ type: "process_launched", requestId: msg.requestId, pid, info });
+    } else if (msg.type === "run_process") {
+      runProcessLoop(msg.pid);
+    } else if (msg.type === "write_stdin") {
+      runtime.writeProcessStdin(msg.pid, msg.text);
     } else if (msg.type === "kill_process") {
       runtime.killProcess(msg.pid);
       flushLogs();

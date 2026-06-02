@@ -24,6 +24,23 @@ export class RuntimeBridge {
     this.worker.postMessage({ type: "init" });
   }
 
+  // per-pid output callbacks, set by process console windows
+  private pidHandlers = new Map<number, {
+    stdout?: (text: string) => void;
+    stderr?: (text: string) => void;
+    exited?: (code: number) => void;
+    crashed?: (reason: string) => void;
+  }>();
+
+  onProcessOutput(pid: number, handlers: {
+    stdout?: (text: string) => void;
+    stderr?: (text: string) => void;
+    exited?: (code: number) => void;
+    crashed?: (reason: string) => void;
+  }) {
+    this.pidHandlers.set(pid, handlers);
+  }
+
   private handleMessage(msg: Record<string, unknown>) {
     if (msg.type === "ready") {
       this.readyResolve();
@@ -32,6 +49,29 @@ export class RuntimeBridge {
 
     if (msg.type === "logs") {
       appendLogs(msg.events as LogEvent[]);
+      return;
+    }
+
+    if (msg.type === "process_stdout") {
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.stdout?.(msg.text as string);
+      return;
+    }
+    if (msg.type === "process_stderr") {
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.stderr?.(msg.text as string);
+      return;
+    }
+    if (msg.type === "process_exited") {
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.exited?.(msg.exit_code as number);
+      this.pidHandlers.delete(msg.pid as number);
+      return;
+    }
+    if (msg.type === "process_crashed") {
+      const h = this.pidHandlers.get(msg.pid as number);
+      h?.crashed?.(msg.reason as string);
+      this.pidHandlers.delete(msg.pid as number);
       return;
     }
 
@@ -113,6 +153,14 @@ export class RuntimeBridge {
       });
       this.send({ type: "launch_process", requestId, path });
     });
+  }
+
+  runProcess(pid: number): void {
+    this.send({ type: "run_process", pid });
+  }
+
+  writeStdin(pid: number, text: string): void {
+    this.send({ type: "write_stdin", pid, text });
   }
 
   killProcess(pid: number): void {

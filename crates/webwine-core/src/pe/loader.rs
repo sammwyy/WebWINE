@@ -1,12 +1,12 @@
 use goblin::pe::PE;
 
-use crate::cpu::X86Cpu;
 use crate::error::{Result, VmError};
-use crate::handles::HandleTable;
 use crate::logs::{LogBuffer, LogLevel};
-use crate::memory::{GuestMemory, PageProt};
-use crate::process::{ConsoleStreams, GuestProcess, ProcessState};
-use crate::winapi::WinApiDispatcher;
+use crate::vm::cpu::X86Cpu;
+use crate::vm::handles::HandleTable;
+use crate::vm::memory::{GuestMemory, PageProt};
+use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState};
+use crate::winapi::WinApiRegistry;
 
 // Fixed virtual address layout
 const HEAP_BASE:   u32 = 0x1000_0000;
@@ -23,7 +23,7 @@ pub fn load_pe(
     bytes: &[u8],
     path: &str,
     pid: u32,
-    api: &mut WinApiDispatcher,
+    api: &mut WinApiRegistry,
     logs: &mut LogBuffer,
 ) -> Result<GuestProcess> {
     let pe = PE::parse(bytes)
@@ -83,7 +83,7 @@ pub fn load_pe(
     // resolve imports → trampoline addresses, patch IAT
     let mut import_count = 0usize;
     for import in &pe.imports {
-        let tramp_va = api.resolve(import.dll, &import.name);
+        let tramp_va = api.resolve_trampoline(import.dll, &import.name);
         let iat_va = image_base.wrapping_add(import.rva as u32);
         if mem.write_u32(iat_va, tramp_va).is_ok() {
             import_count += 1;
@@ -139,6 +139,7 @@ pub fn load_pe(
         image_base,
         entry_point,
         heap_base: HEAP_BASE,
+        heap_next: HEAP_BASE,
         memory: mem,
         cpu,
         handles: HandleTable::new(pid),
@@ -151,7 +152,7 @@ pub fn load_pe(
 mod tests {
     use super::*;
     use crate::logs::LogBuffer;
-    use crate::winapi::WinApiDispatcher;
+    use crate::winapi::WinApiRegistry;
 
     #[test]
     fn loads_hello_world_sample() {
@@ -161,7 +162,7 @@ mod tests {
         );
         let Ok(bytes) = std::fs::read(path) else { return; };
 
-        let mut api  = WinApiDispatcher::new();
+        let mut api  = WinApiRegistry::new();
         let mut logs = LogBuffer::default();
 
         let proc = load_pe(&bytes, path, 1, &mut api, &mut logs).expect("load PE");

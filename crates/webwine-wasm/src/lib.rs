@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo};
+use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult};
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -99,6 +99,21 @@ impl Runtime {
     pub fn kill_process(&mut self, pid: u32) -> Result<(), JsValue> {
         self.vm
             .kill_process(pid)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = runProcessSlice)]
+    pub fn run_process_slice(&mut self, pid: u32, budget: u32) -> Result<JsValue, JsValue> {
+        let result: SliceResult = self.vm
+            .run_process_slice(pid, budget)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = writeProcessStdin)]
+    pub fn write_process_stdin(&mut self, pid: u32, text: &str) -> Result<(), JsValue> {
+        self.vm
+            .write_stdin(pid, text)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
