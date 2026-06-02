@@ -14,6 +14,11 @@ pub type HandlerFn = fn(&mut ApiContext) -> Handled;
 
 pub struct WinApiRegistry {
     handlers: HashMap<(String, String), HandlerFn>,
+    // function-name -> handler, used as a fallback when the exact (dll, name)
+    // pair isn't registered. CRT/Win32 names are effectively globally unique,
+    // and Windows routes the same function through many apiset DLLs
+    // (api-ms-win-crt-runtime-l1-1-0.dll, ucrtbase.dll, msvcrt.dll, …).
+    by_func:  HashMap<String, HandlerFn>,
     by_va:    HashMap<u32, (String, String)>,
     by_name:  HashMap<(String, String), u32>,
     next:     u32,
@@ -23,6 +28,7 @@ impl WinApiRegistry {
     pub fn new() -> Self {
         WinApiRegistry {
             handlers: HashMap::new(),
+            by_func:  HashMap::new(),
             by_va:    HashMap::new(),
             by_name:  HashMap::new(),
             next:     TRAMPOLINE_BASE,
@@ -33,6 +39,9 @@ impl WinApiRegistry {
     pub fn add(&mut self, dll: &str, name: &str, f: HandlerFn) {
         let key = (dll.to_ascii_uppercase(), name.to_string());
         self.handlers.insert(key, f);
+        // First registration of a name wins for the fallback map; explicit
+        // (dll, name) matches always take precedence in dispatch anyway.
+        self.by_func.entry(name.to_string()).or_insert(f);
     }
 
     /// Allocate (or return existing) trampoline VA for a (dll, name) pair.
@@ -52,7 +61,8 @@ impl WinApiRegistry {
 
     pub fn dispatch(&self, va: u32, ctx: &mut ApiContext) -> Option<Handled> {
         let key = self.by_va.get(&va)?;
-        let f = self.handlers.get(key);
+        // Exact (dll, name) first, then fall back to name-only.
+        let f = self.handlers.get(key).or_else(|| self.by_func.get(&key.1));
         Some(match f {
             Some(handler) => handler(ctx),
             None => Handled::Unimplemented,

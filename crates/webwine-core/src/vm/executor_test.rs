@@ -18,9 +18,10 @@ fn run_to_completion(vm: &mut WebWineVm, pid: u32) -> String {
 fn runs_minimal_sample() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../samples/target/i686-pc-windows-msvc/debug/minimal.exe"
+        "/../../samples/target/i686-pc-windows-msvc/debug/minimal.exe"
     );
-    let Ok(bytes) = std::fs::read(path) else { return; };
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|e| panic!("sample not built ({path}): {e}"));
 
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\minimal.exe", bytes)

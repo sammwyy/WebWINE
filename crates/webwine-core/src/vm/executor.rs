@@ -461,12 +461,19 @@ fn mem_size(instr: &Instruction) -> usize {
 }
 
 fn calc_addr(instr: &Instruction, cpu: &X86Cpu) -> u32 {
-    let base = read_reg(instr.memory_base(), cpu);
+    let base  = read_reg(instr.memory_base(),  cpu);
     let index = read_reg(instr.memory_index(), cpu);
     let scale = instr.memory_index_scale();
-    let disp = instr.memory_displacement32();
-    base.wrapping_add(index.wrapping_mul(scale))
-        .wrapping_add(disp)
+    let disp  = instr.memory_displacement32();
+    let flat  = base.wrapping_add(index.wrapping_mul(scale)).wrapping_add(disp);
+
+    // Apply segment base for FS-relative accesses (TEB).
+    // GS is not used in 32-bit mode; other segments use flat base 0.
+    if instr.memory_segment() == Register::FS {
+        crate::pe::loader::TEB_VA.wrapping_add(flat)
+    } else {
+        flat
+    }
 }
 
 // Read operand value (op_idx = 0 for dst, 1 for src usually)

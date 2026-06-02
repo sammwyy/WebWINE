@@ -15,9 +15,14 @@ const STACK_BASE:  u32 = 0x6FF0_0000;
 const STACK_SIZE:  u32 = 0x0010_0000; // 1 MB
 const STACK_TOP:   u32 = STACK_BASE + STACK_SIZE;
 const PEB_VA:      u32 = 0x7FFD_F000;
-const TEB_VA:      u32 = 0x7FFD_E000;
-const TRAMP_REGION: u32 = 0x7FFE_0000;
+pub const TEB_VA:  u32 = 0x7FFD_E000;
+const TRAMP_REGION:      u32 = 0x7FFE_0000;
 const TRAMP_REGION_SIZE: u32 = 0x0001_0000;
+
+// Sub-regions inside the PEB page (4096 bytes starting at PEB_VA).
+// We reuse the same physical allocation to avoid extra memory::allocate calls.
+const TLS_ARRAY_VA:   u32 = PEB_VA + 0x600; // 128 TLS slots (512 bytes)
+const PROC_PARAMS_VA: u32 = PEB_VA + 0x800; // RTL_USER_PROCESS_PARAMETERS stub
 
 pub fn load_pe(
     bytes: &[u8],
@@ -77,18 +82,14 @@ pub fn load_pe(
             &format!("[pe] section {name:<8} va=0x{va:08X} vsz=0x{vsz:X} rsz=0x{rsz:X}"), None);
     }
 
-    // relocations — only needed if we loaded at a different base
-    // For PE32 we load at preferred base so skip for now
+    // relocations — only needed if we loaded at a different base.
+    // We load at the preferred base, so none are required.
 
-    // resolve imports → trampoline addresses, patch IAT
-    let mut import_count = 0usize;
-    for import in &pe.imports {
-        let tramp_va = api.resolve_trampoline(import.dll, &import.name);
-        let iat_va = image_base.wrapping_add(import.rva as u32);
-        if mem.write_u32(iat_va, tramp_va).is_ok() {
-            import_count += 1;
-        }
-    }
+    // Resolve imports by walking the import directory ourselves and patching the
+    // FirstThunk (IAT) — the table the CPU actually calls through. goblin's
+    // high-level `imports` reports OriginalFirstThunk (ILT) RVAs, which are NOT
+    // what `call dword ptr [iat]` reads.
+    let import_count = patch_imports(&pe, image_base, &mut mem, api, logs)?;
     logs.log(LogLevel::Info, "loader",
         &format!("[loader] resolved {import_count} imports"), None);
 
@@ -107,17 +108,47 @@ pub fn load_pe(
     logs.log(LogLevel::Debug, "loader",
         &format!("[loader] heap  0x{HEAP_BASE:08X}+0x{HEAP_SIZE:X}"), None);
 
-    // PEB (minimal)
+    // PEB — one page holds PEB proper + TLS array + process-parameters stub
     mem.allocate(PEB_VA, 0x1000, PageProt::RW)?;
-    mem.write_u32(PEB_VA + 0x08, image_base)?; // ImageBaseAddress
+    mem.write_u32(PEB_VA + 0x04, 0)?;               // Mutant = none
+    mem.write_u32(PEB_VA + 0x08, image_base)?;      // ImageBaseAddress
+    mem.write_u32(PEB_VA + 0x0C, 0)?;               // Ldr = null (tolerated for simple progs)
+    mem.write_u32(PEB_VA + 0x10, PROC_PARAMS_VA)?;  // ProcessParameters
+    mem.write_u32(PEB_VA + 0x1C, HEAP_BASE)?;       // ProcessHeap
+    mem.write_u32(PEB_VA + 0x18, 0)?;               // SubSystemData
+    mem.write_u32(PEB_VA + 0x68, 0)?;               // NtGlobalFlag = 0 (not debugging)
 
-    // TEB (minimal NT_TIB + PEB pointer)
+    // Minimal RTL_USER_PROCESS_PARAMETERS at PROC_PARAMS_VA
+    // Just enough for the CRT not to dereference null for I/O handles & command line.
+    let cmd_wide: Vec<u8> = "program.exe\0"
+        .encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let cmd_buf_va = PROC_PARAMS_VA + 0x100;
+    mem.write_bytes(cmd_buf_va, &cmd_wide)?;
+    let cmd_len = (cmd_wide.len() - 2) as u16; // chars, no null
+    mem.write_u32(PROC_PARAMS_VA + 0x00, 0x200)?;          // MaximumLength
+    mem.write_u32(PROC_PARAMS_VA + 0x04, 0x200)?;          // Length
+    mem.write_u32(PROC_PARAMS_VA + 0x18, 0xFFFF_FFF6)?;    // StandardInput  = STDIN handle
+    mem.write_u32(PROC_PARAMS_VA + 0x1C, 0xFFFF_FFF5)?;    // StandardOutput = STDOUT handle
+    mem.write_u32(PROC_PARAMS_VA + 0x20, 0xFFFF_FFF4)?;    // StandardError  = STDERR handle
+    // CommandLine UNICODE_STRING at +0x40
+    mem.write_u16(PROC_PARAMS_VA + 0x40, cmd_len * 2)?;    // Length (bytes)
+    mem.write_u16(PROC_PARAMS_VA + 0x42, cmd_len * 2 + 2)?;// MaximumLength
+    mem.write_u32(PROC_PARAMS_VA + 0x44, cmd_buf_va)?;     // Buffer
+
+    // TLS slot array inside the PEB page
+    // TLS_ARRAY_VA: 128 null pointers (each slot initialised on first TlsSetValue)
+
+    // TEB — one page
     mem.allocate(TEB_VA, 0x1000, PageProt::RW)?;
-    mem.write_u32(TEB_VA + 0x00, 0xFFFF_FFFF)?; // ExceptionList = end sentinel
-    mem.write_u32(TEB_VA + 0x04, STACK_TOP)?;   // StackBase (highest addr)
-    mem.write_u32(TEB_VA + 0x08, STACK_BASE)?;  // StackLimit
-    mem.write_u32(TEB_VA + 0x18, TEB_VA)?;      // Self pointer
-    mem.write_u32(TEB_VA + 0x30, PEB_VA)?;      // PEB
+    mem.write_u32(TEB_VA + 0x00, 0xFFFF_FFFF)?;    // ExceptionList = end sentinel
+    mem.write_u32(TEB_VA + 0x04, STACK_TOP)?;      // StackBase (highest address)
+    mem.write_u32(TEB_VA + 0x08, STACK_BASE)?;     // StackLimit
+    mem.write_u32(TEB_VA + 0x18, TEB_VA)?;         // Self pointer
+    mem.write_u32(TEB_VA + 0x20, pid)?;            // ClientId.UniqueProcess (pid)
+    mem.write_u32(TEB_VA + 0x24, pid * 100)?;      // ClientId.UniqueThread
+    mem.write_u32(TEB_VA + 0x2C, TLS_ARRAY_VA)?;   // ThreadLocalStoragePointer
+    mem.write_u32(TEB_VA + 0x30, PEB_VA)?;         // ProcessEnvironmentBlock
+    mem.write_u32(TEB_VA + 0x34, 0)?;              // LastErrorValue = 0
 
     // CPU initial state
     let mut cpu = X86Cpu::new();
@@ -146,6 +177,75 @@ pub fn load_pe(
         console: ConsoleStreams::new(),
         state: ProcessState::Created,
     })
+}
+
+/// Walk the PE import directory and patch each FirstThunk (IAT) slot with a
+/// trampoline VA. Reads thunk names from the OriginalFirstThunk (ILT) when
+/// present, falling back to the FirstThunk itself for bound-by-name images.
+fn patch_imports(
+    pe: &PE,
+    image_base: u32,
+    mem: &mut GuestMemory,
+    api: &mut WinApiRegistry,
+    logs: &mut LogBuffer,
+) -> Result<usize> {
+    let oh = match pe.header.optional_header {
+        Some(oh) => oh,
+        None => return Ok(0),
+    };
+    let import_dir = match oh.data_directories.get_import_table() {
+        Some(d) if d.virtual_address != 0 => *d,
+        _ => return Ok(0),
+    };
+
+    const DESC_SIZE: u32 = 20; // IMAGE_IMPORT_DESCRIPTOR
+    let mut count = 0usize;
+    let mut desc_va = image_base + import_dir.virtual_address;
+
+    loop {
+        let oft  = mem.read_u32(desc_va).unwrap_or(0);          // OriginalFirstThunk (ILT)
+        let name = mem.read_u32(desc_va + 12).unwrap_or(0);     // DLL name RVA
+        let ft   = mem.read_u32(desc_va + 16).unwrap_or(0);     // FirstThunk (IAT)
+
+        // Null descriptor terminates the array.
+        if oft == 0 && name == 0 && ft == 0 {
+            break;
+        }
+
+        let dll = mem.read_cstr(image_base + name);
+
+        // Names come from the lookup table; addresses get written to the IAT.
+        let lookup_rva = if oft != 0 { oft } else { ft };
+        let mut i = 0u32;
+        loop {
+            let thunk = mem.read_u32(image_base + lookup_rva + i * 4).unwrap_or(0);
+            if thunk == 0 {
+                break;
+            }
+
+            let func_name = if thunk & 0x8000_0000 != 0 {
+                // Import by ordinal
+                format!("#{}", thunk & 0xFFFF)
+            } else {
+                // Import by name: thunk -> IMAGE_IMPORT_BY_NAME { hint:u16, name:cstr }
+                mem.read_cstr(image_base + (thunk & 0x7FFF_FFFF) + 2)
+            };
+
+            let tramp = api.resolve_trampoline(&dll, &func_name);
+            let iat_slot = image_base + ft + i * 4;
+            if mem.write_u32(iat_slot, tramp).is_ok() {
+                count += 1;
+            }
+            i += 1;
+        }
+
+        logs.log(LogLevel::Debug, "loader",
+            &format!("[loader] {dll}: {i} imports patched"), None);
+
+        desc_va += DESC_SIZE;
+    }
+
+    Ok(count)
 }
 
 #[cfg(test)]

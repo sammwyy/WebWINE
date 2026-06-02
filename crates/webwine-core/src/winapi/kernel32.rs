@@ -21,24 +21,44 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "HeapReAlloc", heap_realloc),
         ("kernel32.dll", "HeapSize", heap_size),
         ("kernel32.dll", "HeapCreate", heap_create),
-        ("kernel32.dll", "HeapDestroy", stub_true_1),
+        ("kernel32.dll", "HeapDestroy", r1_1),
         ("kernel32.dll", "VirtualAlloc", virtual_alloc),
-        ("kernel32.dll", "VirtualFree", stub_true_1),
+        ("kernel32.dll", "VirtualFree", r1_3),
         ("kernel32.dll", "VirtualProtect", virtual_protect),
-        ("kernel32.dll", "VirtualQuery", stub_zero_1),
+        ("kernel32.dll", "VirtualQuery", r0_3),
         ("kernel32.dll", "GetModuleHandleA", get_module_handle_a),
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
-        ("kernel32.dll", "GetModuleFileNameW", stub_zero_1),
-        ("kernel32.dll", "GetProcAddress", stub_zero_1),
-        ("kernel32.dll", "LoadLibraryA", stub_zero_1),
-        ("kernel32.dll", "LoadLibraryW", stub_zero_1),
-        ("kernel32.dll", "FreeLibrary", stub_true_1),
-        ("kernel32.dll", "IsDebuggerPresent", stub_zero_0),
+        ("kernel32.dll", "GetModuleFileNameW", r0_3),
+        ("kernel32.dll", "GetProcAddress", r0_2),
+        ("kernel32.dll", "LoadLibraryA", r0_1),
+        ("kernel32.dll", "LoadLibraryW", r0_1),
+        ("kernel32.dll", "LoadLibraryExW", r0_3),
+        ("kernel32.dll", "FreeLibrary", r1_1),
+        ("kernel32.dll", "IsDebuggerPresent", r0_0),
+        ("kernel32.dll", "IsProcessorFeaturePresent", r1_1),
+        ("kernel32.dll", "AddVectoredExceptionHandler", r1_2),
+        ("kernel32.dll", "RemoveVectoredExceptionHandler", r1_1),
+        ("kernel32.dll", "SetThreadStackGuarantee", r1_1),
+        ("kernel32.dll", "GetModuleHandleExW", get_module_handle_ex),
+        ("kernel32.dll", "GetModuleHandleExA", get_module_handle_ex),
+        ("kernel32.dll", "GetSystemTimePreciseAsFileTime", get_system_time),
+        ("kernel32.dll", "InitOnceExecuteOnce", r1_4),
+        ("kernel32.dll", "AcquireSRWLockExclusive", r0_1),
+        ("kernel32.dll", "ReleaseSRWLockExclusive", r0_1),
+        ("kernel32.dll", "AcquireSRWLockShared", r0_1),
+        ("kernel32.dll", "ReleaseSRWLockShared", r0_1),
+        ("kernel32.dll", "TryAcquireSRWLockExclusive", r1_1),
+        ("kernel32.dll", "InitializeSRWLock", r0_1),
+        ("kernel32.dll", "FlsAlloc", r0_1),
+        ("kernel32.dll", "FlsSetValue", tls_set),
+        ("kernel32.dll", "FlsGetValue", tls_get),
+        ("kernel32.dll", "FlsFree", r1_1),
+        ("kernel32.dll", "GetProcessHeaps", r0_2),
         ("kernel32.dll", "GetCommandLineA", get_command_line_a),
         ("kernel32.dll", "GetCommandLineW", get_command_line_w),
         ("kernel32.dll", "GetStartupInfoA", get_startup_info_a),
-        ("kernel32.dll", "GetStartupInfoW", stub_void_1),
+        ("kernel32.dll", "GetStartupInfoW", r0_1),
         (
             "kernel32.dll",
             "GetCurrentProcessId",
@@ -47,7 +67,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetCurrentThreadId", get_current_thread_id),
         ("kernel32.dll", "GetCurrentProcess", get_current_process),
         ("kernel32.dll", "GetCurrentThread", get_current_thread),
-        ("kernel32.dll", "GetSystemInfo", stub_void_1),
+        ("kernel32.dll", "GetSystemInfo", r0_1),
         ("kernel32.dll", "GetSystemTimeAsFileTime", get_system_time),
         (
             "kernel32.dll",
@@ -55,30 +75,27 @@ pub fn register(r: &mut WinApiRegistry) {
             query_perf_counter,
         ),
         ("kernel32.dll", "QueryPerformanceFrequency", query_perf_freq),
-        ("kernel32.dll", "GetTickCount", stub_zero_0),
-        ("kernel32.dll", "GetTickCount64", stub_zero_0),
-        ("kernel32.dll", "FlushFileBuffers", stub_true_1),
-        ("kernel32.dll", "SetFilePointer", stub_zero_1),
-        ("kernel32.dll", "SetUnhandledExceptionFilter", stub_zero_1),
-        ("kernel32.dll", "UnhandledExceptionFilter", stub_zero_1),
-        ("kernel32.dll", "GetEnvironmentStringsW", stub_zero_0),
-        ("kernel32.dll", "FreeEnvironmentStringsW", stub_true_1),
-        ("kernel32.dll", "GetEnvironmentStringsA", stub_zero_0),
-        ("kernel32.dll", "FreeEnvironmentStringsA", stub_true_1),
-        ("kernel32.dll", "InitializeCriticalSection", stub_void_1),
-        (
-            "kernel32.dll",
-            "InitializeCriticalSectionAndSpinCount",
-            stub_true_2,
-        ),
-        ("kernel32.dll", "DeleteCriticalSection", stub_void_1),
-        ("kernel32.dll", "EnterCriticalSection", stub_void_1),
-        ("kernel32.dll", "LeaveCriticalSection", stub_void_1),
-        ("kernel32.dll", "TryEnterCriticalSection", stub_true_1),
+        ("kernel32.dll", "GetTickCount", r0_0),
+        ("kernel32.dll", "GetTickCount64", r0_0),
+        ("kernel32.dll", "FlushFileBuffers", r1_1),
+        ("kernel32.dll", "SetFilePointer", r0_4),
+        ("kernel32.dll", "SetUnhandledExceptionFilter", r0_1),
+        ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
+        ("kernel32.dll", "GetEnvironmentStringsW", r0_0),
+        ("kernel32.dll", "FreeEnvironmentStringsW", r1_1),
+        ("kernel32.dll", "GetEnvironmentStringsA", r0_0),
+        ("kernel32.dll", "FreeEnvironmentStringsA", r1_1),
+        ("kernel32.dll", "InitializeCriticalSection", r0_1),
+        ("kernel32.dll", "InitializeCriticalSectionAndSpinCount", r1_2),
+        ("kernel32.dll", "InitializeCriticalSectionEx", r1_3),
+        ("kernel32.dll", "DeleteCriticalSection", r0_1),
+        ("kernel32.dll", "EnterCriticalSection", r0_1),
+        ("kernel32.dll", "LeaveCriticalSection", r0_1),
+        ("kernel32.dll", "TryEnterCriticalSection", r1_1),
         ("kernel32.dll", "TlsAlloc", tls_alloc),
         ("kernel32.dll", "TlsSetValue", tls_set),
         ("kernel32.dll", "TlsGetValue", tls_get),
-        ("kernel32.dll", "TlsFree", stub_true_1),
+        ("kernel32.dll", "TlsFree", r1_1),
         ("kernel32.dll", "GetConsoleCP", |c| {
             c.ret_stdcall(437, 0);
             Handled::Ok
@@ -87,8 +104,9 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(437, 0);
             Handled::Ok
         }),
-        ("kernel32.dll", "GetConsoleMode", stub_false_2),
-        ("kernel32.dll", "SetConsoleCtrlHandler", stub_true_2),
+        ("kernel32.dll", "GetConsoleMode", r0_2),
+        ("kernel32.dll", "SetConsoleMode", r1_2),
+        ("kernel32.dll", "SetConsoleCtrlHandler", r1_2),
         ("kernel32.dll", "MultiByteToWideChar", multibyte_to_widechar),
         ("kernel32.dll", "WideCharToMultiByte", widechar_to_multibyte),
         ("kernel32.dll", "GetACP", |c| {
@@ -99,26 +117,28 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(437, 0);
             Handled::Ok
         }),
-        ("kernel32.dll", "IsValidCodePage", stub_true_1),
-        ("kernel32.dll", "GetCPInfo", stub_false_2),
-        ("kernel32.dll", "LCMapStringW", stub_zero_1),
+        ("kernel32.dll", "IsValidCodePage", r1_1),
+        ("kernel32.dll", "GetCPInfo", r0_2),
+        ("kernel32.dll", "LCMapStringW", r0_6),
+        ("kernel32.dll", "LCMapStringEx", r0_8),
         ("kernel32.dll", "FindFirstFileA", |c| {
             c.ret_stdcall(INVALID_HANDLE, 2);
             Handled::Ok
         }),
-        ("kernel32.dll", "FindClose", stub_false_1),
+        ("kernel32.dll", "FindClose", r1_1),
         ("kernel32.dll", "CreateFileA", stub_invalid_handle),
         ("kernel32.dll", "CreateFileW", stub_invalid_handle),
         ("kernel32.dll", "GetFileType", get_file_type),
-        ("kernel32.dll", "SetHandleInformation", stub_true_2),
+        ("kernel32.dll", "SetHandleInformation", r1_3),
         ("kernel32.dll", "DuplicateHandle", dup_handle),
         ("kernel32.dll", "TerminateProcess", terminate_process),
         ("kernel32.dll", "RaiseException", raise_exception),
-        ("kernel32.dll", "GetStringTypeW", stub_false_1),
-        ("kernel32.dll", "FormatMessageA", stub_zero_1),
-        ("kernel32.dll", "FormatMessageW", stub_zero_1),
+        ("kernel32.dll", "GetStringTypeW", r0_4),
+        ("kernel32.dll", "GetStringTypeA", r0_5),
+        ("kernel32.dll", "FormatMessageA", r0_7),
+        ("kernel32.dll", "FormatMessageW", r0_7),
         ("kernel32.dll", "OutputDebugStringA", output_debug_string_a),
-        ("kernel32.dll", "OutputDebugStringW", stub_void_1),
+        ("kernel32.dll", "OutputDebugStringW", r0_1),
         ("kernel32.dll", "EncodePointer", |c| {
             let p = c.arg(0);
             c.ret_stdcall(p ^ 0xDEAD, 1);
@@ -129,14 +149,15 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(p ^ 0xDEAD, 1);
             Handled::Ok
         }),
-        ("kernel32.dll", "Sleep", stub_void_1),
-        ("kernel32.dll", "WaitForSingleObject", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }), // WAIT_OBJECT_0
-        ("kernel32.dll", "CreateEventA", stub_zero_1),
-        ("kernel32.dll", "CreateMutexA", stub_zero_1),
-        ("kernel32.dll", "ReleaseMutex", stub_true_1),
+        ("kernel32.dll", "Sleep", r0_1),
+        ("kernel32.dll", "WaitForSingleObject", r0_2), // WAIT_OBJECT_0
+        ("kernel32.dll", "CreateEventA", r0_4),
+        ("kernel32.dll", "CreateEventW", r0_4),
+        ("kernel32.dll", "CreateMutexA", r0_3),
+        ("kernel32.dll", "CreateMutexW", r0_3),
+        ("kernel32.dll", "ReleaseMutex", r1_1),
+        ("kernel32.dll", "SetEvent", r1_1),
+        ("kernel32.dll", "ResetEvent", r1_1),
         ("kernel32.dll", "InterlockedIncrement", interlocked_inc),
         ("kernel32.dll", "InterlockedDecrement", interlocked_dec),
         ("kernel32.dll", "InterlockedExchange", interlocked_xchg),
@@ -334,6 +355,15 @@ fn get_module_handle_a(ctx: &mut ApiContext) -> Handled {
 
 fn get_module_handle_w(ctx: &mut ApiContext) -> Handled {
     get_module_handle_a(ctx)
+}
+
+// GetModuleHandleEx(flags, name, &out_module) — write image base, return TRUE
+fn get_module_handle_ex(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(2);
+    let base = ctx.memory.regions.first().map(|r| r.base).unwrap_or(0x0040_0000);
+    if out != 0 { let _ = ctx.memory.write_u32(out, base); }
+    ctx.ret_stdcall(1, 3);
+    Handled::Ok
 }
 
 fn get_module_filename_a(ctx: &mut ApiContext) -> Handled {
@@ -556,38 +586,23 @@ fn interlocked_cmpxchg(ctx: &mut ApiContext) -> Handled {
 
 // stub helpers
 
-fn stub_zero_0(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 0);
-    Handled::Ok
+// Stub family: return a constant in EAX and clean exactly `n` stdcall args.
+// Naming: r{val}_{nargs}. Correct arg counts matter — a wrong count drifts
+// the guest stack and eventually derails a `ret`.
+macro_rules! stubs {
+    ($($name:ident => ($val:expr, $n:expr)),* $(,)?) => {
+        $( #[allow(dead_code)] fn $name(c: &mut ApiContext) -> Handled { c.ret_stdcall($val, $n); Handled::Ok } )*
+    };
 }
-fn stub_zero_1(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 1);
-    Handled::Ok
+
+stubs! {
+    r0_0 => (0, 0), r0_1 => (0, 1), r0_2 => (0, 2), r0_3 => (0, 3),
+    r0_4 => (0, 4), r0_5 => (0, 5), r0_6 => (0, 6), r0_7 => (0, 7),
+    r0_8 => (0, 8),
+    r1_0 => (1, 0), r1_1 => (1, 1), r1_2 => (1, 2), r1_3 => (1, 3),
+    r1_4 => (1, 4), r1_6 => (1, 6), r1_7 => (1, 7),
 }
-fn stub_true_1(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(1, 1);
-    Handled::Ok
-}
-fn stub_true_2(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(1, 2);
-    Handled::Ok
-}
-fn stub_false_1(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 1);
-    Handled::Ok
-}
-fn stub_false_2(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 2);
-    Handled::Ok
-}
-fn stub_void_1(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 1);
-    Handled::Ok
-}
-fn stub_void_2(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(0, 2);
-    Handled::Ok
-}
+
 fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
     c.ret_stdcall(INVALID_HANDLE, 7);
     Handled::Ok
