@@ -39,40 +39,16 @@ pub fn run_slice(
             break;
         }
 
-        // trampoline check
         if proc.cpu.eip >= TRAMPOLINE_BASE {
-            let va = proc.cpu.eip;
-            let mut ctx = ApiContext {
-                cpu: &mut proc.cpu,
-                memory: &mut proc.memory,
-                handles: &mut proc.handles,
-                console: &mut proc.console,
-                heap_next: &mut proc.heap_next,
-                fs,
-                logs,
-                pid: proc.pid,
-            };
-            match api.dispatch(va, &mut ctx) {
-                Some(Handled::Ok) => {}
-                Some(Handled::ExitProcess(code)) => {
+            match handle_trampoline(proc, api, fs, logs, 0) {
+                Flow::Continue => {}
+                Flow::Exit(code) => {
                     proc.state = ProcessState::Exited { exit_code: code };
                     break;
                 }
-                Some(Handled::Unimplemented) | None => {
-                    let name = api
-                        .lookup_name(va)
-                        .map(|(d, n)| format!("{d}!{n}"))
-                        .unwrap_or_else(|| format!("0x{va:08X}"));
-                    logs.log(
-                        LogLevel::Warn,
-                        "api",
-                        &format!("[api] unimplemented: {name} — returning 0"),
-                        Some(proc.pid),
-                    );
-                    let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
-                    proc.cpu.esp = proc.cpu.esp.wrapping_add(4);
-                    proc.cpu.eax = 0;
-                    proc.cpu.eip = ret;
+                Flow::Fault(r) => {
+                    proc.state = ProcessState::Crashed { reason: r };
+                    break;
                 }
             }
             executed += 1;
@@ -104,6 +80,131 @@ pub fn run_slice(
     }
 
     Ok(SliceResult::done(proc))
+}
+
+/// Sentinel return address pushed before a nested guest call. Recognised by
+/// `call_guest_fn` to detect when the called function returns.
+const CALL_SENTINEL: u32 = 0xFFFF_FF00;
+
+enum Flow {
+    Continue,
+    Exit(u32),
+    Fault(String),
+}
+
+/// Handle one API trampoline at the current EIP. May recurse into guest code
+/// (for `_initterm`) via `call_guest_fn`. `depth` guards against runaway
+/// re-entrancy.
+fn handle_trampoline(
+    proc: &mut GuestProcess,
+    api: &WinApiRegistry,
+    fs: &mut VirtualFileSystem,
+    logs: &mut LogBuffer,
+    depth: u32,
+) -> Flow {
+    let va = proc.cpu.eip;
+    let result = {
+        let mut ctx = ApiContext {
+            cpu: &mut proc.cpu,
+            memory: &mut proc.memory,
+            handles: &mut proc.handles,
+            console: &mut proc.console,
+            heap_next: &mut proc.heap_next,
+            fs,
+            logs,
+            pid: proc.pid,
+        };
+        api.dispatch(va, &mut ctx)
+    };
+
+    match result {
+        Some(Handled::Ok) => Flow::Continue,
+        Some(Handled::ExitProcess(code)) => Flow::Exit(code),
+        Some(Handled::CallChain(funcs)) => {
+            if depth < 8 {
+                for pfn in funcs {
+                    match call_guest_fn(proc, api, fs, logs, pfn, depth + 1) {
+                        Flow::Continue => {}
+                        other => return other,
+                    }
+                }
+            }
+            // Return from the _initterm call itself (cdecl).
+            let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
+            proc.cpu.esp = proc.cpu.esp.wrapping_add(4);
+            proc.cpu.eax = 0;
+            proc.cpu.eip = ret;
+            Flow::Continue
+        }
+        Some(Handled::Unimplemented) | None => {
+            let name = api
+                .lookup_name(va)
+                .map(|(d, n)| format!("{d}!{n}"))
+                .unwrap_or_else(|| format!("0x{va:08X}"));
+            logs.log(
+                LogLevel::Warn,
+                "api",
+                &format!("[api] unimplemented: {name} — returning 0"),
+                Some(proc.pid),
+            );
+            let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
+            proc.cpu.esp = proc.cpu.esp.wrapping_add(4);
+            proc.cpu.eax = 0;
+            proc.cpu.eip = ret;
+            Flow::Continue
+        }
+    }
+}
+
+/// Call a guest function (cdecl, no args) and run until it returns.
+/// Pushes a sentinel return address; the matching `ret` lands on it.
+fn call_guest_fn(
+    proc: &mut GuestProcess,
+    api: &WinApiRegistry,
+    fs: &mut VirtualFileSystem,
+    logs: &mut LogBuffer,
+    target: u32,
+    depth: u32,
+) -> Flow {
+    proc.cpu.esp = proc.cpu.esp.wrapping_sub(4);
+    if proc.memory.write_u32(proc.cpu.esp, CALL_SENTINEL).is_err() {
+        return Flow::Fault("stack overflow setting up init call".into());
+    }
+    proc.cpu.eip = target;
+
+    let mut budget = 20_000_000u32;
+    loop {
+        if proc.cpu.eip == CALL_SENTINEL {
+            return Flow::Continue;
+        }
+        budget -= 1;
+        if budget == 0 {
+            return Flow::Fault(format!("init function 0x{target:08X} did not return"));
+        }
+
+        if proc.cpu.eip >= TRAMPOLINE_BASE {
+            match handle_trampoline(proc, api, fs, logs, depth) {
+                Flow::Continue => {}
+                other => return other,
+            }
+            continue;
+        }
+
+        match step(proc) {
+            StepResult::Continue => {}
+            StepResult::ApiTrap(va) => proc.cpu.eip = va,
+            StepResult::Exit(code) => return Flow::Exit(code),
+            StepResult::Fault(r) => {
+                logs.log(
+                    LogLevel::Error,
+                    "cpu",
+                    &format!("[cpu] fault in init at EIP=0x{:08X}: {r}", proc.cpu.eip),
+                    Some(proc.pid),
+                );
+                return Flow::Fault(r);
+            }
+        }
+    }
 }
 
 pub fn step(proc: &mut GuestProcess) -> StepResult {
@@ -138,6 +239,8 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         Movzx => exec_movzx(instr, cpu, mem),
         Movsx => exec_movsx(instr, cpu, mem),
         Xchg => exec_xchg(instr, cpu, mem),
+        Cmpxchg => exec_cmpxchg(instr, cpu, mem),
+        Xadd => exec_xadd(instr, cpu, mem),
         Lea => exec_lea(instr, cpu, mem),
 
         Push => exec_push(instr, cpu, mem),
@@ -613,6 +716,46 @@ fn exec_xchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> St
     if let Err(e) = write_op(instr, 1, a, cpu, mem) {
         return fault(e);
     }
+    StepResult::Continue
+}
+
+// CMPXCHG dst, src: compare accumulator (EAX/AX/AL) with dst.
+// If equal: ZF=1, dst = src. Else: ZF=0, accumulator = dst.
+fn exec_cmpxchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> StepResult {
+    let size = op_size(instr, 0);
+    let dst = match read_op(instr, 0, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let src = match read_op(instr, 1, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let acc = match size {
+        1 => cpu.eax & 0xFF,
+        2 => cpu.eax & 0xFFFF,
+        _ => cpu.eax,
+    };
+
+    // Flags reflect (acc - dst), like CMP.
+    let r = acc.wrapping_sub(dst);
+    if size == 1 { set_sub8(&mut cpu.eflags, acc as u8, dst as u8, r as u8); }
+    else         { set_sub32(&mut cpu.eflags, acc, dst, r); }
+
+    if acc == dst {
+        if let Err(e) = write_op(instr, 0, src, cpu, mem) { return fault(e); }
+    } else {
+        match size {
+            1 => cpu.eax = (cpu.eax & 0xFFFF_FF00) | (dst & 0xFF),
+            2 => cpu.eax = (cpu.eax & 0xFFFF_0000) | (dst & 0xFFFF),
+            _ => cpu.eax = dst,
+        }
+    }
+    StepResult::Continue
+}
+
+// XADD dst, src: temp = dst + src; src = dst; dst = temp.
+fn exec_xadd(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> StepResult {
+    let dst = match read_op(instr, 0, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let src = match read_op(instr, 1, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let sum = dst.wrapping_add(src);
+    set_add32(&mut cpu.eflags, dst, src, sum);
+    if let Err(e) = write_op(instr, 1, dst, cpu, mem) { return fault(e); }
+    if let Err(e) = write_op(instr, 0, sum, cpu, mem) { return fault(e); }
     StepResult::Continue
 }
 

@@ -64,6 +64,13 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "fputc", fputc),
         ("msvcrt.dll", "fputs", fputs),
         ("msvcrt.dll", "__set_app_type", stub_void_1_cdecl),
+        ("msvcrt.dll", "_set_app_type", stub_void_1_cdecl),
+        ("msvcrt.dll", "_configure_narrow_argv", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_configure_wide_argv", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_initialize_narrow_environment", stub_zero_cdecl_0),
+        ("msvcrt.dll", "_initialize_wide_environment", stub_zero_cdecl_0),
+        ("msvcrt.dll", "_get_initial_wide_environment", stub_zero_cdecl_0),
+        ("msvcrt.dll", "__p___wargv", p_argv),
         ("msvcrt.dll", "_set_fmode", stub_zero_cdecl_1),
         ("msvcrt.dll", "_setmode", stub_zero_cdecl_1),
         ("msvcrt.dll", "_set_new_mode", stub_zero_cdecl_1),
@@ -404,17 +411,33 @@ fn acrt_iob(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// _initterm(first, last): call each non-null fn pointer in [first, last).
+// We collect the pointers and hand them to the executor, which actually
+// runs them (a handler can't call guest code itself).
 fn initterm(ctx: &mut ApiContext) -> Handled {
-    // Walk table of function pointers and call each non-null one.
-    // Table is [start, end) of fn* in guest memory.
-    // We skip calling them to avoid complexity — return immediately.
-    ctx.ret_cdecl(0);
-    Handled::Ok
+    let first = ctx.arg(0);
+    let last  = ctx.arg(1);
+    Handled::CallChain(collect_init_table(ctx, first, last))
 }
 
 fn initterm_e(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_cdecl(0);
-    Handled::Ok
+    let first = ctx.arg(0);
+    let last  = ctx.arg(1);
+    Handled::CallChain(collect_init_table(ctx, first, last))
+}
+
+fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec<u32> {
+    let mut funcs = Vec::new();
+    let mut p = first;
+    while p < last {
+        if let Ok(pfn) = ctx.memory.read_u32(p) {
+            if pfn != 0 {
+                funcs.push(pfn);
+            }
+        }
+        p = p.wrapping_add(4);
+    }
+    funcs
 }
 
 fn p_argc(ctx: &mut ApiContext) -> Handled {

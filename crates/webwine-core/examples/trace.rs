@@ -65,9 +65,9 @@ fn main() {
             ProcessState::Crashed { reason } => {
                 println!("CRASH after {i} steps: {reason}\n--- last {} instructions ---", history.len());
                 for line in &history { println!("{line}"); }
-                println!("--- unimplemented APIs hit ---");
+                println!("--- cpu/api log ---");
                 for ev in vm.drain_logs() {
-                    if ev.target == "api" { println!("  {}", ev.message); }
+                    if ev.target == "cpu" || ev.target == "api" { println!("  [{}] {}", ev.target, ev.message); }
                 }
                 return;
             }
@@ -75,5 +75,7 @@ fn main() {
         }
     }
     println!("ran {max_steps} steps, no exit; eip=0x{:08X}", vm.processes.get(pid).unwrap().cpu.eip);
+    println!("--- last instructions ---");
+    for line in history.iter() { println!("{line}"); }
     println!("stdout so far: {stdout:?}");
 }

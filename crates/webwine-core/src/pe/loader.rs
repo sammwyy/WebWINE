@@ -24,6 +24,12 @@ const TRAMP_REGION_SIZE: u32 = 0x0001_0000;
 const TLS_ARRAY_VA:   u32 = PEB_VA + 0x600; // 128 TLS slots (512 bytes)
 const PROC_PARAMS_VA: u32 = PEB_VA + 0x800; // RTL_USER_PROCESS_PARAMETERS stub
 
+// Per-module thread-local storage block for the main thread. The CRT reads
+// TLS via `mov ecx, fs:[0x2C]; mov edx, [ecx + __tls_index*4]` and dereferences
+// the result, so slot 0 must point at a real, populated block.
+const TLS_DATA_VA:   u32 = 0x7FFD_0000;
+const TLS_DATA_SIZE: u32 = 0x0000_E000; // 56 KB, sits below the TEB at 0x7FFD_E000
+
 pub fn load_pe(
     bytes: &[u8],
     path: &str,
@@ -149,6 +155,30 @@ pub fn load_pe(
     mem.write_u32(TEB_VA + 0x2C, TLS_ARRAY_VA)?;   // ThreadLocalStoragePointer
     mem.write_u32(TEB_VA + 0x30, PEB_VA)?;         // ProcessEnvironmentBlock
     mem.write_u32(TEB_VA + 0x34, 0)?;              // LastErrorValue = 0
+
+    // Thread-local storage block. Allocate, point slot 0 at it, then copy the
+    // PE's TLS template (if any) and force the module's TLS index to 0.
+    mem.allocate(TLS_DATA_VA, TLS_DATA_SIZE, PageProt::RW)?;
+    mem.write_u32(TLS_ARRAY_VA, TLS_DATA_VA)?;
+    if let Some(tls) = oh.data_directories.get_tls_table() {
+        if tls.virtual_address != 0 {
+            let d = image_base + tls.virtual_address;
+            let raw_start = mem.read_u32(d).unwrap_or(0);      // StartAddressOfRawData (VA)
+            let raw_end   = mem.read_u32(d + 4).unwrap_or(0);  // EndAddressOfRawData (VA)
+            let idx_addr  = mem.read_u32(d + 8).unwrap_or(0);  // AddressOfIndex (VA)
+            let raw_size  = raw_end.saturating_sub(raw_start);
+            if raw_size > 0 && raw_size <= TLS_DATA_SIZE {
+                if let Ok(template) = mem.read_bytes(raw_start, raw_size as usize) {
+                    mem.write_bytes(TLS_DATA_VA, &template)?;
+                }
+            }
+            if idx_addr != 0 {
+                let _ = mem.write_u32(idx_addr, 0); // this module's TLS index = slot 0
+            }
+            logs.log(LogLevel::Debug, "loader",
+                &format!("[loader] TLS block 0x{TLS_DATA_VA:08X} template={raw_size}B"), None);
+        }
+    }
 
     // CPU initial state
     let mut cpu = X86Cpu::new();

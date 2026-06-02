@@ -9,6 +9,12 @@ pub enum Handled {
     Ok,
     ExitProcess(u32),
     Unimplemented,
+    /// The handler has NOT returned to the caller yet. The executor should call
+    /// each listed guest function (cdecl, no args) in order, then perform a
+    /// cdecl return from the current API call. Used by `_initterm` to run the
+    /// CRT's C++ initializer tables, which our synchronous handlers can't call
+    /// directly.
+    CallChain(Vec<u32>),
 }
 
 pub struct ApiContext<'a> {
