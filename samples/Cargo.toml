@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "01_hello_world",
+    "02_win32_msgbox",
+    "03_filesystem",
+    "04_processes",
+]
+resolver = "2"

@@ -1,0 +1,58 @@
+use wasm_bindgen::prelude::*;
+use webwine_core::{WebWineVm, DirEntry, LogEvent};
+
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+}
+
+#[wasm_bindgen]
+pub struct Runtime {
+    vm: WebWineVm,
+}
+
+#[wasm_bindgen]
+impl Runtime {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Runtime {
+        Runtime {
+            vm: WebWineVm::new(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = mountFile)]
+    pub fn mount_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), JsValue> {
+        self.vm
+            .mount_file(path, bytes.to_vec())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = createDirectory)]
+    pub fn create_directory(&mut self, path: &str) -> Result<(), JsValue> {
+        self.vm
+            .create_dir(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = listDirectory)]
+    pub fn list_directory(&self, path: &str) -> Result<JsValue, JsValue> {
+        let entries: Vec<DirEntry> = self
+            .vm
+            .list_dir(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&entries).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = readFile)]
+    pub fn read_file(&self, path: &str) -> Result<Vec<u8>, JsValue> {
+        self.vm
+            .read_file(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = drainLogs)]
+    pub fn drain_logs(&mut self) -> Result<JsValue, JsValue> {
+        let events: Vec<LogEvent> = self.vm.drain_logs();
+        serde_wasm_bindgen::to_value(&events).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+}

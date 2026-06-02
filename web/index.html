@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebWINE</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <div id="desktop">
+      <div id="icon-grid"></div>
+      <div id="window-layer"></div>
+    </div>
+
+    <div id="taskbar">
+      <button id="upload-btn">Upload Files</button>
+      <input id="file-input" type="file" multiple hidden />
+      <div id="taskbar-clock"></div>
+    </div>
+
+    <div id="log-panel">
+      <div id="log-panel-header">
+        <span>System Log</span>
+        <button id="log-clear-btn">Clear</button>
+      </div>
+      <div id="log-output"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
