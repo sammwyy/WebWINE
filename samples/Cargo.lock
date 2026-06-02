@@ -30,6 +30,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "spawn"
+version = "0.1.0"
+
+[[package]]
 name = "win32_msgbox"
 version = "0.1.0"
 dependencies = [

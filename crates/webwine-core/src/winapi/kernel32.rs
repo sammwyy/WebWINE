@@ -66,7 +66,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "InterlockedFlushSList", r0_1),
         ("kernel32.dll", "GetProcessAffinityMask", r1_3),
         ("kernel32.dll", "GetNativeSystemInfo", r0_1),
-        ("kernel32.dll", "GetCurrentDirectoryW", get_current_directory_w),
+        (
+            "kernel32.dll",
+            "GetCurrentDirectoryW",
+            get_current_directory_w,
+        ),
         ("kernel32.dll", "SetThreadErrorMode", r1_2),
         ("kernel32.dll", "GetThreadPriority", r0_1),
         ("kernel32.dll", "AddVectoredExceptionHandler", r1_2),
@@ -74,7 +78,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetThreadStackGuarantee", r1_1),
         ("kernel32.dll", "GetModuleHandleExW", get_module_handle_ex),
         ("kernel32.dll", "GetModuleHandleExA", get_module_handle_ex),
-        ("kernel32.dll", "GetSystemTimePreciseAsFileTime", get_system_time),
+        (
+            "kernel32.dll",
+            "GetSystemTimePreciseAsFileTime",
+            get_system_time,
+        ),
         ("kernel32.dll", "InitOnceExecuteOnce", r1_4),
         ("kernel32.dll", "AcquireSRWLockExclusive", r0_1),
         ("kernel32.dll", "ReleaseSRWLockExclusive", r0_1),
@@ -117,7 +125,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetEnvironmentVariableA", r0_3),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
-        ("kernel32.dll", "GetCurrentDirectoryA", get_current_directory_a),
+        (
+            "kernel32.dll",
+            "GetCurrentDirectoryA",
+            get_current_directory_a,
+        ),
         ("kernel32.dll", "GetFullPathNameW", get_full_path_name_w),
         ("kernel32.dll", "GetFullPathNameA", get_full_path_name_a),
         ("kernel32.dll", "GetFileAttributesW", get_file_attributes_w),
@@ -128,7 +140,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetEnvironmentStringsA", r0_0),
         ("kernel32.dll", "FreeEnvironmentStringsA", r1_1),
         ("kernel32.dll", "InitializeCriticalSection", r0_1),
-        ("kernel32.dll", "InitializeCriticalSectionAndSpinCount", r1_2),
+        (
+            "kernel32.dll",
+            "InitializeCriticalSectionAndSpinCount",
+            r1_2,
+        ),
         ("kernel32.dll", "InitializeCriticalSectionEx", r1_3),
         ("kernel32.dll", "DeleteCriticalSection", r0_1),
         ("kernel32.dll", "EnterCriticalSection", r0_1),
@@ -210,6 +226,9 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "ReleaseMutex", r1_1),
         ("kernel32.dll", "SetEvent", r1_1),
         ("kernel32.dll", "ResetEvent", r1_1),
+        ("kernel32.dll", "CreateProcessA", create_process_a),
+        ("kernel32.dll", "CreateProcessW", create_process_w),
+        ("kernel32.dll", "GetExitCodeProcess", get_exit_code_process),
         ("kernel32.dll", "InterlockedIncrement", interlocked_inc),
         ("kernel32.dll", "InterlockedDecrement", interlocked_dec),
         ("kernel32.dll", "InterlockedExchange", interlocked_xchg),
@@ -370,7 +389,7 @@ fn close_handle(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ── file APIs (Milestone 7) ──────────────────────────────────────────────────
+// file APIs (Milestone 7)
 
 const CREATE_NEW: u32 = 1;
 const CREATE_ALWAYS: u32 = 2;
@@ -405,7 +424,11 @@ fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
         }
     }
 
-    let h = ctx.handles.insert(KernelObject::VfsFile { path, cursor: 0, writable });
+    let h = ctx.handles.insert(KernelObject::VfsFile {
+        path,
+        cursor: 0,
+        writable,
+    });
     ctx.cpu.last_error = 0;
     ctx.ret_stdcall(h, nargs);
     Handled::Ok
@@ -452,7 +475,11 @@ fn set_file_pointer(ctx: &mut ApiContext) -> Handled {
             return Handled::Ok;
         }
     };
-    let base = match method { 1 => cur, 2 => size, _ => 0 };
+    let base = match method {
+        1 => cur,
+        2 => size,
+        _ => 0,
+    };
     let new_pos = (base + dist).max(0) as u64;
     if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(handle) {
         *cursor = new_pos;
@@ -522,6 +549,87 @@ fn get_file_attributes_a(ctx: &mut ApiContext) -> Handled {
 fn get_file_attributes_w(ctx: &mut ApiContext) -> Handled {
     let name = ctx.wstr(ctx.arg(0));
     get_file_attributes(ctx, name)
+}
+
+// CreateProcessA(appName, cmdLine, procAttr, threadAttr, inherit, flags, env,
+//                cwd, startupInfo, processInfo) — 10 args.
+fn create_process(ctx: &mut ApiContext, app: String, cmd: String) -> Handled {
+    let pi = ctx.arg(9); // lpProcessInformation
+
+    // Prefer lpApplicationName; otherwise take the first token of the command line.
+    let target = if !app.is_empty() {
+        app
+    } else {
+        first_token(&cmd)
+    };
+    let path = resolve_path(&target);
+
+    if !ctx.fs.node_exists(&path) {
+        ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
+        ctx.ret_stdcall(0, 10); // FALSE
+        return Handled::Ok;
+    }
+
+    let child = ctx.next_child_pid;
+    // Fill PROCESS_INFORMATION { hProcess, hThread, dwProcessId, dwThreadId }.
+    if pi != 0 {
+        let fake_proc = 0x0000_0F00 | child;
+        let _ = ctx.memory.write_u32(pi, fake_proc);
+        let _ = ctx.memory.write_u32(pi + 4, fake_proc | 0x1_0000);
+        let _ = ctx.memory.write_u32(pi + 8, child);
+        let _ = ctx.memory.write_u32(pi + 12, child * 100);
+    }
+    ctx.spawns
+        .push(crate::vm::process::SpawnRequest { path, pi_addr: pi });
+    ctx.cpu.last_error = 0;
+    ctx.ret_stdcall(1, 10); // TRUE
+    Handled::Ok
+}
+
+fn create_process_a(ctx: &mut ApiContext) -> Handled {
+    let app = if ctx.arg(0) != 0 {
+        ctx.cstr(ctx.arg(0))
+    } else {
+        String::new()
+    };
+    let cmd = if ctx.arg(1) != 0 {
+        ctx.cstr(ctx.arg(1))
+    } else {
+        String::new()
+    };
+    create_process(ctx, app, cmd)
+}
+
+fn create_process_w(ctx: &mut ApiContext) -> Handled {
+    let app = if ctx.arg(0) != 0 {
+        ctx.wstr(ctx.arg(0))
+    } else {
+        String::new()
+    };
+    let cmd = if ctx.arg(1) != 0 {
+        ctx.wstr(ctx.arg(1))
+    } else {
+        String::new()
+    };
+    create_process(ctx, app, cmd)
+}
+
+fn first_token(cmd: &str) -> String {
+    let cmd = cmd.trim();
+    if cmd.starts_with('"') {
+        cmd[1..].split('"').next().unwrap_or("").to_string()
+    } else {
+        cmd.split_whitespace().next().unwrap_or("").to_string()
+    }
+}
+
+fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    } // assume exited 0
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
 }
 
 // GetFullPathNameW(lpFileName, nBufferLength, lpBuffer, lpFilePart) — resolve
@@ -696,8 +804,15 @@ fn get_module_handle_w(ctx: &mut ApiContext) -> Handled {
 // GetModuleHandleEx(flags, name, &out_module) — write image base, return TRUE
 fn get_module_handle_ex(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(2);
-    let base = ctx.memory.regions.first().map(|r| r.base).unwrap_or(0x0040_0000);
-    if out != 0 { let _ = ctx.memory.write_u32(out, base); }
+    let base = ctx
+        .memory
+        .regions
+        .first()
+        .map(|r| r.base)
+        .unwrap_or(0x0040_0000);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, base);
+    }
     ctx.ret_stdcall(1, 3);
     Handled::Ok
 }

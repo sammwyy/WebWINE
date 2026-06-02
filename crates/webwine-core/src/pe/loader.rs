@@ -208,6 +208,8 @@ pub fn load_pe(
         console: ConsoleStreams::new(),
         ui_events: Vec::new(),
         gui: crate::vm::process::GuiState::new(),
+        spawns: Vec::new(),
+        next_child_pid: 0,
         state: ProcessState::Created,
     })
 }

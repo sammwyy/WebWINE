@@ -11,75 +11,121 @@ const CW_USEDEFAULT: u32 = 0x8000_0000;
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
-        ("user32.dll", "MessageBoxA",   msgbox_a),
-        ("user32.dll", "MessageBoxW",   msgbox_w),
+        ("user32.dll", "MessageBoxA", msgbox_a),
+        ("user32.dll", "MessageBoxW", msgbox_w),
         ("user32.dll", "MessageBoxExA", msgbox_a),
         ("user32.dll", "MessageBoxExW", msgbox_w),
-
-        ("user32.dll", "RegisterClassA",    register_class_a),
-        ("user32.dll", "RegisterClassW",    register_class_a),
-        ("user32.dll", "RegisterClassExA",  register_class_ex_a),
-        ("user32.dll", "RegisterClassExW",  register_class_ex_a),
-        ("user32.dll", "CreateWindowExA",   create_window_ex_a),
-        ("user32.dll", "CreateWindowExW",   create_window_ex_w),
-        ("user32.dll", "ShowWindow",        show_window),
-        ("user32.dll", "UpdateWindow",      update_window),
-        ("user32.dll", "DestroyWindow",     destroy_window),
-        ("user32.dll", "SetWindowTextA",    set_window_text_a),
-        ("user32.dll", "SetWindowTextW",    set_window_text_w),
-        ("user32.dll", "DefWindowProcA",    def_window_proc),
-        ("user32.dll", "DefWindowProcW",    def_window_proc),
-        ("user32.dll", "PostQuitMessage",   post_quit_message),
-        ("user32.dll", "GetMessageA",       get_message),
-        ("user32.dll", "GetMessageW",       get_message),
-        ("user32.dll", "PeekMessageA",      peek_message),
-        ("user32.dll", "PeekMessageW",      peek_message),
-        ("user32.dll", "TranslateMessage",  |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("user32.dll", "DispatchMessageA",  dispatch_message),
-        ("user32.dll", "DispatchMessageW",  dispatch_message),
-        ("user32.dll", "BeginPaint",        begin_paint),
-        ("user32.dll", "EndPaint",          |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "GetClientRect",     get_client_rect),
-        ("user32.dll", "InvalidateRect",    invalidate_rect),
-        ("user32.dll", "PostMessageA",      |c| { c.ret_stdcall(1, 4); Handled::Ok }),
-        ("user32.dll", "SendMessageA",      |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("user32.dll", "RegisterClassA", register_class_a),
+        ("user32.dll", "RegisterClassW", register_class_a),
+        ("user32.dll", "RegisterClassExA", register_class_ex_a),
+        ("user32.dll", "RegisterClassExW", register_class_ex_a),
+        ("user32.dll", "CreateWindowExA", create_window_ex_a),
+        ("user32.dll", "CreateWindowExW", create_window_ex_w),
+        ("user32.dll", "ShowWindow", show_window),
+        ("user32.dll", "UpdateWindow", update_window),
+        ("user32.dll", "DestroyWindow", destroy_window),
+        ("user32.dll", "SetWindowTextA", set_window_text_a),
+        ("user32.dll", "SetWindowTextW", set_window_text_w),
+        ("user32.dll", "DefWindowProcA", def_window_proc),
+        ("user32.dll", "DefWindowProcW", def_window_proc),
+        ("user32.dll", "PostQuitMessage", post_quit_message),
+        ("user32.dll", "GetMessageA", get_message),
+        ("user32.dll", "GetMessageW", get_message),
+        ("user32.dll", "PeekMessageA", peek_message),
+        ("user32.dll", "PeekMessageW", peek_message),
+        ("user32.dll", "TranslateMessage", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "DispatchMessageA", dispatch_message),
+        ("user32.dll", "DispatchMessageW", dispatch_message),
+        ("user32.dll", "BeginPaint", begin_paint),
+        ("user32.dll", "EndPaint", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetClientRect", get_client_rect),
+        ("user32.dll", "InvalidateRect", invalidate_rect),
+        ("user32.dll", "PostMessageA", |c| {
+            c.ret_stdcall(1, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "SendMessageA", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
         // common resource / paint stubs
-        ("user32.dll", "LoadCursorA",       |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadCursorW",       |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadIconA",         |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadIconW",         |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "GetSystemMetrics",  |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("user32.dll", "GetDC",             |c| { let h = c.arg(0); c.ret_stdcall(h, 1); Handled::Ok }),
-        ("user32.dll", "ReleaseDC",         |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "LoadCursorA", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadCursorW", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadIconA", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadIconW", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetSystemMetrics", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetDC", |c| {
+            let h = c.arg(0);
+            c.ret_stdcall(h, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "ReleaseDC", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
         // gdi32 text drawing
-        ("gdi32.dll",  "TextOutA",          text_out_a),
-        ("gdi32.dll",  "TextOutW",          text_out_w),
-        ("gdi32.dll",  "SetTextColor",      |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("gdi32.dll",  "SetBkMode",         |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("gdi32.dll",  "GetStockObject",    |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("gdi32.dll", "TextOutA", text_out_a),
+        ("gdi32.dll", "TextOutW", text_out_w),
+        ("gdi32.dll", "SetTextColor", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("gdi32.dll", "SetBkMode", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("gdi32.dll", "GetStockObject", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
     ];
-    for &(dll, name, f) in fns { r.add(dll, name, f); }
+    for &(dll, name, f) in fns {
+        r.add(dll, name, f);
+    }
 }
 
 fn msgbox_a(ctx: &mut ApiContext) -> Handled {
-    let text  = ctx.cstr(ctx.arg(1));
+    let text = ctx.cstr(ctx.arg(1));
     let title = ctx.cstr(ctx.arg(2));
     let style = ctx.arg(3);
-    ctx.ui_events.push(UiEvent::MessageBox { title, text, style });
+    ctx.ui_events
+        .push(UiEvent::MessageBox { title, text, style });
     ctx.ret_stdcall(1, 4);
     Handled::Ok
 }
 
 fn msgbox_w(ctx: &mut ApiContext) -> Handled {
-    let text  = ctx.wstr(ctx.arg(1));
+    let text = ctx.wstr(ctx.arg(1));
     let title = ctx.wstr(ctx.arg(2));
     let style = ctx.arg(3);
-    ctx.ui_events.push(UiEvent::MessageBox { title, text, style });
+    ctx.ui_events
+        .push(UiEvent::MessageBox { title, text, style });
     ctx.ret_stdcall(1, 4);
     Handled::Ok
 }
 
-// ── window classes ───────────────────────────────────────────────────────────
+// window classes
 
 // WNDCLASSA: style@0, lpfnWndProc@4, …, lpszClassName@36
 fn register_class_a(ctx: &mut ApiContext) -> Handled {
@@ -105,12 +151,16 @@ fn register_class_ex_a(ctx: &mut ApiContext) -> Handled {
 
 fn read_class_name(ctx: &ApiContext, ptr: u32) -> String {
     // Class name may be an atom (small integer) rather than a string pointer.
-    if ptr == 0 { return String::new(); }
-    if ptr < 0x1_0000 { return format!("#atom{ptr}"); }
+    if ptr == 0 {
+        return String::new();
+    }
+    if ptr < 0x1_0000 {
+        return format!("#atom{ptr}");
+    }
     ctx.cstr(ptr)
 }
 
-// ── window creation ──────────────────────────────────────────────────────────
+// window creation
 
 fn create_window_ex_a(ctx: &mut ApiContext) -> Handled {
     let class = read_class_name(ctx, ctx.arg(1));
@@ -133,39 +183,71 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
     let wndproc = ctx.gui.classes.get(&class).copied().unwrap_or(0);
     let hwnd = ctx.gui.next_hwnd;
     ctx.gui.next_hwnd += 4;
-    ctx.gui.windows.insert(hwnd, WindowEntry { wndproc, needs_paint: true, width: w, height: h });
+    ctx.gui.windows.insert(
+        hwnd,
+        WindowEntry {
+            wndproc,
+            needs_paint: true,
+            width: w,
+            height: h,
+        },
+    );
 
-    ctx.ui_events.push(UiEvent::CreateWindow { hwnd, title, x, y, width: w, height: h });
+    ctx.ui_events.push(UiEvent::CreateWindow {
+        hwnd,
+        title,
+        x,
+        y,
+        width: w,
+        height: h,
+    });
     ctx.ret_stdcall(hwnd, 12);
     Handled::Ok
 }
 
 fn norm_coord(v: u32, default: i32) -> i32 {
-    if v == CW_USEDEFAULT { default } else { v as i32 }
+    if v == CW_USEDEFAULT {
+        default
+    } else {
+        v as i32
+    }
 }
 fn norm_dim(v: u32, default: i32) -> i32 {
-    if v == CW_USEDEFAULT || v == 0 { default } else { v as i32 }
+    if v == CW_USEDEFAULT || v == 0 {
+        default
+    } else {
+        v as i32
+    }
 }
 
 fn show_window(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let cmd = ctx.arg(1);
-    ctx.ui_events.push(UiEvent::ShowWindow { hwnd, show: cmd != 0 });
-    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = true; }
+    ctx.ui_events.push(UiEvent::ShowWindow {
+        hwnd,
+        show: cmd != 0,
+    });
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        w.needs_paint = true;
+    }
     ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
 
 fn update_window(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
-    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = true; }
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        w.needs_paint = true;
+    }
     ctx.ret_stdcall(1, 1);
     Handled::Ok
 }
 
 fn invalidate_rect(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
-    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = true; }
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        w.needs_paint = true;
+    }
     ctx.ret_stdcall(1, 3);
     Handled::Ok
 }
@@ -174,9 +256,16 @@ fn destroy_window(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     // Stop painting, close the DOM window, but keep the WndProc mapping so the
     // WM_DESTROY we enqueue can still be dispatched to it.
-    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = false; }
+    if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        w.needs_paint = false;
+    }
     ctx.ui_events.push(UiEvent::DestroyWindow { hwnd });
-    ctx.gui.queue.push_back(GuestMsg { hwnd, message: WM_DESTROY, wparam: 0, lparam: 0 });
+    ctx.gui.queue.push_back(GuestMsg {
+        hwnd,
+        message: WM_DESTROY,
+        wparam: 0,
+        lparam: 0,
+    });
     ctx.ret_stdcall(1, 1);
     Handled::Ok
 }
@@ -196,17 +285,24 @@ fn set_window_text_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ── message loop ─────────────────────────────────────────────────────────────
+// message loop
 
 fn def_window_proc(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
-    let msg  = ctx.arg(1);
+    let msg = ctx.arg(1);
     if msg == WM_CLOSE {
         // default WM_CLOSE handling = DestroyWindow: close the DOM window and
         // queue WM_DESTROY (keeping the WndProc mapping so it can be dispatched).
-        if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = false; }
+        if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+            w.needs_paint = false;
+        }
         ctx.ui_events.push(UiEvent::DestroyWindow { hwnd });
-        ctx.gui.queue.push_back(GuestMsg { hwnd, message: WM_DESTROY, wparam: 0, lparam: 0 });
+        ctx.gui.queue.push_back(GuestMsg {
+            hwnd,
+            message: WM_DESTROY,
+            wparam: 0,
+            lparam: 0,
+        });
     }
     ctx.ret_stdcall(0, 4);
     Handled::Ok
@@ -226,12 +322,22 @@ fn next_message(ctx: &mut ApiContext) -> Option<GuestMsg> {
         return Some(m);
     }
     // Synthesize a WM_PAINT for the first window that needs repainting.
-    let paint_hwnd = ctx.gui.windows.iter()
+    let paint_hwnd = ctx
+        .gui
+        .windows
+        .iter()
         .find(|(_, w)| w.needs_paint)
         .map(|(h, _)| *h);
     if let Some(hwnd) = paint_hwnd {
-        if let Some(w) = ctx.gui.windows.get_mut(&hwnd) { w.needs_paint = false; }
-        return Some(GuestMsg { hwnd, message: WM_PAINT, wparam: 0, lparam: 0 });
+        if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+            w.needs_paint = false;
+        }
+        return Some(GuestMsg {
+            hwnd,
+            message: WM_PAINT,
+            wparam: 0,
+            lparam: 0,
+        });
     }
     None
 }
@@ -253,7 +359,16 @@ fn get_message(ctx: &mut ApiContext) -> Handled {
     // WM_QUIT when quit requested and the queue is drained.
     if ctx.gui.quit.is_some() && ctx.gui.queue.is_empty() {
         let code = ctx.gui.quit.take().unwrap_or(0);
-        write_msg(ctx, lp, &GuestMsg { hwnd: 0, message: WM_QUIT, wparam: code, lparam: 0 });
+        write_msg(
+            ctx,
+            lp,
+            &GuestMsg {
+                hwnd: 0,
+                message: WM_QUIT,
+                wparam: code,
+                lparam: 0,
+            },
+        );
         ctx.ret_stdcall(0, 4); // 0 => loop exits
         return Handled::Ok;
     }
@@ -274,9 +389,18 @@ fn get_message(ctx: &mut ApiContext) -> Handled {
 fn peek_message(ctx: &mut ApiContext) -> Handled {
     let lp = ctx.arg(0);
     let remove = ctx.arg(4) & 1 != 0; // PM_REMOVE
-    match if remove { next_message(ctx) } else { ctx.gui.queue.front().cloned() } {
-        Some(m) => { write_msg(ctx, lp, &m); ctx.ret_stdcall(1, 5); }
-        None => { ctx.ret_stdcall(0, 5); }
+    match if remove {
+        next_message(ctx)
+    } else {
+        ctx.gui.queue.front().cloned()
+    } {
+        Some(m) => {
+            write_msg(ctx, lp, &m);
+            ctx.ret_stdcall(1, 5);
+        }
+        None => {
+            ctx.ret_stdcall(0, 5);
+        }
     }
     Handled::Ok
 }
@@ -284,20 +408,31 @@ fn peek_message(ctx: &mut ApiContext) -> Handled {
 fn dispatch_message(ctx: &mut ApiContext) -> Handled {
     let lp = ctx.arg(0);
     let hwnd = ctx.memory.read_u32(lp).unwrap_or(0);
-    let msg  = ctx.memory.read_u32(lp + 4).unwrap_or(0);
-    let wp   = ctx.memory.read_u32(lp + 8).unwrap_or(0);
-    let lpm  = ctx.memory.read_u32(lp + 12).unwrap_or(0);
+    let msg = ctx.memory.read_u32(lp + 4).unwrap_or(0);
+    let wp = ctx.memory.read_u32(lp + 8).unwrap_or(0);
+    let lpm = ctx.memory.read_u32(lp + 12).unwrap_or(0);
 
-    let wndproc = ctx.gui.windows.get(&hwnd).map(|w| w.wndproc)
+    let wndproc = ctx
+        .gui
+        .windows
+        .get(&hwnd)
+        .map(|w| w.wndproc)
         .filter(|p| *p != 0);
 
     match wndproc {
-        Some(func) => Handled::Invoke { func, args: vec![hwnd, msg, wp, lpm], ret_args: 1 },
-        None => { ctx.ret_stdcall(0, 1); Handled::Ok }
+        Some(func) => Handled::Invoke {
+            func,
+            args: vec![hwnd, msg, wp, lpm],
+            ret_args: 1,
+        },
+        None => {
+            ctx.ret_stdcall(0, 1);
+            Handled::Ok
+        }
     }
 }
 
-// ── painting ─────────────────────────────────────────────────────────────────
+// painting
 
 fn begin_paint(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
@@ -316,7 +451,12 @@ fn begin_paint(ctx: &mut ApiContext) -> Handled {
 fn get_client_rect(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let rp = ctx.arg(1);
-    let (w, h) = ctx.gui.windows.get(&hwnd).map(|e| (e.width, e.height)).unwrap_or((480, 320));
+    let (w, h) = ctx
+        .gui
+        .windows
+        .get(&hwnd)
+        .map(|e| (e.width, e.height))
+        .unwrap_or((480, 320));
     if rp != 0 {
         let _ = ctx.memory.write_u32(rp, 0);
         let _ = ctx.memory.write_u32(rp + 4, 0);
@@ -335,7 +475,13 @@ fn text_out_a(ctx: &mut ApiContext) -> Handled {
     let count = ctx.arg(4) as usize;
     let bytes = ctx.memory.read_bytes(ctx.arg(3), count).unwrap_or_default();
     let text = String::from_utf8_lossy(&bytes).into_owned();
-    ctx.ui_events.push(UiEvent::DrawText { hwnd, x, y, text, color: 0 });
+    ctx.ui_events.push(UiEvent::DrawText {
+        hwnd,
+        x,
+        y,
+        text,
+        color: 0,
+    });
     ctx.ret_stdcall(1, 5);
     Handled::Ok
 }
@@ -347,7 +493,13 @@ fn text_out_w(ctx: &mut ApiContext) -> Handled {
     let count = ctx.arg(4);
     let mut text = ctx.memory.read_wstr(ctx.arg(3));
     text = text.chars().take(count as usize).collect();
-    ctx.ui_events.push(UiEvent::DrawText { hwnd, x, y, text, color: 0 });
+    ctx.ui_events.push(UiEvent::DrawText {
+        hwnd,
+        x,
+        y,
+        text,
+        color: 0,
+    });
     ctx.ret_stdcall(1, 5);
     Handled::Ok
 }

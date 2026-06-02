@@ -26,6 +26,12 @@ async function main() {
   initDesktopContextMenu(runtime);
   // Guest processes that create files emit this; reflect changes on the desktop.
   window.addEventListener("webwine:fs-changed", () => refreshDesktop(runtime));
+  // A guest that calls CreateProcess gets a console window for its child.
+  runtime.onProcessSpawned((pid, path) => {
+    import("./windows/process-console.js").then((m) =>
+      m.openProcessConsole(path, runtime, { attachPid: pid })
+    );
+  });
   await refreshDesktop(runtime);
 }
 

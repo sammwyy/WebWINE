@@ -5,6 +5,8 @@ import { handleUiEvents } from "./guest-windows.js";
 
 interface ConsoleOptions {
   debug?: boolean;
+  /** Attach to an already-launched pid (e.g. a CreateProcess child) instead of launching. */
+  attachPid?: number;
 }
 
 export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: ConsoleOptions = {}) {
@@ -36,13 +38,13 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
   term.append(output, inputLine, cursor);
   body.append(term);
 
-  // ── title state ──────────────────────────────────────────────────────────
+  // title state 
   function title(state: string) {
     const tag = debug ? " | debug" : "";
     setTitle(`${fileName} | pid ${pid ?? "?"} | ${state}${tag}`);
   }
 
-  // ── output helpers ─────────────────────────────────────────────────────────
+  // output helpers 
   let pid: number | null = null;
   let running = false;
 
@@ -60,7 +62,7 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
     write(`${ev.message}\n`, `term-log term-log-${ev.level}`);
   }
 
-  // ── inline stdin ─────────────────────────────────────────────────────────
+  // inline stdin 
   let lineBuf = "";
   function renderInput() {
     inputLine.textContent = lineBuf;
@@ -88,9 +90,16 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
 
   term.addEventListener("mousedown", () => term.focus());
 
-  // ── launch + wire ──────────────────────────────────────────────────────────
+  // launch (or attach) + wire 
   title("starting");
-  runtime.launchProcess(path).then(({ pid: newPid, launchLogs }) => {
+
+  // Attaching to an existing child resolves immediately; launching starts a new process.
+  const ready: Promise<{ pid: number; launchLogs: LogEvent[]; attached: boolean }> =
+    opts.attachPid !== undefined
+      ? Promise.resolve({ pid: opts.attachPid, launchLogs: [], attached: true })
+      : runtime.launchProcess(path).then((r) => ({ ...r, attached: false }));
+
+  ready.then(({ pid: newPid, launchLogs, attached }) => {
     pid = newPid;
     running = true;
     title("running");
@@ -131,6 +140,9 @@ export function openProcessConsole(path: string, runtime: RuntimeBridge, opts: C
       },
     });
 
+    // Start the run loop. A spawned child was loaded by the VM but isn't being
+    // sliced yet, so it also needs its own run loop here.
+    void attached;
     runtime.runProcess(pid);
   }).catch((err) => {
     title("error");

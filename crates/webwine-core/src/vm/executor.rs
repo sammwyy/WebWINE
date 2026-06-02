@@ -121,6 +121,8 @@ fn handle_trampoline(
             console: &mut proc.console,
             ui_events: &mut proc.ui_events,
             gui: &mut proc.gui,
+            spawns: &mut proc.spawns,
+            next_child_pid: proc.next_child_pid,
             heap_next: &mut proc.heap_next,
             heap_sizes: &mut proc.heap_sizes,
             fs,
@@ -444,7 +446,7 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
             Err(e) => StepResult::Fault(e.to_string()),
         },
 
-        // ── SSE / XMM ────────────────────────────────────────────────────────
+        // SSE / XMM 
         Xorps | Xorpd | Pxor => exec_xmm_binop(instr, cpu, mem, |a, b| xmm_xor(a, b)),
         Andps | Andpd | Pand | Andnps | Andnpd | Pandn
             => exec_xmm_binop(instr, cpu, mem, |a, b| xmm_and(a, b)),
@@ -1643,6 +1645,9 @@ pub struct SliceResult {
     pub state: ProcessState,
     pub instructions: u32,
     pub ui_events: Vec<UiEvent>,
+    /// Children spawned this slice (pid, path) — filled in by the VM, which
+    /// owns the process table. The executor leaves it empty.
+    pub spawned: Vec<(u32, String)>,
 }
 
 impl SliceResult {
@@ -1654,6 +1659,7 @@ impl SliceResult {
             state: proc.state.clone(),
             instructions: 0,
             ui_events: std::mem::take(&mut proc.ui_events),
+            spawned: Vec::new(),
         }
     }
 }

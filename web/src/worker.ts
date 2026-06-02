@@ -26,6 +26,7 @@ type OutMsg =
   | { type: "process_stderr"; pid: number; text: string }
   | { type: "process_ui"; pid: number; events: UiEvent[] }
   | { type: "process_log"; pid: number; events: LogEvent[] }
+  | { type: "process_spawned"; parent: number; pid: number; path: string }
   | { type: "process_exited"; pid: number; exit_code: number }
   | { type: "process_crashed"; pid: number; reason: string }
   | { type: "logs"; events: LogEvent[] };
@@ -100,6 +101,7 @@ export interface SliceResult {
   state: ProcessInfo["state"];
   instructions: number;
   ui_events: UiEvent[];
+  spawned: [number, string][];
 }
 
 let runtime: Runtime | null = null;
@@ -132,6 +134,10 @@ async function runProcessLoop(pid: number) {
     if (result.stderr) send({ type: "process_stderr", pid, text: result.stderr });
     if (result.ui_events && result.ui_events.length > 0)
       send({ type: "process_ui", pid, events: result.ui_events });
+    if (result.spawned && result.spawned.length > 0) {
+      for (const [cpid, path] of result.spawned)
+        send({ type: "process_spawned", parent: pid, pid: cpid, path });
+    }
 
     const s = result.state.state;
     if (s === "exited") {

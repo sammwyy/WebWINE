@@ -3,7 +3,7 @@ use crate::logs::LogBuffer;
 use crate::vm::cpu::X86Cpu;
 use crate::vm::handles::HandleTable;
 use crate::vm::memory::GuestMemory;
-use crate::vm::process::{ConsoleStreams, GuiState};
+use crate::vm::process::{ConsoleStreams, GuiState, SpawnRequest};
 pub use crate::vm::process::{GuestMsg, UiEvent};
 
 pub enum Handled {
@@ -33,6 +33,10 @@ pub struct ApiContext<'a> {
     pub console:   &'a mut ConsoleStreams,
     pub ui_events: &'a mut Vec<UiEvent>,
     pub gui:       &'a mut GuiState,
+    pub spawns:    &'a mut Vec<SpawnRequest>,
+    /// pid the next CreateProcess child will receive (lets the handler fill
+    /// PROCESS_INFORMATION synchronously).
+    pub next_child_pid: u32,
     pub heap_next: &'a mut u32,
     pub heap_sizes: &'a mut std::collections::HashMap<u32, u32>,
     pub fs:        &'a mut VirtualFileSystem,

@@ -62,6 +62,14 @@ pub struct GuestMsg {
     pub lparam: u32,
 }
 
+/// A request from a guest (CreateProcess) to launch a child process. The VM
+/// drains these after each slice and loads them into the process table.
+#[derive(Debug, Clone)]
+pub struct SpawnRequest {
+    pub path: String,
+    pub pi_addr: u32, // guest PROCESS_INFORMATION to fill (0 if none)
+}
+
 /// Per-process Win32 GUI state: registered window classes, live windows, and
 /// the thread message queue.
 pub struct GuiState {
@@ -109,6 +117,8 @@ pub struct GuestProcess {
     pub console:     ConsoleStreams,
     pub ui_events:   Vec<UiEvent>,
     pub gui:         GuiState,
+    pub spawns:      Vec<SpawnRequest>,
+    pub next_child_pid: u32, // pid the next CreateProcess child will receive
     pub state:       ProcessState,
 }
 
@@ -128,6 +138,7 @@ pub struct ProcessTable {
 impl ProcessTable {
     pub fn new() -> Self { ProcessTable { processes: indexmap::IndexMap::new(), next_pid: 1 } }
     pub fn alloc_pid(&mut self) -> u32 { let p = self.next_pid; self.next_pid += 1; p }
+    pub fn peek_next_pid(&self) -> u32 { self.next_pid }
     pub fn insert(&mut self, p: GuestProcess) { self.processes.insert(p.pid, p); }
     pub fn get(&self, pid: u32) -> Option<&GuestProcess> { self.processes.get(&pid) }
     pub fn get_mut(&mut self, pid: u32) -> Option<&mut GuestProcess> { self.processes.get_mut(&pid) }

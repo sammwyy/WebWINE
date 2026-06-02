@@ -40,6 +40,13 @@ export class RuntimeBridge {
     this.pidHandlers.set(pid, handlers);
   }
 
+  // Called when a guest process spawns a child (CreateProcess). The app opens
+  // a console for the child.
+  private spawnListener: ((pid: number, path: string) => void) | null = null;
+  onProcessSpawned(cb: (pid: number, path: string) => void) {
+    this.spawnListener = cb;
+  }
+
   private handleMessage(msg: Record<string, unknown>) {
     if (msg.type === "ready") {
       this.readyResolve();
@@ -64,6 +71,10 @@ export class RuntimeBridge {
     if (msg.type === "process_ui") {
       const h = this.pidHandlers.get(msg.pid as number);
       h?.ui?.(msg.events as UiEvent[]);
+      return;
+    }
+    if (msg.type === "process_spawned") {
+      this.spawnListener?.(msg.pid as number, msg.path as string);
       return;
     }
     if (msg.type === "process_log") {

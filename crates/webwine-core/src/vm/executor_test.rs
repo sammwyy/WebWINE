@@ -104,6 +104,46 @@ fn gui_sample_creates_window_and_paints() {
 }
 
 #[test]
+fn spawn_sample_launches_child() {
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../samples/target/i686-pc-windows-msvc/debug/"
+    );
+    let parent_bytes = std::fs::read(format!("{dir}spawn.exe"))
+        .unwrap_or_else(|e| panic!("spawn.exe not built: {e}"));
+    let child_bytes = std::fs::read(format!("{dir}minimal.exe"))
+        .unwrap_or_else(|e| panic!("minimal.exe not built: {e}"));
+
+    let mut vm = WebWineVm::new();
+    vm.mount_file("C:\\Users\\guest\\Desktop\\spawn.exe", parent_bytes).unwrap();
+    vm.mount_file("C:\\Users\\guest\\Desktop\\minimal.exe", child_bytes).unwrap();
+
+    let parent = vm.launch_process("C:\\Users\\guest\\Desktop\\spawn.exe").unwrap();
+
+    // Run the parent; capture its stdout and the child it spawns.
+    let mut parent_out = String::new();
+    let mut child_pid = None;
+    for _ in 0..50 {
+        let r = vm.run_process_slice(parent, 200_000).unwrap();
+        parent_out.push_str(&r.stdout);
+        if let Some((cpid, _)) = r.spawned.first() { child_pid = Some(*cpid); }
+        if matches!(r.state, ProcessState::Exited { .. } | ProcessState::Crashed { .. }) { break; }
+    }
+
+    assert!(parent_out.contains("child created"), "parent out: {parent_out:?}");
+    let cpid = child_pid.expect("a child was spawned");
+
+    // Run the child to completion and check it actually executed.
+    let mut child_out = String::new();
+    for _ in 0..50 {
+        let r = vm.run_process_slice(cpid, 200_000).unwrap();
+        child_out.push_str(&r.stdout);
+        if matches!(r.state, ProcessState::Exited { .. } | ProcessState::Crashed { .. }) { break; }
+    }
+    assert!(child_out.contains("Hello from WebWINE"), "child out: {child_out:?}");
+}
+
+#[test]
 fn files_sample_writes_to_vfs() {
     // Milestone 7: CreateFileA/WriteFile/CreateDirectoryA backed by the VFS.
     let dir = concat!(

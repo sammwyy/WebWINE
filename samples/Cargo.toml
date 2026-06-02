@@ -7,6 +7,7 @@ members = [
     "05_minimal",
     "06_files",
     "07_gui",
+    "08_spawn",
 ]
 resolver = "2"
 

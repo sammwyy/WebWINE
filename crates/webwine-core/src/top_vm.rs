@@ -84,9 +84,31 @@ impl WebWineVm {
     }
 
     pub fn run_process_slice(&mut self, pid: u32, budget: u32) -> Result<SliceResult> {
-        let proc = self.processes.get_mut(pid)
-            .ok_or(VmError::ProcessNotFound(pid))?;
-        run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)
+        let next_pid = self.processes.peek_next_pid();
+        let (mut result, spawns) = {
+            let proc = self.processes.get_mut(pid)
+                .ok_or(VmError::ProcessNotFound(pid))?;
+            proc.next_child_pid = next_pid;
+            let r = run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)?;
+            let spawns = std::mem::take(&mut proc.spawns);
+            (r, spawns)
+        };
+
+        // Launch any child processes the guest requested via CreateProcess.
+        for sp in spawns {
+            match self.launch_process(&sp.path) {
+                Ok(child) => {
+                    result.spawned.push((child, sp.path.clone()));
+                    self.logs.log(LogLevel::Info, "process",
+                        &format!("spawned pid={child} from {}", sp.path), Some(pid));
+                }
+                Err(e) => {
+                    self.logs.log(LogLevel::Warn, "process",
+                        &format!("CreateProcess failed for {}: {e}", sp.path), Some(pid));
+                }
+            }
+        }
+        Ok(result)
     }
 
     pub fn write_stdin(&mut self, pid: u32, text: &str) -> Result<()> {

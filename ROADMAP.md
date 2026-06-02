@@ -9,7 +9,7 @@ A browser-based Windows-like runtime. Rust/WASM owns the VM. TypeScript owns the
 - M3 Minimal PE Loader — **done**
 - M4 x86 Interpreter — **done** (integer + SSE/x87 stubs, CMPXCHG/XADD, atomics)
 - M5 Console API Support — **done** (real MSVC UCRT binaries run: `_initterm`, TLS, NtWriteFile)
-- M6 Process Management — **partial** (per-process state/streams/handles, kill; round-robin scheduling pending)
+- M6 Process Management — **done** (per-process state/streams/handles, kill; CreateProcessA/W spawns concurrent child guest processes, each with its own console; GetExitCodeProcess/WaitForSingleObject)
 - M7 Filesystem APIs — **done** (CreateFile/Read/Write/CloseHandle/GetFileSize/SetFilePointer/CreateDirectory/DeleteFile on the VFS; guest-created files appear on the desktop)
 - M8 Early Win32 UI — **done** (MessageBox dialogs; RegisterClass/CreateWindowEx → real windows; working message loop GetMessage/DispatchMessage with WndProc callbacks; WM_PAINT → TextOut rendering; close → WM_CLOSE/WM_DESTROY/WM_QUIT)
 - M9 Persistent Virtual Disk — pending
