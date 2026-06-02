@@ -1,6 +1,6 @@
 import type { RuntimeBridge } from "../runtime-bridge.js";
-import { openPeInspector } from "./pe-inspector.js";
+import { openProcessConsole } from "./process-console.js";
 
 export function openProcessWindow(path: string, runtime: RuntimeBridge) {
-  openPeInspector(path, runtime);
+  openProcessConsole(path, runtime);
 }

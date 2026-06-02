@@ -45,6 +45,24 @@ impl WebWineVm {
         self.fs.read_file(guest_path)
     }
 
+    pub fn delete_node(&mut self, guest_path: &str) -> Result<()> {
+        self.fs.delete_node(guest_path)?;
+        self.logs
+            .log(LogLevel::Info, "fs", &format!("deleted {guest_path}"), None);
+        Ok(())
+    }
+
+    pub fn rename_node(&mut self, guest_path: &str, new_name: &str) -> Result<()> {
+        self.fs.rename_node(guest_path, new_name)?;
+        self.logs.log(
+            LogLevel::Info,
+            "fs",
+            &format!("renamed {guest_path} -> {new_name}"),
+            None,
+        );
+        Ok(())
+    }
+
     pub fn inspect_pe(&mut self, guest_path: &str) -> Result<PeInfo> {
         let bytes = self.fs.read_file(guest_path)?;
         let info = inspect_bytes(&bytes)?;

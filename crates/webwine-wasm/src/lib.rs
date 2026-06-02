@@ -50,6 +50,20 @@ impl Runtime {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = deleteNode)]
+    pub fn delete_node(&mut self, path: &str) -> Result<(), JsValue> {
+        self.vm
+            .delete_node(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = renameNode)]
+    pub fn rename_node(&mut self, path: &str, new_name: &str) -> Result<(), JsValue> {
+        self.vm
+            .rename_node(path, new_name)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = inspectPe)]
     pub fn inspect_pe(&mut self, path: &str) -> Result<JsValue, JsValue> {
         let info: PeInfo = self

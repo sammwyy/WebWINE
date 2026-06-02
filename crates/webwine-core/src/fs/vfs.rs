@@ -248,6 +248,69 @@ impl VirtualFileSystem {
         }
     }
 
+    pub fn delete_node(&mut self, guest_path: &str) -> Result<()> {
+        let path = GuestPath::parse(guest_path)?;
+        let node_name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("path has no name".into()))?
+            .to_string();
+
+        let parent_components = path
+            .parent()
+            .map(|p| p.components)
+            .unwrap_or_default();
+
+        let drive = self.get_drive_mut(path.drive)?;
+        let parent = Self::resolve_dir_mut(drive, &parent_components)?;
+
+        let key = node_name.to_ascii_uppercase();
+        if parent.children.shift_remove(&key).is_none() {
+            return Err(VmError::NotFound(guest_path.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn rename_node(&mut self, guest_path: &str, new_name: &str) -> Result<()> {
+        if new_name.is_empty() || new_name.contains('\\') || new_name.contains('/') {
+            return Err(VmError::Path(format!("invalid name: '{new_name}'")));
+        }
+
+        let path = GuestPath::parse(guest_path)?;
+        let old_name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("path has no name".into()))?
+            .to_string();
+
+        let parent_components = path
+            .parent()
+            .map(|p| p.components)
+            .unwrap_or_default();
+
+        let drive = self.get_drive_mut(path.drive)?;
+        let parent = Self::resolve_dir_mut(drive, &parent_components)?;
+
+        let old_key = old_name.to_ascii_uppercase();
+        let new_key = new_name.to_ascii_uppercase();
+
+        if parent.children.contains_key(&new_key) {
+            return Err(VmError::AlreadyExists(new_name.to_string()));
+        }
+
+        let mut node = parent
+            .children
+            .shift_remove(&old_key)
+            .ok_or_else(|| VmError::NotFound(guest_path.to_string()))?;
+
+        // update the stored display name inside the node
+        match &mut node {
+            VfsNode::File(f) => f.name = new_name.to_string(),
+            VfsNode::Directory(d) => d.name = new_name.to_string(),
+        }
+
+        parent.children.insert(new_key, node);
+        Ok(())
+    }
+
     pub fn node_exists(&self, guest_path: &str) -> bool {
         let Ok(path) = GuestPath::parse(guest_path) else {
             return false;

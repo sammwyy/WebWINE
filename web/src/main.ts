@@ -1,5 +1,5 @@
 import { RuntimeBridge } from "./runtime-bridge.js";
-import { refreshDesktop } from "./desktop/icons.js";
+import { refreshDesktop, initDesktopContextMenu } from "./desktop/icons.js";
 import { initUpload } from "./desktop/upload.js";
 import { log } from "./log.js";
 
@@ -23,6 +23,7 @@ async function main() {
   log("frontend", "Runtime ready");
 
   initUpload(runtime, () => refreshDesktop(runtime));
+  initDesktopContextMenu(runtime);
   await refreshDesktop(runtime);
 }
 

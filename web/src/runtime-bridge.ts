@@ -93,6 +93,14 @@ export class RuntimeBridge {
     });
   }
 
+  async deleteNode(path: string): Promise<void> {
+    this.send({ type: "delete_node", path });
+  }
+
+  async renameNode(path: string, newName: string): Promise<void> {
+    this.send({ type: "rename_node", path, new_name: newName });
+  }
+
   async inspectPe(path: string): Promise<PeInfo> {
     const requestId = this.nextId();
     return new Promise((resolve, reject) => {

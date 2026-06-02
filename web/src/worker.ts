@@ -6,7 +6,9 @@ type InMsg =
   | { type: "create_dir"; path: string }
   | { type: "list_dir"; requestId: string; path: string }
   | { type: "read_file"; requestId: string; path: string }
-  | { type: "inspect_pe"; requestId: string; path: string };
+  | { type: "inspect_pe"; requestId: string; path: string }
+  | { type: "delete_node"; path: string }
+  | { type: "rename_node"; path: string; new_name: string };
 
 type OutMsg =
   | { type: "ready" }
@@ -113,6 +115,12 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       const info = runtime.inspectPe(msg.path) as PeInfo;
       flushLogs();
       send({ type: "pe_info", requestId: msg.requestId, info });
+    } else if (msg.type === "delete_node") {
+      runtime.deleteNode(msg.path);
+      flushLogs();
+    } else if (msg.type === "rename_node") {
+      runtime.renameNode(msg.path, msg.new_name);
+      flushLogs();
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
