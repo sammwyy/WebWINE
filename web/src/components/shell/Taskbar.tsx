@@ -12,6 +12,13 @@ import { Clock } from "./Clock.js";
 import styles from "./Taskbar.module.css";
 
 const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
+const USER_PATHS: Partial<Record<StartMenuAction, string>> = {
+  "this-pc": "",
+  documents: "C:\\Users\\guest\\Documents",
+  pictures: "C:\\Users\\guest\\Pictures",
+  music: "C:\\Users\\guest\\Music",
+  videos: "C:\\Users\\guest\\Videos",
+};
 
 interface TaskbarProps {
   /** Hidden file inputs managed by the parent (Desktop) for uploads. */
@@ -41,9 +48,10 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
   const handleStartAction = useCallback(
     (action: StartMenuAction) => {
       if (!runtime) return;
-      if (action === "explorer") {
+      const targetPath = USER_PATHS[action] ?? (action === "explorer" ? DESKTOP_PATH : null);
+      if (targetPath !== null) {
         import("../../apps/explorer/ExplorerApp.js").then((m) =>
-          m.openExplorer(DESKTOP_PATH, runtime),
+          m.openExplorer(targetPath, runtime),
         );
       } else if (action === "themes") {
         import("../../apps/theme-switcher/ThemeSwitcherApp.js").then((m) =>

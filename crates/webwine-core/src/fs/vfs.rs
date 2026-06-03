@@ -73,6 +73,10 @@ impl VirtualFileSystem {
             children: IndexMap::new(),
         };
         Self::ensure_dir_chain(&mut c, &["Users", "guest", "Desktop"]);
+        Self::ensure_dir_chain(&mut c, &["Users", "guest", "Documents"]);
+        Self::ensure_dir_chain(&mut c, &["Users", "guest", "Pictures"]);
+        Self::ensure_dir_chain(&mut c, &["Users", "guest", "Music"]);
+        Self::ensure_dir_chain(&mut c, &["Users", "guest", "Videos"]);
         Self::ensure_dir_chain(&mut c, &["Windows", "System32"]);
         Self::ensure_dir_chain(&mut c, &["Temp"]);
         self.root.insert('C', c);
@@ -341,10 +345,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bootstrap_creates_desktop() {
+    fn bootstrap_creates_guest_profile_folders() {
         let fs = VirtualFileSystem::new();
-        let entries = fs.list_dir("C:\\Users\\guest\\Desktop\\").unwrap();
-        assert!(entries.is_empty());
+        for folder in ["Desktop", "Documents", "Pictures", "Music", "Videos"] {
+            let entries = fs.list_dir(&format!("C:\\Users\\guest\\{folder}\\")).unwrap();
+            assert!(entries.is_empty());
+        }
     }
 
     #[test]

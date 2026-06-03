@@ -95,6 +95,7 @@ interface WindowStore {
   maximizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   setTitle: (id: string, title: string) => void;
+  setContent: (id: string, content: React.ReactNode) => void;
   activateFromTaskbar: (id: string) => void;
 
   getTaskbarInfo: () => WindowTaskbarInfo[];
@@ -225,6 +226,13 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
   setTitle: (id, title) => {
     set((state) => ({
       windows: state.windows.map((w) => (w.id === id ? { ...w, title } : w)),
+    }));
+    window.dispatchEvent(new Event("webwine:windows-changed"));
+  },
+
+  setContent: (id, content) => {
+    set((state) => ({
+      windows: state.windows.map((w) => (w.id === id ? { ...w, content } : w)),
     }));
     window.dispatchEvent(new Event("webwine:windows-changed"));
   },

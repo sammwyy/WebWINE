@@ -77,7 +77,7 @@
 .taskbar-window-list {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
@@ -93,10 +93,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 100%;
+  min-width: 0;
+  height: calc(100% - 2px);
   padding: 0 12px;
-  max-width: 160px;
-  flex: 1;
+  max-width: 190px;
+  flex: 0 1 160px;
   background: var(--taskbar-button);
   border: 1px solid var(--control-border);
   border-radius: var(--taskbar-button-radius);
@@ -111,6 +112,7 @@
 
 .taskbar-window-button.icon-mode-only-icon {
   flex: 0 0 40px;
+  min-width: 40px;
   max-width: 40px;
   padding: 0;
   justify-content: center;
@@ -168,6 +170,7 @@
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .tray-toggle {

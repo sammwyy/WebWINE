@@ -17,9 +17,9 @@ interface WindowFrameProps {
 }
 
 export function WindowFrame({ record }: WindowFrameProps) {
-  const { closeWindow, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, activeWindowId } =
+  const { closeWindow, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, activeId } =
     useWindowStore();
-  const isActive = activeWindowId === record.id;
+  const isActive = activeId === record.id;
 
   const elRef = useRef<HTMLDivElement>(null);
 
@@ -107,14 +107,13 @@ export function WindowFrame({ record }: WindowFrameProps) {
         <span className={`${styles["window-title"]} window-title`}>{record.title}</span>
 
         <div className={`${styles["window-controls"]} window-controls`}>
-          {record.variant === "default" && (
+          {record.variant !== "dialog" && (
             <>
               <button
                 type="button"
                 className={`${styles["window-control"]} ${styles["window-minimize"]} window-control window-minimize`}
                 onClick={onMinClick}
                 aria-label="Minimize"
-                disabled={!record.minimizable}
               />
               <button
                 type="button"

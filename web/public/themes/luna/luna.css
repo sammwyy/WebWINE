@@ -122,14 +122,15 @@ html[data-theme="luna"] #taskbar {
     inset 0 1px 0 rgba(255, 255, 255, .50),
     inset 0 -1px 0 rgba(0, 0, 0, .22),
     0 -1px 3px rgba(0, 0, 0, .30);
+  padding: 2px 6px 1px 2px;
   backdrop-filter: none !important;
 }
 
 html[data-theme="luna"] #start-button {
-  height: 28px;
-  min-width: 92px;
-  padding: 0 18px 0 12px;
-  margin: 1px 4px 1px 2px;
+  height: 26px;
+  min-width: 94px;
+  padding: 0 18px 0 10px;
+  margin: 1px 4px 1px 0;
   color: #fff;
   font-family: "Trebuchet MS", Tahoma, Arial, sans-serif;
   font-size: 14px;
@@ -163,14 +164,18 @@ html[data-theme="luna"] #start-button.active {
 
 html[data-theme="luna"] .taskbar-window-button {
   height: 24px;
-  margin: 3px 1px 2px;
-  padding: 0 9px;
+  margin: 1px 1px 1px;
+  padding: 0 10px 0 8px;
+  min-width: 120px;
+  max-width: 180px;
   color: #fff;
   border: 1px solid rgba(255, 255, 255, .38);
   border-right-color: rgba(0, 0, 0, .32);
   border-bottom-color: rgba(0, 0, 0, .42);
   border-radius: 3px !important;
-  background: var(--taskbar-button) !important;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, .40) 0 0.75px, transparent 1px),
+    var(--taskbar-button) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .50),
     inset 0 -1px 0 rgba(0, 0, 0, .18);
@@ -190,17 +195,41 @@ html[data-theme="luna"] .taskbar-window-button.active {
     inset 0 -1px 1px rgba(0, 0, 0, .26);
 }
 
+html[data-theme="luna"] .taskbar-tray {
+  min-height: 26px;
+  margin-left: auto;
+  padding: 1px 3px 1px 4px;
+  color: #fff;
+  background: linear-gradient(180deg, #0f86e8 0%, #0a65c7 52%, #064ba6 100%);
+  border: 1px solid #0b2f8f;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .28),
+    inset 0 -1px 0 rgba(0, 0, 0, .16);
+}
+
 html[data-theme="luna"] #tray-toggle,
 html[data-theme="luna"] #taskbar-clock,
 html[data-theme="luna"] .tray {
-  min-height: 24px;
-  margin: 3px 2px 2px;
-  color: #fff;
-  background: linear-gradient(180deg, #0f86e8 0%, #0a65c7 52%, #064ba6 100%);
-  border-left: 1px solid rgba(255, 255, 255, .38);
-  border-top: 1px solid rgba(255, 255, 255, .25);
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .20);
+  min-height: 22px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   text-shadow: 1px 1px 1px rgba(0, 0, 0, .55);
+}
+
+html[data-theme="luna"] #tray-toggle {
+  width: 22px;
+  height: 22px;
+  border-right: 1px solid rgba(255, 255, 255, .20);
+  border-radius: 0;
+}
+
+html[data-theme="luna"] #taskbar-clock {
+  min-width: 52px;
+  padding: 0 6px;
+  text-align: center;
 }
 
 /* Start menu */
