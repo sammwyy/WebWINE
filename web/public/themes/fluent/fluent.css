@@ -156,7 +156,7 @@ html[data-theme="fluent"] #tray-toggle {
   font-size: 12px;
 }
 
-/* Acrylic menus / Start */
+/* Acrylic menus */
 html[data-theme="fluent"] .shell-menu,
 html[data-theme="fluent"] .ctx-menu,
 html[data-theme="fluent"] #start-menu {
@@ -169,14 +169,6 @@ html[data-theme="fluent"] #start-menu {
   box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(28px) saturate(135%);
   -webkit-backdrop-filter: blur(28px) saturate(135%);
-}
-
-html[data-theme="fluent"] #start-menu {
-  min-width: 320px;
-  background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.26) 0 48px, transparent 48px),
-    linear-gradient(rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
-    rgba(31, 31, 31, 0.90) !important;
 }
 
 html[data-theme="fluent"] .start-menu-header {
@@ -201,35 +193,10 @@ html[data-theme="fluent"] .shell-menu-item {
   color: #f2f2f2;
 }
 
-html[data-theme="fluent"] #start-menu .shell-menu-title,
-html[data-theme="fluent"] #start-menu .shell-menu-item {
-  margin-left: 48px;
-}
-
 html[data-theme="fluent"] .shell-menu-title {
   color: #bdbdbd;
   font-size: 12px;
   font-weight: 400;
-}
-
-html[data-theme="fluent"] .shell-menu-item,
-html[data-theme="fluent"] .ctx-item {
-  min-height: 32px;
-  padding: 6px 12px;
-  border-radius: 0 !important;
-  background: transparent;
-  color: #f2f2f2;
-}
-
-html[data-theme="fluent"] .shell-menu-item:hover,
-html[data-theme="fluent"] .ctx-item:hover {
-  background: rgba(255, 255, 255, 0.085) !important;
-  color: #ffffff;
-}
-
-html[data-theme="fluent"] .shell-menu-item:active,
-html[data-theme="fluent"] .ctx-item:active {
-  background: rgba(255, 255, 255, 0.14) !important;
 }
 
 /* Windows: flat dark frame, Windows 10 control geometry */
@@ -485,11 +452,419 @@ html[data-theme="fluent"] ::-webkit-scrollbar-thumb:hover {
   background: #6b6b6b;
 }
 
-/* Start Menu Layout */
-.shell-menu.layout-fluent { padding: 0; min-height: 350px; }
-.start-menu-layout.fluent { display: flex; flex-direction: row; height: 100%; }
-.start-menu-rail { width: 48px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 8px; border-right: 1px solid var(--menu-border, transparent); }
-.rail-btn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--menu-text); font-size: 16px; cursor: pointer; border-radius: 4px; margin-top: 4px; }
-.rail-btn:hover { background: var(--shell-menu-hover); }
-.start-menu-content { flex: 1; display: flex; flex-direction: column; padding: 4px; }
+/* Windows 10 Start menu */
+html[data-theme="fluent"] #start-menu {
+  left: 0;
+  bottom: 40px;
+  width: min(648px, calc(100vw - 12px));
+  height: min(520px, calc(100vh - 52px));
+  min-width: 0;
+  min-height: 390px;
+  padding: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.34) 0 48px, transparent 48px),
+    linear-gradient(rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.016)),
+    rgba(31, 31, 31, 0.92) !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.58);
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-layout.fluent {
+  display: grid;
+  grid-template-columns: 48px minmax(190px, 220px) minmax(260px, 1fr);
+  height: 100%;
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-rail {
+  align-items: stretch;
+  border-right: 0;
+  padding: 4px 0;
+}
+
+html[data-theme="fluent"] #start-menu .rail-top,
+html[data-theme="fluent"] #start-menu .rail-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn {
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: transparent !important;
+  border: 0 !important;
+  color: #f2f2f2 !important;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn:hover,
+html[data-theme="fluent"] #start-menu .shell-menu-item:hover,
+html[data-theme="fluent"] #start-menu .start-tile:hover,
+html[data-theme="fluent"] .ctx-item:hover {
+  background: rgba(255, 255, 255, 0.11) !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn:active,
+html[data-theme="fluent"] #start-menu .shell-menu-item:active,
+html[data-theme="fluent"] #start-menu .start-tile:active,
+html[data-theme="fluent"] .ctx-item:active {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+html[data-theme="fluent"] #start-menu .rail-icon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon,
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::before,
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::after {
+  height: 1px;
+  background: currentColor;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::before,
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::after,
+html[data-theme="fluent"] #start-menu .rail-btn-user .rail-icon::before,
+html[data-theme="fluent"] #start-menu .rail-btn-user .rail-icon::after,
+html[data-theme="fluent"] #start-menu .rail-btn-power .rail-icon::before,
+html[data-theme="fluent"] #start-menu .rail-btn-power .rail-icon::after,
+html[data-theme="fluent"] #start-menu .rail-btn-settings .rail-icon::before,
+html[data-theme="fluent"] #start-menu .rail-btn-settings .rail-icon::after {
+  content: "";
+  position: absolute;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::before {
+  top: -6px;
+  left: 0;
+  width: 18px;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-menu .rail-icon::after {
+  top: 6px;
+  left: 0;
+  width: 18px;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-user .rail-icon::before {
+  top: 1px;
+  left: 6px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-user .rail-icon::after {
+  left: 3px;
+  bottom: 1px;
+  width: 12px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 0;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-settings .rail-icon {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-settings .rail-icon::before {
+  inset: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-settings .rail-icon::after {
+  left: 8px;
+  top: -2px;
+  width: 1px;
+  height: 22px;
+  background: currentColor;
+  box-shadow: -7px 7px 0 currentColor, 7px 7px 0 currentColor;
+  transform: rotate(45deg);
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-power .rail-icon {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-power .rail-icon::before {
+  left: 8px;
+  top: -1px;
+  width: 2px;
+  height: 9px;
+  background: #1f1f1f;
+}
+
+html[data-theme="fluent"] #start-menu .rail-btn-power .rail-icon::after {
+  left: 8px;
+  top: 1px;
+  width: 1px;
+  height: 8px;
+  background: currentColor;
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-apps {
+  padding: 14px 8px 10px 8px;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: #555 transparent;
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-section-title {
+  height: 28px;
+  padding: 0 8px;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-alpha {
+  height: 26px;
+  padding: 0 8px;
+  color: #bdbdbd;
+  font-size: 12px;
+  line-height: 26px;
+}
+
+html[data-theme="fluent"] #start-menu .shell-menu-title {
+  display: none;
+}
+
+html[data-theme="fluent"] #start-menu .shell-menu-separator {
+  display: none;
+}
+
+html[data-theme="fluent"] #start-menu .shell-menu-item {
+  min-height: 36px;
+  padding: 6px 8px;
+  gap: 10px;
+  display: flex;
+  align-items: center;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #f2f2f2 !important;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+html[data-theme="fluent"] #start-menu .start-item-icon {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-theme="fluent"] #start-menu .fallback-icon {
+  position: relative;
+  display: inline-block;
+  background: transparent !important;
+}
+
+html[data-theme="fluent"] #start-menu .fallback-icon::before,
+html[data-theme="fluent"] #start-menu .fallback-icon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+html[data-theme="fluent"] #start-menu .start-item-icon-upload-file::before {
+  left: 5px;
+  top: 3px;
+  width: 13px;
+  height: 17px;
+  border: 1px solid #d8eaff;
+  background: rgba(0, 120, 215, 0.18);
+}
+
+html[data-theme="fluent"] #start-menu .start-item-icon-upload-file::after {
+  left: 9px;
+  top: 9px;
+  width: 6px;
+  height: 6px;
+  border-left: 1px solid #ffffff;
+  border-top: 1px solid #ffffff;
+  transform: rotate(45deg);
+}
+
+html[data-theme="fluent"] #start-menu .start-item-icon-upload-folder::before {
+  left: 2px;
+  top: 7px;
+  width: 20px;
+  height: 13px;
+  background: #d6a12a;
+  border: 1px solid #edc360;
+}
+
+html[data-theme="fluent"] #start-menu .start-item-icon-upload-folder::after {
+  left: 3px;
+  top: 4px;
+  width: 9px;
+  height: 5px;
+  background: #edc360;
+}
+
+html[data-theme="fluent"] #start-menu .start-menu-tiles {
+  padding: 14px 16px 16px 10px;
+  overflow: hidden auto;
+}
+
+html[data-theme="fluent"] #start-menu .tile-group + .tile-group {
+  margin-top: 20px;
+}
+
+html[data-theme="fluent"] #start-menu .tile-group-title {
+  height: 28px;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+html[data-theme="fluent"] #start-menu .tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 96px));
+  grid-auto-rows: minmax(88px, 96px);
+  gap: 4px;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile {
+  position: relative;
+  padding: 12px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  overflow: hidden;
+  background: #0078d7 !important;
+  border: 2px solid transparent !important;
+  border-radius: 0 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  text-align: left;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile:nth-child(2n) {
+  background: #2d7d9a !important;
+}
+
+html[data-theme="fluent"] #start-menu .tile-group:nth-child(2) .start-tile {
+  background: #515c6b !important;
+}
+
+html[data-theme="fluent"] #start-menu .tile-group:nth-child(2) .start-tile:nth-child(2n) {
+  background: #6b4a8a !important;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile:focus-visible,
+html[data-theme="fluent"] #start-menu .shell-menu-item:focus-visible,
+html[data-theme="fluent"] #start-menu .rail-btn:focus-visible {
+  outline: 1px solid #ffffff;
+  outline-offset: -3px;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-wide {
+  grid-column: span 2;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.32));
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-file,
+html[data-theme="fluent"] #start-menu .start-tile-icon-folder {
+  position: relative;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-file::before,
+html[data-theme="fluent"] #start-menu .start-tile-icon-file::after,
+html[data-theme="fluent"] #start-menu .start-tile-icon-folder::before,
+html[data-theme="fluent"] #start-menu .start-tile-icon-folder::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-file::before {
+  left: 7px;
+  top: 3px;
+  width: 20px;
+  height: 27px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-file::after {
+  left: 13px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-left: 2px solid #ffffff;
+  border-top: 2px solid #ffffff;
+  transform: rotate(45deg);
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-folder::before {
+  left: 3px;
+  top: 12px;
+  width: 28px;
+  height: 17px;
+  background: rgba(255, 255, 255, 0.90);
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-icon-folder::after {
+  left: 4px;
+  top: 7px;
+  width: 14px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme="fluent"] #start-menu .start-tile-label {
+  max-width: 100%;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme="fluent"] .ctx-item {
+  min-height: 30px;
+  padding: 6px 26px 6px 12px;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #f2f2f2 !important;
+}
+
+@media (max-width: 560px) {
+  html[data-theme="fluent"] #start-menu {
+    width: calc(100vw - 8px);
+    height: min(520px, calc(100vh - 48px));
+  }
+
+  html[data-theme="fluent"] #start-menu .start-menu-layout.fluent {
+    grid-template-columns: 48px 1fr;
+  }
+
+  html[data-theme="fluent"] #start-menu .start-menu-tiles {
+    display: none;
+  }
+}
 

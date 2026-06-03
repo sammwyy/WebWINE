@@ -507,13 +507,255 @@ html[data-theme="luna"] .list-row.selected {
   color: #fff;
   background: #316ac5;
 }
-/* Start Menu Layout */
-.shell-menu.layout-experience { padding: 0; min-width: 320px; }
-.start-menu-layout.experience { display: flex; flex-direction: column; }
-.start-menu-header { display: flex; align-items: center; padding: 8px; background: var(--shell-menu-header-bg, #0078d7); color: var(--shell-menu-header-text, #fff); }
-.user-avatar { width: 32px; height: 32px; border-radius: 4px; margin-right: 8px; border: 2px solid rgba(255,255,255,0.5); }
-.user-name { font-weight: bold; font-size: 14px; }
-.start-menu-columns { display: flex; flex-direction: row; background: var(--menu-bg); }
-.start-menu-left { flex: 1; padding: 4px; background: var(--menu-bg); }
-.start-menu-right { flex: 1; padding: 4px; background: var(--shell-menu-right-bg, rgba(0,0,0,0.05)); border-left: 1px solid var(--menu-border); }
+/* Windows XP Start menu */
+html[data-theme="luna"] .shell-menu.layout-experience,
+html[data-theme="luna"] #start-menu.layout-experience {
+  width: 430px;
+  min-width: 430px;
+  padding: 0;
+  border: 1px solid #1f4fb5 !important;
+  border-radius: 8px 8px 0 0;
+  background: #ffffff !important;
+  box-shadow: 3px 5px 15px rgba(0, 0, 0, .48);
+}
+
+html[data-theme="luna"] #start-menu.layout-experience {
+  background:
+    linear-gradient(90deg, #ffffff 0 214px, #d3e5fa 214px 100%) !important;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-layout.experience {
+  display: flex;
+  flex-direction: column;
+  min-height: 478px;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-header {
+  min-height: 68px;
+  padding: 8px 10px;
+  background:
+    radial-gradient(circle at 38px 18px, rgba(255, 255, 255, .45), transparent 28px),
+    linear-gradient(180deg, #63a9ff 0%, #245edb 55%, #1b45a8 100%) !important;
+  border-bottom: 2px solid #f6a21a !important;
+  border-radius: 7px 7px 0 0;
+}
+
+html[data-theme="luna"] #start-menu .user-avatar {
+  width: 48px;
+  height: 48px;
+  margin-right: 10px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .78);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffffff, #c9ddff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+}
+
+html[data-theme="luna"] #start-menu .user-name {
+  color: #ffffff;
+  font-family: "Trebuchet MS", Tahoma, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, .65);
+}
+
+html[data-theme="luna"] #start-menu .start-menu-columns {
+  display: grid;
+  grid-template-columns: 214px 214px;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-left,
+html[data-theme="luna"] #start-menu .start-menu-right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-left {
+  background: #ffffff;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-right {
+  background: #d3e5fa;
+  border-left: 1px solid #9bbce8;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-title,
+html[data-theme="luna"] #start-menu .shell-menu-item {
+  margin-left: 0;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-title {
+  padding: 4px 4px 3px;
+  color: #6d6d6d;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-item {
+  min-height: 36px;
+  padding: 5px 6px;
+  gap: 8px;
+  display: flex;
+  align-items: center;
+  color: #000000 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  font-family: Tahoma, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-right .shell-menu-item {
+  min-height: 28px;
+  font-weight: 700;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-item:hover {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #5d9df1 0%, #316ac5 100%) !important;
+  border-color: #316ac5 !important;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-item[aria-disabled="true"] {
+  color: #777777 !important;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-item[aria-disabled="true"]:hover {
+  color: #777777 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="luna"] #start-menu .start-item-icon {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-theme="luna"] #start-menu .start-menu-right .start-item-icon {
+  width: 20px;
+  height: 20px;
+}
+
+html[data-theme="luna"] #start-menu .fallback-icon {
+  position: relative;
+  display: inline-block;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffffff, #c8daf7);
+  border: 1px solid #7f9db9;
+}
+
+html[data-theme="luna"] #start-menu .fallback-icon::before,
+html[data-theme="luna"] #start-menu .fallback-icon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+html[data-theme="luna"] #start-menu .xp-documents .fallback-icon::before,
+html[data-theme="luna"] #start-menu .xp-pictures .fallback-icon::before,
+html[data-theme="luna"] #start-menu .xp-music .fallback-icon::before,
+html[data-theme="luna"] #start-menu .xp-computer .fallback-icon::before {
+  left: 3px;
+  top: 6px;
+  width: 14px;
+  height: 10px;
+  background: #f2c04e;
+  border: 1px solid #b98016;
+}
+
+html[data-theme="luna"] #start-menu .xp-control-panel .fallback-icon::before,
+html[data-theme="luna"] #start-menu .xp-search .fallback-icon::before,
+html[data-theme="luna"] #start-menu .xp-run .fallback-icon::before {
+  inset: 4px;
+  border: 1px solid #2463bd;
+  background: #ffffff;
+}
+
+html[data-theme="luna"] #start-menu .shell-menu-separator {
+  height: 2px;
+  margin: 5px 2px;
+  background: transparent;
+  border-top: 1px solid #d6d6d6;
+  border-bottom: 1px solid #ffffff;
+}
+
+html[data-theme="luna"] #start-menu .xp-all-programs {
+  margin-top: auto;
+  padding: 6px 0 0;
+  border-top: 1px solid #d6d6d6;
+}
+
+html[data-theme="luna"] #start-menu .xp-all-programs-btn {
+  width: 100%;
+  min-height: 30px;
+  color: #000000 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  font-family: Tahoma, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+html[data-theme="luna"] #start-menu .xp-all-programs-btn:hover {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #5d9df1 0%, #316ac5 100%) !important;
+}
+
+html[data-theme="luna"] #start-menu .xp-all-programs-arrow {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #76c84f, #188611);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+html[data-theme="luna"] #start-menu .xp-footer {
+  min-height: 44px;
+  padding: 7px 9px;
+  background: linear-gradient(180deg, #4288e4 0%, #235ac7 55%, #163f95 100%);
+  border-top: 1px solid rgba(255, 255, 255, .38);
+}
+
+html[data-theme="luna"] #start-menu .xp-footer-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  color: #ffffff !important;
+  border: 1px solid transparent !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-family: Tahoma, Arial, sans-serif;
+  font-size: 11px;
+}
+
+html[data-theme="luna"] #start-menu .xp-footer-btn::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffcf6a, #c84a17);
+  border: 1px solid rgba(255, 255, 255, .65);
+}
+
+html[data-theme="luna"] #start-menu .xp-shutdown::before {
+  background: linear-gradient(180deg, #f66c58, #b31813);
+}
+
+html[data-theme="luna"] #start-menu .xp-footer-btn:hover {
+  background: rgba(255, 255, 255, .18) !important;
+}
 

@@ -494,10 +494,213 @@ html[data-theme="classic"] .dialog-btn:focus {
   outline: 1px dotted var(--win98-black);
   outline-offset: -4px;
 }
-/* Start Menu Layout */
-.shell-menu.layout-classic { padding: 0; }
-.start-menu-layout.classic { display: flex; flex-direction: row; height: 100%; min-height: 250px; }
-.start-menu-sidebar { width: 30px; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(to top, var(--accent, #000080), #1084d0); color: #fff; padding-bottom: 8px; }
-.start-menu-sidebar-text { writing-mode: vertical-rl; transform: rotate(180deg); font-weight: bold; font-size: 16px; font-family: 'Arial', sans-serif; letter-spacing: 2px; }
-.start-menu-content { flex: 1; display: flex; flex-direction: column; padding: 4px; }
+/* Windows 98 Start menu */
+html[data-theme="classic"] .shell-menu.layout-classic,
+html[data-theme="classic"] #start-menu.layout-classic {
+  width: 246px;
+  min-width: 246px;
+  padding: 2px;
+  border: 1px solid;
+  border-color: var(--win98-light) var(--win98-black) var(--win98-black) var(--win98-light);
+  background: var(--win98-face) !important;
+  box-shadow:
+    inset 1px 1px 0 var(--win98-hilight),
+    inset -1px -1px 0 var(--win98-shadow),
+    2px 2px 0 rgba(0, 0, 0, .35);
+}
+
+html[data-theme="classic"] #start-menu .start-menu-layout.classic {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  min-height: 286px;
+  background: var(--win98-face);
+}
+
+html[data-theme="classic"] #start-menu .start-menu-sidebar {
+  width: 32px;
+  min-width: 32px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 6px;
+  background: linear-gradient(180deg, #000080 0%, #1084d0 100%);
+}
+
+html[data-theme="classic"] #start-menu .start-menu-sidebar-text {
+  color: #ffffff;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+html[data-theme="classic"] #start-menu .classic-menu-content,
+html[data-theme="classic"] #start-menu .start-menu-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 2px;
+  background: var(--win98-face);
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-title {
+  display: none;
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-item {
+  min-height: 32px;
+  padding: 3px 5px 3px 4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--win98-black) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-family: "MS Sans Serif", Tahoma, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-item:hover,
+html[data-theme="classic"] #start-menu .shell-menu-item:focus {
+  color: var(--win98-selection-text) !important;
+  background: var(--win98-selection) !important;
+  outline: none;
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-item[aria-disabled="true"] {
+  color: var(--win98-shadow) !important;
+  text-shadow: 1px 1px 0 var(--win98-light);
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-item[aria-disabled="true"]:hover {
+  background: transparent !important;
+}
+
+html[data-theme="classic"] #start-menu .start-item-icon {
+  width: 24px;
+  height: 24px;
+}
+
+html[data-theme="classic"] #start-menu .fallback-icon {
+  position: relative;
+  display: inline-block;
+  border: 1px solid;
+  border-color: var(--win98-hilight) var(--win98-shadow) var(--win98-shadow) var(--win98-hilight);
+  background: #ffffff;
+}
+
+html[data-theme="classic"] #start-menu .fallback-icon::before,
+html[data-theme="classic"] #start-menu .fallback-icon::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+}
+
+html[data-theme="classic"] #start-menu .classic-programs .fallback-icon::before,
+html[data-theme="classic"] #start-menu .classic-documents .fallback-icon::before,
+html[data-theme="classic"] #start-menu .classic-settings .fallback-icon::before {
+  left: 3px;
+  top: 7px;
+  width: 18px;
+  height: 12px;
+  background: #ffff80;
+  border: 1px solid #808000;
+}
+
+html[data-theme="classic"] #start-menu .classic-programs .fallback-icon::after {
+  left: 4px;
+  top: 4px;
+  width: 9px;
+  height: 5px;
+  background: #ffff80;
+  border: 1px solid #808000;
+  border-bottom: 0;
+}
+
+html[data-theme="classic"] #start-menu .classic-find .fallback-icon::before {
+  left: 4px;
+  top: 4px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #008080;
+  border-radius: 50%;
+}
+
+html[data-theme="classic"] #start-menu .classic-find .fallback-icon::after {
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 2px;
+  background: #008080;
+  transform: rotate(45deg);
+}
+
+html[data-theme="classic"] #start-menu .classic-help .fallback-icon::before {
+  content: "?";
+  inset: 2px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: #000080;
+  font-family: Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+html[data-theme="classic"] #start-menu .classic-run .fallback-icon::before {
+  left: 3px;
+  top: 5px;
+  width: 18px;
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid #000000;
+  box-shadow: inset 0 3px 0 #ffffff;
+}
+
+html[data-theme="classic"] #start-menu .classic-logoff .fallback-icon::before {
+  left: 5px;
+  top: 3px;
+  width: 14px;
+  height: 18px;
+  border: 1px solid #000080;
+  background: #ffffff;
+}
+
+html[data-theme="classic"] #start-menu .classic-shutdown .fallback-icon::before {
+  left: 4px;
+  top: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #c00000;
+  border: 1px solid #800000;
+}
+
+html[data-theme="classic"] #start-menu .menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+html[data-theme="classic"] #start-menu .menu-item-arrow {
+  margin-left: auto;
+  color: inherit;
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+}
+
+html[data-theme="classic"] #start-menu .shell-menu-separator {
+  height: 2px;
+  margin: 3px 1px 3px 0;
+  border: 0;
+  border-top: 1px solid var(--win98-shadow);
+  border-bottom: 1px solid var(--win98-hilight);
+  background: transparent;
+}
 
