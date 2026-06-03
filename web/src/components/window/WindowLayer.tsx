@@ -7,12 +7,13 @@
 
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import { WindowFrame } from "./WindowFrame.js";
+import styles from "./WindowFrame.module.css";
 
 export function WindowLayer() {
   const windows = useWindowStore((s) => s.windows);
 
   return (
-    <div id="window-layer" aria-label="Open windows">
+    <div id="window-layer" className={`${styles["window-layer"]} window-layer`} aria-label="Open windows">
       {windows.map((record) => (
         <WindowFrame key={record.id} record={record} />
       ))}

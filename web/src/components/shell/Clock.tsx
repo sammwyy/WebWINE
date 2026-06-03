@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from "react";
+import styles from "./Taskbar.module.css";
 
 function getTimeString(): string {
   return new Date().toLocaleTimeString([], {
@@ -21,7 +22,7 @@ export function Clock() {
   }, []);
 
   return (
-    <div id="taskbar-clock" aria-label="System clock" aria-live="polite">
+    <div id="taskbar-clock" className={`${styles["taskbar-clock"]} taskbar-clock`} aria-label="System clock" aria-live="polite">
       {time}
     </div>
   );

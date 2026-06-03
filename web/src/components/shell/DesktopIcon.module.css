@@ -1,0 +1,40 @@
+
+.desktop-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  position: absolute;
+  width: var(--icon-size);
+  height: 96px;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: var(--icon-radius);
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+  transition: background 0.1s;
+}
+
+.desktop-icon:hover {
+  background: var(--icon-hover-bg);
+  border-color: var(--icon-hover-border);
+}
+
+.desktop-icon.selected {
+  background: var(--icon-selected-bg);
+  border-color: var(--icon-selected-border);
+}
+
+.desktop-icon.dragging {
+  opacity: 0.82;
+  z-index: 5;
+  transition: none;
+}
+
+/* desktop icon cut state */
+
+.desktop-icon.cut {
+  opacity: 0.45;
+}
+

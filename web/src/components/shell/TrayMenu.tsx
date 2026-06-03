@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import styles from "./StartMenu.module.css";
 
 interface TrayMenuProps {
   onClose: () => void;
@@ -27,6 +28,6 @@ export function TrayMenu({ onClose }: TrayMenuProps) {
   }, [onClose]);
 
   return (
-    <div id="tray-menu" className="shell-menu" ref={menuRef} role="menu" />
+    <div id="tray-menu" className={`${styles["tray-menu"]} ${styles["shell-menu"]} shell-menu`} ref={menuRef} role="menu" />
   );
 }

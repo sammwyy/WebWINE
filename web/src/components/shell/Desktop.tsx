@@ -13,8 +13,8 @@ import { useClipboardStore } from "../../stores/useClipboardStore.js";
 import { log } from "../../stores/useLogStore.js";
 import { mountFiles, performPaste } from "../../lib/clipboard.js";
 import { DesktopIcon } from "./DesktopIcon.js";
-import { ContextMenu, SEPARATOR } from "./ContextMenu.js";
-import type { MenuItem } from "./ContextMenu.js";
+import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu.js";
+import styles from "./Desktop.module.css";
 import { WindowLayer } from "../window/WindowLayer.js";
 
 const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
@@ -26,7 +26,7 @@ interface DesktopProps {
 
 export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   const { runtime } = useRuntimeStore();
-  const { entries, positions, refresh } = useDesktopStore();
+  const { entries, positions, refresh, clearSelection } = useDesktopStore();
   const clipboard = useClipboardStore();
 
   const gridRef = useRef<HTMLDivElement>(null);
@@ -126,11 +126,11 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   return (
     <div
       id="desktop"
-      className={dragOver ? "drag-over" : ""}
-      onClick={() => {
-        document
-          .querySelectorAll(".desktop-icon.selected")
-          .forEach((el) => el.classList.remove("selected"));
+      className={`${styles.desktop} ${dragOver ? styles["drag-over"] + " drag-over" : ""}`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget || (e.target as HTMLElement).id === "icon-grid") {
+          clearSelection();
+        }
       }}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest(".desktop-icon")) return;
@@ -149,7 +149,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
         if (files) await handleFilesUploaded(Array.from(files));
       }}
     >
-      <div id="icon-grid" ref={gridRef}>
+      <div id="icon-grid" className={styles["icon-grid"]} ref={gridRef}>
         {entries.map((entry) => (
           <DesktopIcon
             key={entry.path}

@@ -9,6 +9,7 @@ import { useThemeStore } from "../../stores/useThemeStore.js";
 import { StartMenu, type StartMenuAction } from "./StartMenu.js";
 import { TrayMenu } from "./TrayMenu.js";
 import { Clock } from "./Clock.js";
+import styles from "./Taskbar.module.css";
 
 const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
 
@@ -58,11 +59,11 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
   );
 
   return (
-    <div id="taskbar">
+    <div id="taskbar" className={styles.taskbar}>
       <button
         id="start-button"
         type="button"
-        className={orbStatus === "loaded" ? "has-orb" : ""}
+        className={`${styles["start-button"]} ${orbStatus === "loaded" ? styles["has-orb"] + " has-orb" : ""}`}
         aria-haspopup="true"
         aria-expanded={startOpen}
         onMouseEnter={() => setOrbHover(true)}
@@ -78,14 +79,14 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
             src={`/themes/${theme}/orb.webp`}
             alt="Start"
             draggable={false}
-            className="start-orb-sprite-img"
+            className={`${styles["start-orb-sprite-img"]} start-orb-sprite-img`}
             style={{
               transform: `translateY(${startOpen ? '-66.666%' : (orbHover ? '-33.333%' : '0')})`
             }}
           />
         ) : orbStatus === "error" ? (
           <>
-            <span className="start-mark" aria-hidden="true" />
+            <span className={`${styles["start-mark"]} start-mark`} aria-hidden="true" />
             <span>WebWINE</span>
           </>
         ) : null}
@@ -100,6 +101,7 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
 
       <div
         id="taskbar-window-list"
+        className={styles["taskbar-window-list"]}
         aria-label="Open windows"
         role="toolbar"
       >
@@ -107,10 +109,12 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
           <button
             key={win.id}
             className={[
+              styles["taskbar-window-button"],
               "taskbar-window-button",
-              win.id === activeId ? "active" : "",
-              win.minimized ? "minimized" : "",
-              win.maximized ? "maximized" : "",
+              win.id === activeId ? styles.active + " active" : "",
+              win.minimized ? styles.minimized + " minimized" : "",
+              win.maximized ? styles.maximized + " maximized" : "",
+              styles[`icon-mode-${mode}`],
               `icon-mode-${mode}`
             ]
               .filter(Boolean)
@@ -120,7 +124,7 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
             onClick={() => activateFromTaskbar(win.id)}
           >
             {(mode === "full" || mode === "only-icon") && win.icon && (
-              <span className="taskbar-window-icon" aria-hidden="true">
+              <span className={`${styles["taskbar-window-icon"]} taskbar-window-icon`} aria-hidden="true">
                 {win.icon.includes("/") ? (
                   <img src={win.icon} alt="" style={{width: 16, height: 16, objectFit: "contain"}} draggable={false} onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 ) : (
@@ -129,15 +133,16 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
               </span>
             )}
             {(mode === "full" || mode === "only-label") && (
-              <span className="taskbar-window-title">{win.title}</span>
+              <span className={`${styles["taskbar-window-title"]} taskbar-window-title`}>{win.title}</span>
             )}
           </button>
         ))}
       </div>
 
-      <div id="taskbar-tray">
+      <div id="taskbar-tray" className={styles["taskbar-tray"]}>
         <button
           id="tray-toggle"
+          className={styles["tray-toggle"]}
           type="button"
           aria-label="Show hidden icons"
           aria-haspopup="true"

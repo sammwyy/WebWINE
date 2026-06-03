@@ -1,11 +1,6 @@
-/**
- * StartMenu — floating panel anchored to the start button.
- *
- * Receives an onClose callback and dispatches named actions upward.
- */
-
 import { useEffect, useRef } from "react";
 import { useThemeStore } from "../../stores/useThemeStore.js";
+import styles from "./StartMenu.module.css";
 
 export type StartMenuAction =
   | "explorer"
@@ -20,7 +15,8 @@ interface StartMenuProps {
 
 export function StartMenu({ onAction, onClose }: StartMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const { theme } = useThemeStore();
+  const { theme, getEffectiveStartMenuLayout } = useThemeStore();
+  const layout = getEffectiveStartMenuLayout();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -36,61 +32,104 @@ export function StartMenu({ onAction, onClose }: StartMenuProps) {
     return () => document.removeEventListener("click", handler);
   }, [onClose]);
 
-  return (
-    <div id="start-menu" className="shell-menu" ref={menuRef} role="menu">
-      <div className="start-menu-header">
-        <span className="start-menu-mark" aria-hidden="true">
-          ww
-        </span>
-        <span className="start-menu-heading">
-          <span className="start-menu-title">WebWINE</span>
-          <span className="start-menu-subtitle">Browser shell</span>
-        </span>
+  const renderAppItem = (action: StartMenuAction, label: string) => (
+    <button
+      key={action}
+      className={`${styles["shell-menu-item"]} shell-menu-item`}
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        onClose();
+        onAction(action);
+      }}
+    >
+      <img 
+        src={`/themes/${theme}/icons/apps/${action}.webp`} 
+        alt="" 
+        className={`${styles["start-item-icon"]} start-item-icon`}
+        onError={(e) => { e.currentTarget.classList.add("fallback-icon"); e.currentTarget.src = ""; }} 
+      />
+      {label}
+    </button>
+  );
+
+  const renderOpItem = (action: StartMenuAction, label: string) => (
+    <button
+      key={action}
+      className={`${styles["shell-menu-item"]} shell-menu-item`}
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        onClose();
+        onAction(action);
+      }}
+    >
+      <span className={`${styles["start-item-icon"]} start-item-icon fallback-icon`} aria-hidden="true" />
+      {label}
+    </button>
+  );
+
+  const renderClassic = () => (
+    <div className="start-menu-layout classic">
+      <div className={`${styles["start-menu-sidebar"]} start-menu-sidebar`}>
+        <span className={`${styles["start-menu-sidebar-text"]} start-menu-sidebar-text`}>WebWINE</span>
       </div>
+      <div className={`${styles["start-menu-content"]} start-menu-content`}>
+        <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Apps</div>
+        {renderAppItem("explorer", "File Explorer")}
+        {renderAppItem("themes", "Themes")}
+        <div className={`${styles["shell-menu-separator"]} shell-menu-separator`} />
+        <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Operations</div>
+        {renderOpItem("upload-file", "Upload File")}
+        {renderOpItem("upload-folder", "Upload Folder")}
+      </div>
+    </div>
+  );
 
-      <div className="shell-menu-title">Apps</div>
-      {([
-        ["explorer", "File Explorer"],
-        ["themes", "Themes"],
-      ] as [StartMenuAction, string][]).map(([action, label]) => (
-        <button
-          key={action}
-          className="shell-menu-item"
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            onAction(action);
-          }}
-        >
-          <img 
-            src={`/themes/${theme}/icons/apps/${action}.webp`} 
-            alt="" 
-            style={{ width: 24, height: 24, marginRight: 8, objectFit: "contain" }}
-            onError={(e) => { e.currentTarget.style.display = "none"; }} 
-          />
-          {label}
-        </button>
-      ))}
+  const renderExperience = () => (
+    <div className="start-menu-layout experience">
+      <div className={`${styles["start-menu-header"]} start-menu-header`}>
+        <img src={`/themes/${theme}/icons/shell/msg_inform.webp`} className={`${styles["user-avatar"]} user-avatar`} alt="User" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        <span className={`${styles["user-name"]} user-name`}>WebWINE User</span>
+      </div>
+      <div className={`${styles["start-menu-columns"]} start-menu-columns`}>
+        <div className={`${styles["start-menu-left"]} start-menu-left`}>
+          <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Apps</div>
+          {renderAppItem("explorer", "File Explorer")}
+          {renderAppItem("themes", "Themes")}
+        </div>
+        <div className={`${styles["start-menu-right"]} start-menu-right`}>
+          <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Operations</div>
+          {renderOpItem("upload-file", "Upload File")}
+          {renderOpItem("upload-folder", "Upload Folder")}
+        </div>
+      </div>
+    </div>
+  );
 
-      <div className="shell-menu-title" style={{ marginTop: 8 }}>Operations</div>
-      {([
-        ["upload-file", "Upload File"],
-        ["upload-folder", "Upload Folder"],
-      ] as [StartMenuAction, string][]).map(([action, label]) => (
-        <button
-          key={action}
-          className="shell-menu-item"
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            onAction(action);
-          }}
-        >
-          {label}
-        </button>
-      ))}
+  const renderFluent = () => (
+    <div className="start-menu-layout fluent">
+      <div className={`${styles["start-menu-rail"]} start-menu-rail`}>
+        <button className={`${styles["rail-btn"]} rail-btn`} type="button" title="User">U</button>
+        <button className={`${styles["rail-btn"]} rail-btn`} type="button" title="Power">P</button>
+      </div>
+      <div className={`${styles["start-menu-content"]} start-menu-content`}>
+        <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Apps</div>
+        {renderAppItem("explorer", "File Explorer")}
+        {renderAppItem("themes", "Themes")}
+        <div className={`${styles["shell-menu-separator"]} shell-menu-separator`} />
+        <div className={`${styles["shell-menu-title"]} shell-menu-title`}>Operations</div>
+        {renderOpItem("upload-file", "Upload File")}
+        {renderOpItem("upload-folder", "Upload Folder")}
+      </div>
+    </div>
+  );
+
+  return (
+    <div id="start-menu" className={`${styles["start-menu"]} ${styles["shell-menu"]} shell-menu layout-${layout}`} ref={menuRef} role="menu">
+      {layout === "classic" && renderClassic()}
+      {layout === "experience" && renderExperience()}
+      {layout === "fluent" && renderFluent()}
     </div>
   );
 }

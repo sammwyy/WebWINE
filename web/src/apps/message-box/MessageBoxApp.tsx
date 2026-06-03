@@ -1,3 +1,4 @@
+import "./MessageBoxApp.css";
 import { useEffect, useRef } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";

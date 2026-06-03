@@ -1,0 +1,49 @@
+.explorer-pathbar {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--window-border);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: monospace;
+}
+
+.explorer-list {
+  padding: 4px 0;
+}
+
+.explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-radius: var(--row-radius);
+  margin: 1px 4px;
+}
+
+.explorer-row:hover {
+  background: rgba(74, 144, 217, 0.15);
+}
+
+.explorer-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.explorer-name {
+  flex: 1;
+}
+
+.explorer-size {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.explorer-empty,
+.explorer-error {
+  color: var(--text-muted);
+  padding: 12px;
+  font-style: italic;
+}
+

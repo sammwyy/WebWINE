@@ -1,3 +1,4 @@
+import "./ThemeSwitcherApp.css";
 import { useState } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";

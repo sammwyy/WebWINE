@@ -1,0 +1,197 @@
+.desktop-icon-label {
+  font-size: 11px;
+  text-align: center;
+  word-break: break-word;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  max-width: 72px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.taskbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: var(--taskbar-bg);
+  border-top: 1px solid var(--taskbar-border);
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 6px;
+  z-index: 9000;
+  color: var(--taskbar-text);
+  box-shadow: 0 -1px 14px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+.start-button,
+.tray-toggle,
+.taskbar-window-button,
+.shell-menu-item {
+  font-family: inherit;
+}
+
+.start-button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--taskbar-button);
+  color: var(--taskbar-text);
+  border: 1px solid var(--control-border);
+  padding: 0 12px 0 8px;
+  border-radius: var(--start-button-radius);
+  cursor: pointer;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.start-button:hover,
+.start-button[aria-expanded="true"] {
+  background: var(--taskbar-button-hover);
+}
+
+.start-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: var(--start-mark-color);
+  color: var(--start-mark-bg);
+  border-radius: var(--start-mark-radius);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.start-mark::before {
+  content: "ww";
+}
+
+.taskbar-window-list {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.taskbar-window-list::-webkit-scrollbar {
+  display: none;
+}
+
+.taskbar-window-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 12px;
+  max-width: 160px;
+  flex: 1;
+  background: var(--taskbar-button);
+  border: 1px solid var(--control-border);
+  border-radius: var(--taskbar-button-radius);
+  color: var(--taskbar-text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.taskbar-window-button.icon-mode-only-icon {
+  flex: 0 0 40px;
+  max-width: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+.taskbar-window-button:hover {
+  background: var(--taskbar-button-hover);
+}
+
+.taskbar-window-button.active {
+  background: var(--taskbar-button-active);
+  border-color: var(--control-border-active);
+}
+
+.start-orb-sprite-img {
+  height: 300%;
+  width: auto;
+  object-fit: contain;
+  transition: none;
+}
+
+.start-button.has-orb {
+  padding: 0 !important;
+  background: transparent !important;
+  overflow: hidden;
+  align-items: flex-start;
+}
+
+.taskbar-window-button.minimized {
+  opacity: 0.72;
+}
+
+.taskbar-window-button.maximized .taskbar-window-title::after {
+  content: "  [max]";
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.taskbar-window-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.taskbar-window-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.taskbar-tray {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.tray-toggle {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  color: var(--taskbar-text);
+  border: 1px solid transparent;
+  border-radius: var(--tray-button-radius);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.tray-toggle:hover,
+.tray-toggle[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.taskbar-clock {
+  min-width: 58px;
+  color: var(--taskbar-text);
+  font-size: 12px;
+  text-align: center;
+  user-select: none;
+}

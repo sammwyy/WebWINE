@@ -1,0 +1,75 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0f1720;
+  --desktop-bg: #10272d;
+  --taskbar-bg: rgba(244, 246, 248, 0.92);
+  --taskbar-border: rgba(0, 0, 0, 0.22);
+  --taskbar-button: rgba(255, 255, 255, 0.66);
+  --taskbar-button-hover: rgba(255, 255, 255, 0.92);
+  --taskbar-button-active: #d8ecff;
+  --system-font: "Segoe UI", system-ui, sans-serif;
+  --taskbar-text: #111827;
+  --menu-text: #111827;
+  --shell-text: #111827;
+  --shell-muted: #64748b;
+  --shell-menu-hover: #e7f1fb;
+  --shell-menu-header-bg: linear-gradient(135deg, #1f6fb2, #38a3c9);
+  --shell-menu-header-text: #ffffff;
+  --shell-menu-header-muted: rgba(255, 255, 255, 0.72);
+  --start-mark-color: #1976c9;
+  --start-mark-bg: #ffffff;
+  --accent: #1976c9;
+  --accent-hover: #0f67b3;
+  --window-bg: #1e1e2e;
+  --window-border: #2a2a4a;
+  --window-title-bg: #16213e;
+  --desktop-wallpaper:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    linear-gradient(160deg, #0d3140, #13212d 54%, #172933);
+  --icon-hover-bg: rgba(255, 255, 255, 0.12);
+  --icon-hover-border: rgba(255, 255, 255, 0.28);
+  --icon-selected-bg: rgba(0, 120, 215, 0.32);
+  --icon-selected-border: rgba(130, 196, 255, 0.76);
+  --window-frame-bg: #f0f0f0;
+  --window-frame-border: #707070;
+  --window-frame-radius: 6px;
+  --window-titlebar-bg: linear-gradient(#fafafa, #e8e8e8);
+  --window-titlebar-border: #d0d0d0;
+  --window-titlebar-text: #1a1a1a;
+  --window-close-text: #333;
+  --window-control-hover: rgba(0, 0, 0, 0.08);
+  --window-control-active: rgba(0, 0, 0, 0.16);
+  --window-close-hover: #e81123;
+  --window-close-hover-text: #ffffff;
+  --control-border: rgba(0, 0, 0, 0.13);
+  --control-border-active: #68aeea;
+  --icon-radius: 4px;
+  --start-button-radius: 5px;
+  --start-mark-radius: 4px;
+  --taskbar-button-radius: 5px;
+  --tray-button-radius: 4px;
+  --menu-radius: 7px;
+  --menu-item-radius: 0;
+  --start-menu-mark-radius: 7px;
+  --theme-option-radius: 5px;
+  --theme-preview-radius: 3px;
+  --context-menu-radius: 5px;
+  --context-item-radius: 3px;
+  --dialog-control-radius: 3px;
+  --row-radius: 3px;
+  --notice-radius: 4px;
+  --text: #cdd6f4;
+  --text-muted: #6c7086;
+  --icon-size: 72px;
+  --log-bg: #13131f;
+  --menu-bg: rgba(250, 251, 252, 0.96);
+  --menu-border: rgba(0, 0, 0, 0.18);
+  --log-border: #2a2a4a;
+}

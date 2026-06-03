@@ -1,0 +1,130 @@
+.shell-menu {
+  position: fixed;
+  bottom: 44px;
+  z-index: 9500;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  color: var(--menu-text);
+  backdrop-filter: blur(12px);
+}
+
+.start-menu {
+  left: 8px;
+  width: 268px;
+  padding: 0 0 8px;
+  overflow: hidden;
+}
+
+.tray-menu {
+  right: 72px;
+  width: 180px;
+  height: 110px;
+  padding: 8px;
+}
+
+.shell-menu-title {
+  padding: 10px 12px 6px;
+  color: var(--shell-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.shell-menu-item {
+  width: 100%;
+  display: block;
+  background: transparent;
+  border: none;
+  border-radius: var(--menu-item-radius);
+  color: var(--menu-text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.start-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  background: var(--shell-menu-header-bg);
+  color: var(--shell-menu-header-text);
+  border-bottom: 1px solid var(--menu-border);
+}
+
+.start-menu-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--start-menu-mark-radius);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: var(--shell-menu-header-text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.start-menu-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.start-menu-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--shell-menu-header-text);
+}
+
+.start-menu-subtitle {
+  font-size: 11px;
+  color: var(--shell-menu-header-muted);
+}
+
+.shell-menu-item:hover {
+  background: var(--shell-menu-hover);
+}
+
+
+/* Shared Start Menu Styles */
+.shell-menu-separator {
+  height: 1px;
+  background: var(--menu-border, #ccc);
+  margin: 4px 0;
+}
+
+.start-item-icon {
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  object-fit: contain;
+}
+
+.start-item-icon.fallback-icon {
+  background: transparent;
+}
+
+/* Layout specific classes */
+.start-menu-layout.classic { display: flex; flex-direction: row; height: 100%; min-height: 250px; }
+.start-menu-sidebar { width: 30px; display: flex; align-items: flex-end; justify-content: center; background: linear-gradient(to top, var(--accent, #000080), #1084d0); color: #fff; padding-bottom: 8px; }
+.start-menu-sidebar-text { writing-mode: vertical-rl; transform: rotate(180deg); font-weight: bold; font-size: 16px; font-family: 'Arial', sans-serif; letter-spacing: 2px; }
+.start-menu-layout.experience { display: flex; flex-direction: column; }
+.start-menu-header { display: flex; align-items: center; padding: 8px; background: var(--shell-menu-header-bg, #0078d7); color: var(--shell-menu-header-text, #fff); }
+.user-avatar { width: 32px; height: 32px; border-radius: 4px; margin-right: 8px; border: 2px solid rgba(255,255,255,0.5); }
+.user-name { font-weight: bold; font-size: 14px; }
+.start-menu-columns { display: flex; flex-direction: row; background: var(--menu-bg); }
+.start-menu-left { flex: 1; padding: 4px; background: var(--menu-bg); }
+.start-menu-right { flex: 1; padding: 4px; background: var(--shell-menu-right-bg, rgba(0,0,0,0.05)); border-left: 1px solid var(--menu-border); }
+.start-menu-layout.fluent { display: flex; flex-direction: row; height: 100%; }
+.start-menu-rail { width: 48px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 8px; border-right: 1px solid var(--menu-border, transparent); }
+.rail-btn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--menu-text); font-size: 16px; cursor: pointer; border-radius: 4px; margin-top: 4px; }
+.rail-btn:hover { background: var(--shell-menu-hover); }
+.start-menu-content { flex: 1; display: flex; flex-direction: column; padding: 4px; }
+

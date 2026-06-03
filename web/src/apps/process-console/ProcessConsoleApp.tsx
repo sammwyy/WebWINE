@@ -1,3 +1,4 @@
+import "./ProcessConsoleApp.css";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import type { RuntimeBridge } from "../../lib/runtime-bridge.js";

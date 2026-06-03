@@ -507,3 +507,13 @@ html[data-theme="luna"] .list-row.selected {
   color: #fff;
   background: #316ac5;
 }
+/* Start Menu Layout */
+.shell-menu.layout-experience { padding: 0; min-width: 320px; }
+.start-menu-layout.experience { display: flex; flex-direction: column; }
+.start-menu-header { display: flex; align-items: center; padding: 8px; background: var(--shell-menu-header-bg, #0078d7); color: var(--shell-menu-header-text, #fff); }
+.user-avatar { width: 32px; height: 32px; border-radius: 4px; margin-right: 8px; border: 2px solid rgba(255,255,255,0.5); }
+.user-name { font-weight: bold; font-size: 14px; }
+.start-menu-columns { display: flex; flex-direction: row; background: var(--menu-bg); }
+.start-menu-left { flex: 1; padding: 4px; background: var(--menu-bg); }
+.start-menu-right { flex: 1; padding: 4px; background: var(--shell-menu-right-bg, rgba(0,0,0,0.05)); border-left: 1px solid var(--menu-border); }
+

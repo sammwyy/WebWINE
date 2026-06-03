@@ -1,3 +1,4 @@
+import "./PeInspectorApp.css";
 import { useEffect, useState } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import type { RuntimeBridge } from "../../lib/runtime-bridge.js";

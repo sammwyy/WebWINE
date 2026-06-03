@@ -17,8 +17,9 @@ import { ContextMenu, SEPARATOR } from "./ContextMenu.js";
 import type { MenuItem } from "./ContextMenu.js";
 import { log } from "../../stores/useLogStore.js";
 import { performPaste } from "../../lib/clipboard.js";
-import type { DirectoryEntry } from "../../lib/worker.js";
-import type { IconPosition } from "../../stores/useDesktopStore.js";
+import type { DirectoryEntry } from "../../lib/runtime-bridge.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
+import styles from "./DesktopIcon.module.css";
 
 const ICON_CELL_W = 88;
 const ICON_CELL_H = 104;
@@ -42,21 +43,28 @@ export function DesktopIcon({
 }: DesktopIconProps) {
   const { runtime } = useRuntimeStore();
   const clipboard = useClipboardStore();
-  const { setPosition } = useDesktopStore();
+  const { setPosition, selectedIds, selectIcon } = useDesktopStore();
+  const { theme } = useThemeStore();
 
-  const [iconSrc, setIconSrc] = useState(ICON_PLACEHOLDER);
-  const [overlaySrc, setOverlaySrc] = useState<string | undefined>(undefined);
-  const [selected, setSelected] = useState(false);
-  const [cut, setCut] = useState(false);
+  const elRef = useRef<HTMLDivElement>(null);
+  const { entry: clipEntry } = useClipboardStore();
+
+  const [imgSrc, setImgSrc] = useState(ICON_PLACEHOLDER);
+  const [isShortcut, setIsShortcut] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
+
+  const selected = selectedIds.includes(entry.path);
+
+  const path = entry.path;
 
   // Resolve icon image asynchronously.
   useEffect(() => {
     if (!runtime) return;
     resolveIcon(entry, runtime)
       .then((resolved) => {
-        setIconSrc(resolved.src);
-        setOverlaySrc(resolved.overlay);
+        setImgSrc(resolved.src);
+        setIsShortcut(resolved.isShortcut ?? false);
       })
       .catch(() => { /* keep placeholder */ });
   }, [entry, runtime]);
@@ -103,10 +111,7 @@ export function DesktopIcon({
       e.stopPropagation();
       if (suppressRef.current) return;
 
-      document
-        .querySelectorAll(".desktop-icon.selected")
-        .forEach((el) => el !== e.currentTarget && el.classList.remove("selected"));
-      setSelected(true);
+      selectIcon(path, e.ctrlKey || e.metaKey);
 
       clicksRef.current++;
       if (clicksRef.current === 1) {
@@ -135,16 +140,16 @@ export function DesktopIcon({
       const startY = e.clientY;
       const startLeft = el.offsetLeft;
       const startTop = el.offsetTop;
-      let dragging = false;
+      let isDragging = false;
 
       el.setPointerCapture(e.pointerId);
 
       const onMove = (ev: PointerEvent) => {
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
-        if (!dragging && Math.hypot(dx, dy) < 5) return;
-        dragging = true;
-        el.classList.add("dragging");
+        if (!isDragging && Math.hypot(dx, dy) < 5) return;
+        isDragging = true;
+        setDragging(true);
         el.style.left = `${clampV(startLeft + dx, ICON_PAD, gridEl.clientWidth - ICON_CELL_W)}px`;
         el.style.top = `${clampV(startTop + dy, ICON_PAD, gridEl.clientHeight - ICON_CELL_H)}px`;
       };
@@ -154,8 +159,8 @@ export function DesktopIcon({
         el.removeEventListener("pointermove", onMove);
         el.removeEventListener("pointerup", onUp);
 
-        if (!dragging) return;
-        el.classList.remove("dragging");
+        setDragging(false);
+        if (!isDragging) return;
 
         const newPos: IconPosition = {
           col: Math.max(0, Math.round((el.offsetLeft - ICON_PAD) / ICON_CELL_W)),
@@ -212,9 +217,6 @@ export function DesktopIcon({
       disabled: !isFile,
       action: () => {
         clipboard.set(entry.path, entry.name, "copy");
-        document
-          .querySelectorAll(".desktop-icon")
-          .forEach((el) => (el as HTMLElement).classList.remove("cut"));
       },
     });
     items.push({
@@ -222,7 +224,6 @@ export function DesktopIcon({
       disabled: !isFile,
       action: () => {
         clipboard.set(entry.path, entry.name, "cut");
-        setCut(true);
       },
     });
     items.push({
@@ -260,9 +261,11 @@ export function DesktopIcon({
       <div
         ref={iconRef}
         className={[
+          styles["desktop-icon"],
           "desktop-icon",
-          selected ? "selected" : "",
-          cut ? "cut" : "",
+          selected ? styles.selected + " selected" : "",
+          dragging ? styles.dragging + " dragging" : "",
+          clipEntry?.path === path && clipEntry.op === "cut" ? styles.cut + " cut" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -273,27 +276,30 @@ export function DesktopIcon({
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setSelected(true);
+          if (!selected) {
+            selectIcon(path);
+          }
           setCtx({ x: e.clientX, y: e.clientY });
         }}
       >
-        <div className="desktop-icon-img-wrap">
+        <div className={`${styles["desktop-icon-img-wrap"]} desktop-icon-img-wrap`}>
           <img
-            className="desktop-icon-img"
-            src={iconSrc}
+            src={imgSrc}
             alt=""
+            className={`${styles["desktop-icon-img"]} desktop-icon-img`}
             draggable={false}
           />
-          {overlaySrc && (
+          {isShortcut && (
             <img
-              className="desktop-icon-overlay"
-              src={overlaySrc}
-              alt=""
+              src={`/themes/${theme}/icons/shell/shortcut.webp`}
+              alt="Shortcut"
+              className={`${styles["desktop-icon-overlay"]} desktop-icon-overlay`}
               draggable={false}
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           )}
         </div>
-        <div className="desktop-icon-label">{entry.name}</div>
+        <div className={`${styles["desktop-icon-label"]} desktop-icon-label`}>{entry.name}</div>
       </div>
 
       {ctx && (

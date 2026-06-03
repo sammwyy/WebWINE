@@ -45,15 +45,19 @@ function savePositions(positions: Record<string, IconPosition>): void {
 interface DesktopStore {
   entries: DirectoryEntry[];
   positions: Record<string, IconPosition>;
+  selectedIds: string[];
   refreshing: boolean;
 
   refresh: (runtime: RuntimeBridge, desktopPath: string) => Promise<void>;
   setPosition: (path: string, pos: IconPosition) => void;
+  selectIcon: (path: string, multi?: boolean) => void;
+  clearSelection: () => void;
 }
 
 export const useDesktopStore = create<DesktopStore>((set, get) => ({
   entries: [],
   positions: loadPositions(),
+  selectedIds: [],
   refreshing: false,
 
   refresh: async (runtime, desktopPath) => {
@@ -80,4 +84,15 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
     savePositions(positions);
     set({ positions });
   },
+
+  selectIcon: (path, multi) => {
+    set((state) => {
+      if (multi) {
+        return { selectedIds: state.selectedIds.includes(path) ? state.selectedIds : [...state.selectedIds, path] };
+      }
+      return { selectedIds: [path] };
+    });
+  },
+
+  clearSelection: () => set({ selectedIds: [] }),
 }));

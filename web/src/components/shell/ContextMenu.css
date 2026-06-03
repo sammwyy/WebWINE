@@ -1,0 +1,50 @@
+
+/* context menu */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 99999;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--context-menu-radius);
+  padding: 4px 0;
+  min-width: 160px;
+  list-style: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+
+.ctx-item {
+  padding: 6px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--menu-text);
+  border-radius: var(--context-item-radius);
+  margin: 1px 3px;
+}
+
+.ctx-item:hover {
+  background: var(--shell-menu-hover);
+}
+
+.ctx-item.ctx-disabled {
+  color: var(--shell-muted);
+  cursor: default;
+  pointer-events: none;
+}
+
+.ctx-item.ctx-danger {
+  color: #f38ba8;
+}
+
+.ctx-item.ctx-danger:hover {
+  background: rgba(243, 139, 168, 0.15);
+}
+
+.ctx-sep {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.12);
+  margin: 4px 0;
+}
+

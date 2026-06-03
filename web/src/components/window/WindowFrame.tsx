@@ -5,8 +5,11 @@
  * dragging, z-order focus, and resize. Content is passed as children.
  */
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useCallback } from "react";
+import { clamp } from "../../lib/utils.js";
 import { useWindowStore } from "../../stores/useWindowStore.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
+import styles from "./WindowFrame.module.css";
 import type { WindowRecord } from "../../stores/useWindowStore.js";
 
 interface WindowFrameProps {
@@ -14,53 +17,43 @@ interface WindowFrameProps {
 }
 
 export function WindowFrame({ record }: WindowFrameProps) {
-  const { closeWindow, focusWindow, minimizeWindow, maximizeWindow, restoreWindow } =
+  const { closeWindow, focusWindow, minimizeWindow, maximizeWindow, restoreWindow, activeWindowId } =
     useWindowStore();
+  const isActive = activeWindowId === record.id;
 
   const elRef = useRef<HTMLDivElement>(null);
-  const isDialog = record.variant === "dialog";
 
   /** Resolve centering transform into concrete left/top, then start dragging. */
-  const onTitleBarMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const onTitlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
       if ((e.target as HTMLElement).closest(".window-controls")) return;
       if (record.maximized) return;
-      e.preventDefault();
 
       const el = elRef.current;
       if (!el) return;
 
       const rect = el.getBoundingClientRect();
-      // Clear transform so subsequent left/top math stays simple.
-      el.style.transform = "none";
       el.style.left = `${rect.left}px`;
       el.style.top = `${rect.top}px`;
+      el.style.transform = "none";
 
       const ox = e.clientX - rect.left;
       const oy = e.clientY - rect.top;
 
-      const onMove = (ev: MouseEvent) => {
-        el.style.left = `${ev.clientX - ox}px`;
-        el.style.top = `${ev.clientY - oy}px`;
+      const onMove = (ev: PointerEvent) => {
+        const x = clamp(ev.clientX - ox, 0, window.innerWidth - rect.width);
+        const y = clamp(ev.clientY - oy, 0, window.innerHeight - 30);
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
       };
       const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
     },
     [record.maximized],
-  );
-
-  /** Double-click on titlebar toggles maximize. */
-  const onTitleBarDblClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (isDialog || (e.target as HTMLElement).closest(".window-controls")) return;
-      if (record.maximized) restoreWindow(record.id);
-      else maximizeWindow(record.id);
-    },
-    [isDialog, record.id, record.maximized, maximizeWindow, restoreWindow],
   );
 
   const onMaxClick = useCallback(() => {
@@ -68,12 +61,19 @@ export function WindowFrame({ record }: WindowFrameProps) {
     else maximizeWindow(record.id);
   }, [record.id, record.maximized, maximizeWindow, restoreWindow]);
 
+  const onMinClick = useCallback(() => {
+    minimizeWindow(record.id);
+  }, [record.id, minimizeWindow]);
+
   const windowClasses = [
+    styles.window,
     "window",
+    styles[`window--${record.variant}`],
     `window--${record.variant}`,
-    record.resizable && !record.maximized ? "window--resizable" : "",
-    record.maximized ? "window--maximized" : "",
-    record.minimized ? "window--minimized" : "",
+    record.resizable && !record.maximized ? `${styles["window--resizable"]} window--resizable` : "",
+    record.maximized ? `${styles["window--maximized"]} window--maximized` : "",
+    record.minimized ? `${styles["window--minimized"]} window--minimized` : "",
+    isActive ? styles["window--active"] + " window--active" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -92,12 +92,11 @@ export function WindowFrame({ record }: WindowFrameProps) {
       onMouseDown={() => focusWindow(record.id)}
     >
       <div
-        className="window-titlebar"
-        onMouseDown={onTitleBarMouseDown}
-        onDoubleClick={onTitleBarDblClick}
+        className={`${styles["window-titlebar"]} window-titlebar`}
+        onPointerDown={onTitlePointerDown}
       >
         {record.icon && (
-          <span className="window-icon" aria-hidden="true">
+          <span className={`${styles["window-icon"]} window-icon`} aria-hidden="true">
             {record.icon.includes("/") ? (
               <img src={record.icon} alt="" style={{ width: 16, height: 16, objectFit: "contain" }} draggable={false} onError={(e) => { e.currentTarget.style.display = "none"; }} />
             ) : (
@@ -105,38 +104,37 @@ export function WindowFrame({ record }: WindowFrameProps) {
             )}
           </span>
         )}
-        <span className="window-title">{record.title}</span>
+        <span className={`${styles["window-title"]} window-title`}>{record.title}</span>
 
-        <div className="window-controls">
-          {!isDialog && (
+        <div className={`${styles["window-controls"]} window-controls`}>
+          {record.variant === "default" && (
             <>
               <button
-                className="window-control window-minimize"
                 type="button"
-                title="Minimize"
+                className={`${styles["window-control"]} ${styles["window-minimize"]} window-control window-minimize`}
+                onClick={onMinClick}
                 aria-label="Minimize"
-                onClick={() => minimizeWindow(record.id)}
+                disabled={!record.minimizable}
               />
               <button
-                className="window-control window-maximize"
                 type="button"
-                title={record.maximized ? "Restore" : "Maximize"}
-                aria-label={record.maximized ? "Restore" : "Maximize"}
+                className={`${styles["window-control"]} ${styles["window-maximize"]} window-control window-maximize`}
                 onClick={onMaxClick}
+                aria-label={record.maximized ? "Restore" : "Maximize"}
+                disabled={!record.resizable}
               />
             </>
           )}
           <button
-            className="window-control window-close"
             type="button"
-            title="Close"
-            aria-label="Close"
+            className={`${styles["window-control"]} ${styles["window-close"]} window-control window-close`}
             onClick={() => closeWindow(record.id)}
+            aria-label="Close"
           />
         </div>
       </div>
 
-      <div className="window-body">{record.content}</div>
+      <div className={`${styles["window-body"]} window-body`}>{record.content}</div>
     </div>
   );
 }

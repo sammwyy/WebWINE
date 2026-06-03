@@ -62,6 +62,7 @@ interface ThemeStore {
   setTheme: (id: ThemeId) => void;
   setUserTaskbarIcon: (mode: TaskbarIconMode | null) => void;
   getEffectiveTaskbarIconMode: () => TaskbarIconMode;
+  getEffectiveStartMenuLayout: () => StartMenuLayout;
 }
 
 export const useThemeStore = create<ThemeStore>((set, get) => ({
@@ -85,6 +86,12 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
     if (userTaskbarIcon) return userTaskbarIcon;
     const t = THEMES.find((x) => x.id === theme);
     return t ? t.taskbarIcon : "full";
+  },
+
+  getEffectiveStartMenuLayout: () => {
+    const { theme } = get();
+    const t = THEMES.find((x) => x.id === theme);
+    return t ? t.startMenuLayout : "classic";
   },
 }));
 

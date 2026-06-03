@@ -1,3 +1,4 @@
+import "./PropertiesApp.css";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";
 import type { DirectoryEntry } from "../../lib/worker.js";
