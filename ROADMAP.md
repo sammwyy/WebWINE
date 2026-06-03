@@ -14,10 +14,18 @@ A browser-based Windows-like runtime. Rust/WASM owns the VM. TypeScript owns the
 - M8 Early Win32 UI — **done** (MessageBox dialogs; RegisterClass/CreateWindowEx → real windows; working message loop GetMessage/DispatchMessage with WndProc callbacks; WM_PAINT → TextOut rendering; close → WM_CLOSE/WM_DESTROY/WM_QUIT)
 - M9 Persistent Virtual Disk — pending
 
-Known gap: full-std Rust binaries that do path/filesystem work (e.g. `filesystem.exe`)
-still hit successive std-internals fidelity issues — each fix (GetFullPathNameW,
-HeapReAlloc copy semantics, …) reveals the next. This is the Wine-class long road.
-No-CRT, `println!`-style CRT console, and Win32 GUI binaries run end to end.
+Real-binary findings (32-bit i386):
+- 32-bit MSVCRT console stubs (e.g. a Win10 `calc.exe` launcher) now get through CRT
+  init (`__wgetmainargs`, `_onexit`, SHELL32 stubs implemented).
+- `filesystem.exe` (Rust std fs) reaches its path-canonicalization (`maybe_verbatim`,
+  prepending `\\?\`) then writes through a `Vec<u16>` whose data pointer is the
+  empty-vec dangling value (2) — a capacity/reserve consistency bug in the emulated
+  std internals. Not yet root-caused; needs instruction-level comparison vs hardware.
+- `mspaint.exe` imports 585 functions from **MFC42u.dll** plus COM/comctl32/propsys —
+  it needs the real MFC runtime, which is out of reach (we provide Win32, not MFC).
+
+This remains the Wine-class long road. No-CRT, `println!`-style CRT console, Win32
+GUI, GDI graphics, and multi-process binaries run end to end.
 
 Toward real apps: the realistic path is incremental fidelity (CPU edge cases, broader
 + more accurate Win32/CRT surface, GDI→canvas), driven by specific target binaries.

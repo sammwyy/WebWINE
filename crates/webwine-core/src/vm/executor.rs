@@ -33,11 +33,13 @@ pub fn run_slice(
     proc.state = ProcessState::Running;
 
     let mut executed = 0u32;
+    let mut prev_eip = proc.cpu.eip; // last instruction address, for crash reports
 
     loop {
         if executed >= budget {
             break;
         }
+        let cur_eip = proc.cpu.eip;
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {
             match handle_trampoline(proc, api, fs, logs, 0) {
@@ -63,19 +65,22 @@ pub fn run_slice(
         match step(proc) {
             StepResult::Continue => {
                 executed += 1;
+                prev_eip = cur_eip;
             }
             StepResult::ApiTrap(va) => {
                 proc.cpu.eip = va; /* handled next iteration */
+                prev_eip = cur_eip;
             }
             StepResult::Exit(code) => {
                 proc.state = ProcessState::Exited { exit_code: code };
                 break;
             }
             StepResult::Fault(r) => {
+                let last = describe_instr(proc, prev_eip);
                 logs.log(
                     LogLevel::Error,
                     "cpu",
-                    &format!("[cpu] fault at EIP=0x{:08X}: {r}", proc.cpu.eip),
+                    &format!("[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}", proc.cpu.eip),
                     Some(proc.pid),
                 );
                 proc.state = ProcessState::Crashed { reason: r };
@@ -128,6 +133,8 @@ fn handle_trampoline(
             fs,
             logs,
             pid: proc.pid,
+            exe_path: proc.path.as_str(),
+            proc_addr: api.proc_addr_map(),
         };
         api.dispatch(va, &mut ctx)
     };
@@ -170,6 +177,7 @@ fn handle_trampoline(
             Flow::Continue
         }
         Some(Handled::Unimplemented) | None => {
+            let nargs = api.unimpl_stdcall_args(va);
             let name = api
                 .lookup_name(va)
                 .map(|(d, n)| format!("{d}!{n}"))
@@ -177,11 +185,13 @@ fn handle_trampoline(
             logs.log(
                 LogLevel::Warn,
                 "api",
-                &format!("[api] unimplemented: {name} — returning 0"),
+                &format!("[api] unimplemented: {name} — returning 0 (cleaned {nargs} args)"),
                 Some(proc.pid),
             );
+            // Clean the stack as the real (stdcall) function would, so a later
+            // `ret` doesn't pop a leaked argument.
             let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
-            proc.cpu.esp = proc.cpu.esp.wrapping_add(4);
+            proc.cpu.esp = proc.cpu.esp.wrapping_add(4 + 4 * nargs);
             proc.cpu.eax = 0;
             proc.cpu.eip = ret;
             Flow::Continue
@@ -259,6 +269,36 @@ fn call_guest_fn_args(
             }
         }
     }
+}
+
+/// Decode the instruction at `addr` for a crash report. For memory-operand
+/// control transfers (e.g. `call [iat]`) it also resolves the pointer value,
+/// which usually reveals an unpatched import / null function pointer.
+fn describe_instr(proc: &GuestProcess, addr: u32) -> String {
+    let bytes = match proc.memory.read_instruction_window(addr) {
+        Ok(b) => b,
+        Err(_) => return format!("0x{addr:08X} <unreadable>"),
+    };
+    let mut dec = Decoder::with_ip(32, bytes, addr as u64, DecoderOptions::NONE);
+    let mut ins = Instruction::default();
+    dec.decode_out(&mut ins);
+
+    let raw: Vec<String> = bytes[..ins.len().min(bytes.len())]
+        .iter().map(|b| format!("{b:02X}")).collect();
+    let mut s = format!("0x{addr:08X}: {:?} [{}]", ins.mnemonic(), raw.join(" "));
+
+    // If an operand is memory, resolve its address and the dword stored there.
+    for i in 0..ins.op_count() {
+        if ins.op_kind(i) == OpKind::Memory {
+            let mem_addr = calc_addr(&ins, &proc.cpu);
+            let val = proc.memory.read_u32(mem_addr).unwrap_or(0xDEAD_BEEF);
+            s.push_str(&format!("  mem[0x{mem_addr:08X}] = 0x{val:08X}"));
+        } else if ins.op_kind(i) == OpKind::Register {
+            let r = ins.op_register(i);
+            s.push_str(&format!("  {:?}=0x{:08X}", r, read_reg(r, &proc.cpu)));
+        }
+    }
+    s
 }
 
 pub fn step(proc: &mut GuestProcess) -> StepResult {
@@ -513,7 +553,25 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         => StepResult::Continue,
 
         Int3 => StepResult::Fault("INT3 breakpoint".into()),
-        Int   => StepResult::Fault(format!("INT 0x{:02X}", instr.immediate8())),
+        Int   => {
+            let v = instr.immediate8();
+            if v == 0x29 {
+                // __fastfail — the program is aborting; ECX holds the code.
+                let code = cpu.ecx;
+                let kind = match code {
+                    0 => "LEGACY_GS_VIOLATION",
+                    2 => "STACK_COOKIE_CHECK_FAILURE",
+                    3 => "CORRUPT_LIST_ENTRY",
+                    5 => "INVALID_ARG",
+                    7 => "FATAL_APP_EXIT",
+                    8 => "RANGE_CHECK_FAILURE",
+                    _ => "?",
+                };
+                StepResult::Fault(format!("__fastfail (INT 0x29) code={code} ({kind})"))
+            } else {
+                StepResult::Fault(format!("INT 0x{v:02X}"))
+            }
+        }
         Hlt   => StepResult::Exit(0),
 
         // Unknown — skip rather than crash. CRT init contains many obscure instructions

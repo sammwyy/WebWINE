@@ -63,6 +63,19 @@ pub fn load_pe(
         .optional_header
         .ok_or_else(|| VmError::NotPe("no optional header".into()))?;
 
+    // .NET / managed image? The CLR header (data directory 14) means the entry
+    // just bounces into mscoree!_CorExeMain to start the runtime. We can't host
+    // the .NET CLR, so reject clearly instead of crashing in the stub.
+    if let Some(clr) = oh.data_directories.get_clr_runtime_header() {
+        if clr.virtual_address != 0 {
+            return Err(VmError::Unsupported(
+                ".NET (managed/CLR) executable — needs the .NET runtime, which \
+                 WebWINE does not provide. Only native Win32 PE32 images run."
+                    .into(),
+            ));
+        }
+    }
+
     let image_base  = oh.windows_fields.image_base as u32;
     let image_size  = oh.windows_fields.size_of_image;
     let hdr_size    = oh.windows_fields.size_of_headers;

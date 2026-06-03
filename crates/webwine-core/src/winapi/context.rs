@@ -42,6 +42,10 @@ pub struct ApiContext<'a> {
     pub fs:        &'a mut VirtualFileSystem,
     pub logs:      &'a mut LogBuffer,
     pub pid:       u32,
+    /// Guest path of the running image (e.g. C:\Users\guest\Desktop\calc.exe).
+    pub exe_path:  &'a str,
+    /// Function-name → trampoline VA, for GetProcAddress (0 = not available).
+    pub proc_addr: &'a std::collections::HashMap<String, u32>,
 }
 
 impl<'a> ApiContext<'a> {

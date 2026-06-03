@@ -83,6 +83,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "__p__fmode", p_fmode),
         ("msvcrt.dll", "_crt_atexit", stub_zero_cdecl_1),
         ("msvcrt.dll", "atexit", stub_zero_cdecl_1),
+        // _onexit/__onexit return the registered function pointer on success
+        // (NULL means failure, which some CRTs treat as fatal).
+        ("msvcrt.dll", "_onexit", |c| { let f = c.arg(0); c.ret_cdecl(f); Handled::Ok }),
+        ("msvcrt.dll", "__onexit", |c| { let f = c.arg(0); c.ret_cdecl(f); Handled::Ok }),
         ("msvcrt.dll", "_lock", stub_void_1_cdecl),
         ("msvcrt.dll", "_unlock", stub_void_1_cdecl),
         ("msvcrt.dll", "__lconv_init", stub_zero_cdecl_0),
@@ -465,9 +469,11 @@ fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let argv_p = ctx.arg(1);
     let env_p  = ctx.arg(2);
 
-    // argv[0] = "program.exe", argv[1] = NULL
-    let name = ctx.heap_alloc(16);
-    let _ = ctx.memory.write_bytes(name, b"program.exe\0");
+    // argv[0] = the real launched image path, argv[1] = NULL
+    let mut name_bytes = ctx.exe_path.as_bytes().to_vec();
+    name_bytes.push(0);
+    let name = ctx.heap_alloc(name_bytes.len() as u32);
+    let _ = ctx.memory.write_bytes(name, &name_bytes);
     let argv = ctx.heap_alloc(8);
     let _ = ctx.memory.write_u32(argv, name);
     let _ = ctx.memory.write_u32(argv + 4, 0);
@@ -487,8 +493,10 @@ fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let argv_p = ctx.arg(1);
     let env_p  = ctx.arg(2);
 
-    let name = ctx.heap_alloc(32);
-    let wide: Vec<u8> = "program.exe\0".encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let mut s = ctx.exe_path.to_string();
+    s.push('\0');
+    let wide: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let name = ctx.heap_alloc(wide.len() as u32);
     let _ = ctx.memory.write_bytes(name, &wide);
     let argv = ctx.heap_alloc(8);
     let _ = ctx.memory.write_u32(argv, name);

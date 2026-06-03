@@ -53,7 +53,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
         ("kernel32.dll", "GetModuleFileNameW", r0_3),
-        ("kernel32.dll", "GetProcAddress", r0_2),
+        ("kernel32.dll", "GetProcAddress", get_proc_address),
         ("kernel32.dll", "LoadLibraryA", r0_1),
         ("kernel32.dll", "LoadLibraryW", r0_1),
         ("kernel32.dll", "LoadLibraryExW", r0_3),
@@ -633,6 +633,20 @@ fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// GetProcAddress(hModule, lpProcName) — return a real trampoline for a function
+// we implement (so the guest can call it), else 0 (caller uses its fallback).
+fn get_proc_address(ctx: &mut ApiContext) -> Handled {
+    let name_arg = ctx.arg(1);
+    let va = if name_arg < 0x1_0000 {
+        0 // imported by ordinal — not supported
+    } else {
+        let name = ctx.cstr(name_arg);
+        ctx.proc_addr.get(&name).copied().unwrap_or(0)
+    };
+    ctx.ret_stdcall(va, 2);
+    Handled::Ok
+}
+
 // Beep(dwFreq, dwDuration) — emit a UI beep for the frontend (Web Audio).
 fn beep(ctx: &mut ApiContext) -> Handled {
     let freq = ctx.arg(0);
@@ -830,27 +844,27 @@ fn get_module_handle_ex(ctx: &mut ApiContext) -> Handled {
 fn get_module_filename_a(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(1);
     let cap = ctx.arg(2);
-    let name = b"C:\\Users\\guest\\Desktop\\program.exe\0";
+    let mut name = ctx.exe_path.as_bytes().to_vec();
+    name.push(0);
     let n = name.len().min(cap as usize);
     let _ = ctx.memory.write_bytes(buf, &name[..n]);
-    ctx.ret_stdcall(n as u32, 3);
+    ctx.ret_stdcall(n.saturating_sub(1) as u32, 3); // excl. null
     Handled::Ok
 }
 
 fn get_command_line_a(ctx: &mut ApiContext) -> Handled {
-    // Write an empty command line at a fixed PEB-area address
+    // The command line is the (quoted) image path. Stored in a PEB-area scratch.
     let va = 0x7FFD_F100;
-    let _ = ctx.memory.write_bytes(va, b"program.exe\0");
+    let line = format!("\"{}\"\0", ctx.exe_path);
+    let _ = ctx.memory.write_bytes(va, line.as_bytes());
     ctx.ret_stdcall(va, 0);
     Handled::Ok
 }
 
 fn get_command_line_w(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F200;
-    let wide: Vec<u8> = "program.exe\0"
-        .encode_utf16()
-        .flat_map(|c| c.to_le_bytes())
-        .collect();
+    let line = format!("\"{}\"\0", ctx.exe_path);
+    let wide: Vec<u8> = line.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
     let _ = ctx.memory.write_bytes(va, &wide);
     ctx.ret_stdcall(va, 0);
     Handled::Ok
