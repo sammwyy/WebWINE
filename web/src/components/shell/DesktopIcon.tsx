@@ -19,11 +19,11 @@ import { log } from "../../stores/useLogStore.js";
 import { performPaste } from "../../lib/clipboard.js";
 import type { DirectoryEntry } from "../../lib/runtime-bridge.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";
+import { DESKTOP_ICON_LAYOUTS } from "../../stores/useDesktopStore.js";
+import { launchGuestPath } from "../../lib/guest-launch.js";
 import styles from "./DesktopIcon.module.css";
 
-const ICON_CELL_W = 88;
-const ICON_CELL_H = 104;
-const ICON_PAD = 14;
+const ICON_PAD = 12;
 const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
 
 interface DesktopIconProps {
@@ -43,8 +43,9 @@ export function DesktopIcon({
 }: DesktopIconProps) {
   const { runtime } = useRuntimeStore();
   const clipboard = useClipboardStore();
-  const { setPosition, selectedIds, selectIcon } = useDesktopStore();
+  const { setPosition, selectedIds, selectIcon, iconSize } = useDesktopStore();
   const { theme } = useThemeStore();
+  const layout = DESKTOP_ICON_LAYOUTS[iconSize];
 
   const elRef = useRef<HTMLDivElement>(null);
   const { entry: clipEntry } = useClipboardStore();
@@ -70,14 +71,16 @@ export function DesktopIcon({
   }, [entry, runtime]);
 
   // Compute absolute position from grid slot.
-  const left = ICON_PAD + position.col * ICON_CELL_W;
-  const top = ICON_PAD + position.row * ICON_CELL_H;
+  const left = ICON_PAD + position.col * layout.cellWidth;
+  const top = ICON_PAD + position.row * layout.cellHeight;
   const gridW = gridEl?.clientWidth ?? Infinity;
   const gridH = gridEl?.clientHeight ?? Infinity;
+  const maxLeft = Math.max(ICON_PAD, gridW - layout.cellWidth);
+  const maxTop = Math.max(ICON_PAD, gridH - layout.cellHeight);
 
   const style: React.CSSProperties = {
-    left: Math.min(left, gridW - ICON_CELL_W),
-    top: Math.min(top, gridH - ICON_CELL_H),
+    left: Math.min(left, maxLeft),
+    top: Math.min(top, maxTop),
   };
 
   const clampV = (v: number, lo: number, hi: number) =>
@@ -90,20 +93,7 @@ export function DesktopIcon({
 
   const handleOpen = useCallback(() => {
     if (!runtime) return;
-    const name = entry.name.toLowerCase();
-    if (entry.kind === "directory") {
-      import("../../apps/explorer/ExplorerApp.js").then((m) =>
-        m.openExplorer(entry.path, runtime),
-      );
-    } else if (name.endsWith(".exe")) {
-      import("../../apps/process-console/ProcessConsoleApp.js").then((m) =>
-        m.openProcessConsole(entry.path, runtime),
-      );
-    } else {
-      import("../../apps/text-reader/TextReaderApp.js").then((m) =>
-        m.openTextReader(entry.path, runtime),
-      );
-    }
+    void launchGuestPath(entry.path, runtime);
   }, [entry, runtime]);
 
   const handleClick = useCallback(
@@ -150,8 +140,8 @@ export function DesktopIcon({
         if (!isDragging && Math.hypot(dx, dy) < 5) return;
         isDragging = true;
         setDragging(true);
-        el.style.left = `${clampV(startLeft + dx, ICON_PAD, gridEl.clientWidth - ICON_CELL_W)}px`;
-        el.style.top = `${clampV(startTop + dy, ICON_PAD, gridEl.clientHeight - ICON_CELL_H)}px`;
+        el.style.left = `${clampV(startLeft + dx, ICON_PAD, Math.max(ICON_PAD, gridEl.clientWidth - layout.cellWidth))}px`;
+        el.style.top = `${clampV(startTop + dy, ICON_PAD, Math.max(ICON_PAD, gridEl.clientHeight - layout.cellHeight))}px`;
       };
 
       const onUp = (ev: PointerEvent) => {
@@ -163,8 +153,8 @@ export function DesktopIcon({
         if (!isDragging) return;
 
         const newPos: IconPosition = {
-          col: Math.max(0, Math.round((el.offsetLeft - ICON_PAD) / ICON_CELL_W)),
-          row: Math.max(0, Math.round((el.offsetTop - ICON_PAD) / ICON_CELL_H)),
+          col: Math.max(0, Math.round((el.offsetLeft - ICON_PAD) / layout.cellWidth)),
+          row: Math.max(0, Math.round((el.offsetTop - ICON_PAD) / layout.cellHeight)),
         };
         setPosition(entry.path, newPos);
 
@@ -177,38 +167,39 @@ export function DesktopIcon({
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", onUp);
     },
-    [entry.path, gridEl, setPosition],
+    [entry.path, gridEl, layout.cellHeight, layout.cellWidth, setPosition],
   );
 
   const buildContextMenu = useCallback((): MenuItem[] => {
     const isExe = entry.name.toLowerCase().endsWith(".exe");
+    const isShortcut = entry.name.toLowerCase().endsWith(".lnk");
     const isFile = entry.kind === "file";
     const items: MenuItem[] = [];
 
-    if (isExe && runtime) {
+    if ((isExe || isShortcut) && runtime) {
       items.push({
-        label: "Run",
-        action: () =>
-          import("../../apps/process-console/ProcessConsoleApp.js").then((m) =>
-            m.openProcessConsole(entry.path, runtime),
-          ),
+        label: "Open",
+        action: () => void launchGuestPath(entry.path, runtime),
       });
+    } else {
+      items.push({ label: "Open", action: handleOpen });
+    }
+
+    if (isExe && runtime) {
       items.push({
         label: "Run as debug",
         action: () =>
-          import("../../apps/process-console/ProcessConsoleApp.js").then((m) =>
+          void import("../../apps/process-console/ProcessConsoleApp.js").then((m) =>
             m.openProcessConsole(entry.path, runtime, { debug: true }),
           ),
       });
       items.push({
         label: "Inspect",
         action: () =>
-          import("../../apps/pe-inspector/PeInspectorApp.js").then((m) =>
+          void import("../../apps/pe-inspector/PeInspectorApp.js").then((m) =>
             m.openPeInspector(entry.path, runtime),
           ),
       });
-    } else {
-      items.push({ label: "Open", action: handleOpen });
     }
 
     items.push(SEPARATOR);

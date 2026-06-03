@@ -1,4 +1,0 @@
-Game mode indeterminate.  No IWAD file was found.  Try
-specifying one with the '-iwad' command line parameter.
-
-

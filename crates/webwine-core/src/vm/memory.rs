@@ -41,6 +41,33 @@ impl GuestMemory {
         Ok(())
     }
 
+    /// Grow the region that owns `ptr` so it covers up to `end_va`, without
+    /// overlapping the next region above it. Used by the bump heap allocator so
+    /// large `malloc`s (e.g. a 16 MB game zone) are actually backed by memory
+    /// instead of faulting past a fixed initial heap size.
+    pub fn ensure_mapped(&mut self, ptr: u32, end_va: u32) {
+        let Some(base) = self.regions.iter().map(|r| r.base).filter(|&b| b <= ptr).max() else {
+            return;
+        };
+        // Nearest region above caps how far we may grow.
+        let cap = self.regions.iter().map(|r| r.base).filter(|&b| b > base).min().unwrap_or(u32::MAX);
+        let want_end = end_va.min(cap);
+        let Some(r) = self.regions.iter_mut().find(|r| r.base == base) else { return };
+        if want_end <= r.base {
+            return;
+        }
+        let needed = (want_end - r.base) as usize;
+        if needed > r.bytes.len() {
+            // Round up to 1 MB to avoid reallocating on every small bump.
+            let rounded = (needed + 0xF_FFFF) & !0xF_FFFF;
+            let new_size = rounded.min((cap.wrapping_sub(r.base)) as usize);
+            if new_size > r.bytes.len() {
+                r.bytes.resize(new_size, 0);
+                r.size = new_size as u32;
+            }
+        }
+    }
+
     fn region_mut(&mut self, va: u32) -> Option<(&mut MemoryRegion, usize)> {
         for r in &mut self.regions {
             let base = r.base;

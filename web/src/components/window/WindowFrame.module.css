@@ -18,6 +18,16 @@
   overflow: hidden;
 }
 
+.window--active {
+  box-shadow:
+    0 0 0 1px var(--window-focus-border, #7ecbff),
+    0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.window--active.window--maximized {
+  box-shadow: 0 0 0 1px var(--window-focus-border, #7ecbff);
+}
+
 .window--default {
   min-width: 320px;
   min-height: 180px;

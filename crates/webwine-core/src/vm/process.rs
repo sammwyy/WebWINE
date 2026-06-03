@@ -57,8 +57,26 @@ pub enum UiEvent {
     Ellipse { hwnd: u32, x: i32, y: i32, w: i32, h: i32, fill: u32, stroke: u32 },
     Line { hwnd: u32, x1: i32, y1: i32, x2: i32, y2: i32, color: u32 },
     SetPixel { hwnd: u32, x: i32, y: i32, color: u32 },
+    // Framebuffer blit: an RGBA8888 image copied to the window's client area at
+    // (x,y). `src_w`/`src_h` are the source size; if they differ from w/h the
+    // frontend scales. Produced by BitBlt/StretchDIBits from a DIB section.
+    Blit { hwnd: u32, x: i32, y: i32, w: i32, h: i32, src_w: i32, src_h: i32, pixels: Vec<u8> },
     // System sounds.
     Beep { freq: u32, duration: u32 },
+}
+
+/// High byte tag marking a GDI object handle (memory DC / DIB section), distinct
+/// from window HWNDs (0x0001xxxx) and the brush/pen handle tags in user32.
+pub const GDI_TAG: u32 = 0x0D00_0000;
+
+/// A GDI object addressed by an opaque handle (tagged with `GDI_TAG`).
+#[derive(Clone)]
+pub enum GdiObject {
+    /// A memory device context, with the currently selected bitmap (0 = none).
+    MemDc { bitmap: u32 },
+    /// A device-independent bitmap: a pixel buffer living in guest memory.
+    /// `top_down` is true when the source BITMAPINFOHEADER height was negative.
+    Dib { bits: u32, width: i32, height: i32, bpp: u16, top_down: bool },
 }
 
 /// A queued window message (WM_*).
@@ -86,6 +104,9 @@ pub struct GuiState {
     pub windows: std::collections::HashMap<u32, WindowEntry>, // hwnd -> window
     pub queue: std::collections::VecDeque<GuestMsg>,
     pub quit: Option<u32>,
+    // GDI objects (memory DCs, DIB sections) keyed by an opaque handle.
+    pub gdi_objects: std::collections::HashMap<u32, GdiObject>,
+    pub next_gdi: u32,
 }
 
 pub struct WindowEntry {
@@ -108,6 +129,8 @@ impl GuiState {
             windows: std::collections::HashMap::new(),
             queue: std::collections::VecDeque::new(),
             quit: None,
+            gdi_objects: std::collections::HashMap::new(),
+            next_gdi: GDI_TAG | 0x10,
         }
     }
 }
@@ -133,9 +156,28 @@ pub struct GuestProcess {
     pub spawns:      Vec<SpawnRequest>,
     pub next_child_pid: u32, // pid the next CreateProcess child will receive
     pub state:       ProcessState,
+    // Current working directory, initialized to the launched image's directory
+    // (matching how Explorer launches a process). Relative guest paths resolve
+    // against this, and SetCurrentDirectory updates it.
+    pub cwd:         String,
+    // Full command line, e.g. `"C:\...\doom.exe" -iwad doom1.wad`. Returned by
+    // GetCommandLine and parsed into argv by the CRT startup.
+    pub cmdline:     String,
     // Managed (.NET/CLI) image bytes, set when this is a managed process. Such a
     // process has no meaningful x86 CPU state; it runs via the CLR interpreter.
     pub managed:     Option<Vec<u8>>,
+}
+
+/// Directory portion of a guest path, e.g. `C:\a\b\foo.exe` -> `C:\a\b`.
+pub fn parent_dir(path: &str) -> String {
+    let p = path.replace('/', "\\");
+    match p.rfind('\\') {
+        Some(i) => {
+            let d = &p[..i];
+            if d.len() <= 2 { format!("{d}\\") } else { d.to_string() }
+        }
+        None => "C:\\".to_string(),
+    }
 }
 
 impl GuestProcess {
@@ -165,6 +207,8 @@ impl GuestProcess {
             spawns: Vec::new(),
             next_child_pid: 0,
             state: ProcessState::Created,
+            cwd: parent_dir(path),
+            cmdline: format!("\"{path}\""),
             managed: Some(bytes),
         }
     }

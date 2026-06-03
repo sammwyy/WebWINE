@@ -51,6 +51,10 @@ impl WebWineVm {
         self.fs.read_file(guest_path)
     }
 
+    pub fn read_raw_file(&self, guest_path: &str) -> Result<Vec<u8>> {
+        self.fs.read_raw_file(guest_path)
+    }
+
     pub fn delete_node(&mut self, guest_path: &str) -> Result<()> {
         self.fs.delete_node(guest_path)?;
         self.logs.log(LogLevel::Info, "fs", &format!("deleted {guest_path}"), None);

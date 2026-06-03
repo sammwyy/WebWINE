@@ -107,6 +107,9 @@ fn main() {
             ProcessState::Exited { exit_code } => {
                 println!("EXITED code={exit_code} after {i} steps");
                 println!("stdout: {stdout:?}");
+                let p = vm.processes.get(pid).unwrap();
+                let stderr = String::from_utf8_lossy(&p.console.stderr).into_owned();
+                if !stderr.is_empty() { println!("stderr: {stderr:?}"); }
                 return;
             }
             ProcessState::Crashed { reason } => {

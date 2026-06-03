@@ -4,9 +4,6 @@ use crate::vm::handles::{
     STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 
-// Default working directory for relative guest paths.
-const CWD: &str = "C:\\Users\\guest\\Desktop";
-
 // Win32 error codes used by the file APIs.
 const ERROR_FILE_NOT_FOUND: u32 = 2;
 const ERROR_FILE_EXISTS: u32 = 80;
@@ -15,20 +12,20 @@ const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFF_FFFF;
 
-/// Resolve a guest path to an absolute `X:\...` form, applying the default
-/// working directory for relative paths and stripping the `\\?\` verbatim prefix.
-fn resolve_path(raw: &str) -> String {
-    let r = raw.replace('/', "\\");
-    let r = r.strip_prefix("\\\\?\\").unwrap_or(&r);
-    if r.len() >= 2 && r.as_bytes()[1] == b':' {
-        r.to_string()
-    } else {
-        format!("{CWD}\\{}", r.trim_start_matches('\\'))
-    }
-}
-
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
+        // advapi32 registry: we have no registry, so report "key not found" and
+        // clean the exact arg counts (a wrong count corrupts the guest stack).
+        // ERROR_FILE_NOT_FOUND (2) makes apps fall back to defaults.
+        ("advapi32.dll", "RegOpenKeyExA", |c| { let o = c.arg(4); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 5); Handled::Ok }),
+        ("advapi32.dll", "RegOpenKeyExW", |c| { let o = c.arg(4); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 5); Handled::Ok }),
+        ("advapi32.dll", "RegOpenKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
+        ("advapi32.dll", "RegQueryValueExA", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("advapi32.dll", "RegQueryValueExW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("advapi32.dll", "RegCreateKeyExA", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
+        ("advapi32.dll", "RegSetValueExA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
+        ("advapi32.dll", "RegCloseKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+
         ("kernel32.dll", "ExitProcess", exit_process),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteFile", write_file),
@@ -52,7 +49,9 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetModuleHandleA", get_module_handle_a),
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
-        ("kernel32.dll", "GetModuleFileNameW", r0_3),
+        ("kernel32.dll", "GetModuleFileNameW", get_module_filename_w),
+        ("kernel32.dll", "SetCurrentDirectoryA", set_current_directory_a),
+        ("kernel32.dll", "SetCurrentDirectoryW", set_current_directory_w),
         ("kernel32.dll", "GetProcAddress", get_proc_address),
         ("kernel32.dll", "LoadLibraryA", r0_1),
         ("kernel32.dll", "LoadLibraryW", r0_1),
@@ -115,8 +114,8 @@ pub fn register(r: &mut WinApiRegistry) {
             query_perf_counter,
         ),
         ("kernel32.dll", "QueryPerformanceFrequency", query_perf_freq),
-        ("kernel32.dll", "GetTickCount", r0_0),
-        ("kernel32.dll", "GetTickCount64", r0_0),
+        ("kernel32.dll", "GetTickCount", get_tick_count),
+        ("kernel32.dll", "GetTickCount64", get_tick_count),
         ("kernel32.dll", "FlushFileBuffers", r1_1),
         ("kernel32.dll", "SetFilePointer", r0_4),
         ("kernel32.dll", "SetUnhandledExceptionFilter", r0_1),
@@ -400,7 +399,7 @@ const TRUNCATE_EXISTING: u32 = 5;
 fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
     let access = ctx.arg(1);
     let disposition = ctx.arg(4);
-    let path = resolve_path(&name);
+    let path = ctx.resolve_path(&name);
     let exists = ctx.fs.node_exists(&path);
     let writable = access & 0x4000_0000 != 0; // GENERIC_WRITE
 
@@ -490,7 +489,7 @@ fn set_file_pointer(ctx: &mut ApiContext) -> Handled {
 }
 
 fn create_directory(ctx: &mut ApiContext, name: String) -> Handled {
-    let path = resolve_path(&name);
+    let path = ctx.resolve_path(&name);
     if ctx.fs.node_exists(&path) {
         ctx.cpu.last_error = 183; // ERROR_ALREADY_EXISTS
         ctx.ret_stdcall(0, 2);
@@ -512,7 +511,7 @@ fn create_directory_w(ctx: &mut ApiContext) -> Handled {
 }
 
 fn delete_file(ctx: &mut ApiContext, name: String) -> Handled {
-    let path = resolve_path(&name);
+    let path = ctx.resolve_path(&name);
     let ok = ctx.fs.delete_node(&path).is_ok();
     ctx.ret_stdcall(ok as u32, 1);
     Handled::Ok
@@ -529,7 +528,7 @@ fn delete_file_w(ctx: &mut ApiContext) -> Handled {
 }
 
 fn get_file_attributes(ctx: &mut ApiContext, name: String) -> Handled {
-    let path = resolve_path(&name);
+    let path = ctx.resolve_path(&name);
     let attr = if !ctx.fs.node_exists(&path) {
         ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
         INVALID_FILE_ATTRIBUTES
@@ -563,7 +562,7 @@ fn create_process(ctx: &mut ApiContext, app: String, cmd: String) -> Handled {
     } else {
         first_token(&cmd)
     };
-    let path = resolve_path(&target);
+    let path = ctx.resolve_path(&target);
 
     if !ctx.fs.node_exists(&path) {
         ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
@@ -664,7 +663,7 @@ fn get_full_path_name_w(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(2);
     let file_part = ctx.arg(3);
 
-    let full = resolve_path(&input);
+    let full = ctx.resolve_path(&input);
     let wide: Vec<u16> = full.encode_utf16().collect();
     let needed = wide.len() as u32;
 
@@ -690,7 +689,7 @@ fn get_full_path_name_a(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(2);
     let file_part = ctx.arg(3);
 
-    let full = resolve_path(&input);
+    let full = ctx.resolve_path(&input);
     let bytes = full.as_bytes();
     let needed = bytes.len() as u32;
 
@@ -711,7 +710,7 @@ fn get_full_path_name_a(ctx: &mut ApiContext) -> Handled {
 fn get_current_directory_w(ctx: &mut ApiContext) -> Handled {
     let buf_len = ctx.arg(0);
     let out = ctx.arg(1);
-    let wide: Vec<u16> = CWD.encode_utf16().collect();
+    let wide: Vec<u16> = ctx.cwd.encode_utf16().collect();
     let needed = wide.len() as u32;
     if out != 0 && buf_len > needed {
         for (i, &c) in wide.iter().enumerate() {
@@ -728,15 +727,31 @@ fn get_current_directory_w(ctx: &mut ApiContext) -> Handled {
 fn get_current_directory_a(ctx: &mut ApiContext) -> Handled {
     let buf_len = ctx.arg(0);
     let out = ctx.arg(1);
-    let bytes = CWD.as_bytes();
+    let bytes = ctx.cwd.clone().into_bytes();
     let needed = bytes.len() as u32;
     if out != 0 && buf_len > needed {
-        let _ = ctx.memory.write_bytes(out, bytes);
+        let _ = ctx.memory.write_bytes(out, &bytes);
         let _ = ctx.memory.write_u8(out + needed, 0);
         ctx.ret_stdcall(needed, 2);
     } else {
         ctx.ret_stdcall(needed + 1, 2);
     }
+    Handled::Ok
+}
+
+// SetCurrentDirectory(path): update the process working directory. Returns
+// nonzero on success (we always accept; the path need not exist in our VFS).
+fn set_current_directory_a(ctx: &mut ApiContext) -> Handled {
+    let raw = ctx.cstr(ctx.arg(0));
+    *ctx.cwd = ctx.resolve_path(&raw);
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+fn set_current_directory_w(ctx: &mut ApiContext) -> Handled {
+    let raw = ctx.wstr(ctx.arg(0));
+    *ctx.cwd = ctx.resolve_path(&raw);
+    ctx.ret_stdcall(1, 1);
     Handled::Ok
 }
 
@@ -852,10 +867,23 @@ fn get_module_filename_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+fn get_module_filename_w(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(1);
+    let cap = ctx.arg(2);
+    let wide: Vec<u16> = ctx.exe_path.encode_utf16().collect();
+    let n = wide.len().min(cap.saturating_sub(1) as usize);
+    for (i, &c) in wide[..n].iter().enumerate() {
+        let _ = ctx.memory.write_u16(buf + (i as u32) * 2, c);
+    }
+    let _ = ctx.memory.write_u16(buf + (n as u32) * 2, 0);
+    ctx.ret_stdcall(n as u32, 3);
+    Handled::Ok
+}
+
 fn get_command_line_a(ctx: &mut ApiContext) -> Handled {
-    // The command line is the (quoted) image path. Stored in a PEB-area scratch.
+    // The full command line (argv[0] is the quoted image path). PEB-area scratch.
     let va = 0x7FFD_F100;
-    let line = format!("\"{}\"\0", ctx.exe_path);
+    let line = format!("{}\0", ctx.cmdline);
     let _ = ctx.memory.write_bytes(va, line.as_bytes());
     ctx.ret_stdcall(va, 0);
     Handled::Ok
@@ -863,7 +891,7 @@ fn get_command_line_a(ctx: &mut ApiContext) -> Handled {
 
 fn get_command_line_w(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F200;
-    let line = format!("\"{}\"\0", ctx.exe_path);
+    let line = format!("{}\0", ctx.cmdline);
     let wide: Vec<u8> = line.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
     let _ = ctx.memory.write_bytes(va, &wide);
     ctx.ret_stdcall(va, 0);
@@ -912,11 +940,19 @@ fn get_system_time(ctx: &mut ApiContext) -> Handled {
 }
 
 fn query_perf_counter(ctx: &mut ApiContext) -> Handled {
+    // Frequency is reported as 1 MHz, so the counter is in microseconds.
     let p = ctx.arg(0);
     if p != 0 {
-        let _ = ctx.memory.write_bytes(p, &[0u8; 8]);
+        let micros = crate::winapi::winmm::tick_ms() as u64 * 1000;
+        let _ = ctx.memory.write_u32(p, micros as u32);
+        let _ = ctx.memory.write_u32(p + 4, (micros >> 32) as u32);
     }
     ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+fn get_tick_count(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(crate::winapi::winmm::tick_ms(), 0);
     Handled::Ok
 }
 

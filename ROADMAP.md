@@ -179,3 +179,36 @@ DirectX/OpenGL/3D is out of scope; 2D GDI is the graphics path.
 - `System.Int32`/`System.Object.ToString`, `System.Environment.Exit`
 - Managed process integrated into the scheduler + console window (PID/title)
 - Loader dispatches managed images to the CLR path instead of rejecting them
+
+## Milestone 13 — Native Graphics Foundation (framebuffer/blit)
+**Goal:** Pixel-pushing apps (SDL games, DirectDraw, GDI bitmaps) render to a
+window canvas. Shared base for native games (DOOM) and managed System.Drawing.
+
+- GDI device-context + bitmap object model: `CreateCompatibleDC`,
+  `CreateDIBSection` (pixel buffer in guest memory), `CreateCompatibleBitmap`,
+  `SelectObject`(bitmap), `DeleteDC`
+- `BitBlt` / `StretchBlt` / `SetDIBitsToDevice` / `StretchDIBits` → `UiEvent::Blit`
+  carrying an RGBA framebuffer to the target window
+- Frontend renders the blit to the guest window's canvas (with scaling)
+- CRT/WINMM coverage games need: `timeGetTime`/`timeBeginPeriod`, `fopen`/
+  `freopen`/`fwrite`/`fread` backed by the VFS, char classification (`isspace`…)
+- Mount a shareware IWAD so DOOM finds its data
+
+## Milestone 14 — Input + Real-Time Loop
+**Goal:** Interactive graphical apps (keyboard, mouse, timers).
+
+- `WM_KEYDOWN`/`WM_KEYUP`/`WM_CHAR`, `WM_MOUSEMOVE`/`WM_*BUTTON*` from the
+  frontend into the guest message queue
+- `PeekMessage` non-blocking path for game loops; `QueryPerformanceCounter`/
+  `timeGetTime` advancing real time across slices
+- `GetAsyncKeyState`/`GetKeyState`
+- DOOM runs interactively in a window
+
+## Milestone 15 — Managed Graphics (System.Drawing via P/Invoke)
+**Goal:** A graphical .NET 2.0 app renders through the same GDI foundation.
+
+- CIL `pinvokeimpl` / ImplMap table → managed `extern` calls bridged to the
+  Win32 registry (the link between the CLR and native GDI/user32)
+- Marshalling for the common P/Invoke shapes (ints, strings, struct pointers)
+- Sample C# app that P/Invokes user32/gdi32 to open a window and draw
+- Path toward System.Drawing.Graphics primitives

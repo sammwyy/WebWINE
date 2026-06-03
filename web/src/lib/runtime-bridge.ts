@@ -169,6 +169,18 @@ export class RuntimeBridge {
     });
   }
 
+  async readRawFile(path: string): Promise<Uint8Array> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) =>
+          resolve(new Uint8Array((r as { bytes: ArrayBuffer }).bytes)),
+        reject,
+      });
+      this.send({ type: "read_raw_file", requestId, path });
+    });
+  }
+
   async deleteNode(path: string): Promise<void> {
     this.send({ type: "delete_node", path });
   }

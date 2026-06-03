@@ -242,6 +242,8 @@ pub fn load_pe(
         spawns: Vec::new(),
         next_child_pid: 0,
         state: ProcessState::Created,
+        cwd: crate::vm::process::parent_dir(path),
+        cmdline: format!("\"{path}\""),
         managed: None,
     })
 }

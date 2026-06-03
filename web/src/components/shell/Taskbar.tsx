@@ -2,23 +2,15 @@
  * Taskbar — the bottom bar with start button, window list, tray, and clock.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
-import { useRuntimeStore } from "../../stores/useRuntimeStore.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";
-import { StartMenu, type StartMenuAction } from "./StartMenu.js";
+import { StartMenu } from "./StartMenu.js";
 import { TrayMenu } from "./TrayMenu.js";
 import { Clock } from "./Clock.js";
 import styles from "./Taskbar.module.css";
-
-const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
-const USER_PATHS: Partial<Record<StartMenuAction, string>> = {
-  "this-pc": "",
-  documents: "C:\\Users\\guest\\Documents",
-  pictures: "C:\\Users\\guest\\Pictures",
-  music: "C:\\Users\\guest\\Music",
-  videos: "C:\\Users\\guest\\Videos",
-};
+import { SHELL_ACTION_EVENT } from "../../lib/guest-launch.js";
+import type { ShellActionDetail } from "../../lib/shortcut-target.js";
 
 interface TaskbarProps {
   /** Hidden file inputs managed by the parent (Desktop) for uploads. */
@@ -33,7 +25,6 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
   const [orbHover, setOrbHover] = useState(false);
 
   const { windows, activeId, activateFromTaskbar } = useWindowStore();
-  const { runtime } = useRuntimeStore();
   const { theme, getEffectiveTaskbarIconMode } = useThemeStore();
   const mode = getEffectiveTaskbarIconMode();
 
@@ -45,26 +36,20 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
     img.src = `/themes/${theme}/orb.webp`;
   }, [theme]);
 
-  const handleStartAction = useCallback(
-    (action: StartMenuAction) => {
-      if (!runtime) return;
-      const targetPath = USER_PATHS[action] ?? (action === "explorer" ? DESKTOP_PATH : null);
-      if (targetPath !== null) {
-        import("../../apps/explorer/ExplorerApp.js").then((m) =>
-          m.openExplorer(targetPath, runtime),
-        );
-      } else if (action === "themes") {
-        import("../../apps/theme-switcher/ThemeSwitcherApp.js").then((m) =>
-          m.openThemeSwitcher(),
-        );
-      } else if (action === "upload-file") {
+  useEffect(() => {
+    const onShellAction = (e: Event) => {
+      const detail = (e as CustomEvent<ShellActionDetail>).detail;
+      if (!detail) return;
+      if (detail.action === "upload-file") {
         fileInputRef.current?.click();
-      } else if (action === "upload-folder") {
+      } else if (detail.action === "upload-folder") {
         folderInputRef.current?.click();
       }
-    },
-    [runtime, fileInputRef, folderInputRef],
-  );
+    };
+
+    window.addEventListener(SHELL_ACTION_EVENT, onShellAction);
+    return () => window.removeEventListener(SHELL_ACTION_EVENT, onShellAction);
+  }, [fileInputRef, folderInputRef]);
 
   return (
     <div id="taskbar" className={styles.taskbar}>
@@ -102,7 +87,6 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
 
       {startOpen && (
         <StartMenu
-          onAction={handleStartAction}
           onClose={() => setStartOpen(false)}
         />
       )}

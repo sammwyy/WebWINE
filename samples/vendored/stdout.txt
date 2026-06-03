@@ -1,6 +1,0 @@
-                         Chocolate Doom 2.2.1
-Z_Init: Init zone memory allocation daemon. 
-zone memory: 029A8020, 1000000 allocated for zone
-V_Init: allocate screens.
-M_LoadDefaults: Load system defaults.
-saving config in default.cfg

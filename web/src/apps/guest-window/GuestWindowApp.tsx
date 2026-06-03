@@ -134,8 +134,31 @@ function draw(c: CanvasRenderingContext2D, ev: UiEvent) {
       c.fillStyle = colorref(ev.color);
       c.fillRect(ev.x, ev.y, 1, 1);
       break;
+    case "blit": {
+      // Framebuffer image (RGBA) from a DIB BitBlt/StretchDIBits.
+      if (ev.src_w <= 0 || ev.src_h <= 0) break;
+      if (ev.pixels.length < ev.src_w * ev.src_h * 4) break;
+      const img = new ImageData(new Uint8ClampedArray(ev.pixels), ev.src_w, ev.src_h);
+      if (ev.w === ev.src_w && ev.h === ev.src_h) {
+        c.putImageData(img, ev.x, ev.y);
+      } else {
+        // Scaled blit: stage the source then drawImage into the target rect.
+        blitScratch.width = ev.src_w;
+        blitScratch.height = ev.src_h;
+        const sc = blitScratch.getContext("2d");
+        if (sc) {
+          sc.putImageData(img, 0, 0);
+          c.imageSmoothingEnabled = false;
+          c.drawImage(blitScratch, 0, 0, ev.src_w, ev.src_h, ev.x, ev.y, ev.w, ev.h);
+        }
+      }
+      break;
+    }
   }
 }
+
+// Reused offscreen canvas for scaled blits (avoids per-frame allocation).
+const blitScratch = document.createElement("canvas");
 
 function createGuestWindow(
   pid: number,

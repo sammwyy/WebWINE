@@ -5,18 +5,16 @@
  * rendered at 2× for HiDPI).  All icons pass through a canvas so the
  * calling code always gets a plain `src` string — no onerror chains.
  *
- * Resolution order
- * ────────────────
- *   directory (known place) → places/<key>.webp → shell/folder.webp → SVG
- *   directory (generic)     → shell/folder.webp → SVG
+ * Resolution order (fallbacks come from the active icon theme, not inline):
+ *   directory (known place) → places/<key>.webp → shell/folder.webp
+ *   directory (generic)     → shell/folder.webp
  *   .lnk shortcut          → read target path from file → resolve target
  *                             icon + shell/lnk.webp overlay
  *   .exe / .dll (PE)        → extract embedded RT_GROUP_ICON → decode
- *                             best image → shell/default_executable.webp → SVG
- *   other file              → exts/<ext>.webp → exts/default.webp → SVG
+ *                             best image → shell/default_executable.webp
+ *   other file              → exts/<ext>.webp → exts/default.webp
  *
- * Theme icon layout  (under /themes/<id>/icons/)
- * ────────────────────────────────────────────────
+ * Theme icon layout  (under /themes/<id>/icons/):
  *   exts/<ext>.webp          per-extension icon
  *   exts/default.webp        catch-all file icon
  *   shell/folder.webp
@@ -33,8 +31,9 @@
 import type { DirectoryEntry } from "./worker.js";
 import type { RuntimeBridge } from "./runtime-bridge.js";
 import { useThemeStore } from "../stores/useThemeStore.js";
+import { parseShortcutTarget, shortcutActionForName, shellActionForPath } from "./shortcut-target.js";
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// Public API
 
 export interface ResolvedIcon {
   /** Normalised PNG data-URI, ready to set as <img>.src */
@@ -69,7 +68,7 @@ export function invalidateIconCache(): void {
   assetCache.clear();
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// Constants
 
 /** CSS size of the icon element (px) */
 const ICON_CSS_PX = 48;
@@ -83,30 +82,13 @@ const GUEST_PROFILE = "C:\\Users\\guest";
 /** Maps absolute directory paths to place icon keys */
 const PLACE_MAP: Record<string, string> = {
   [`${GUEST_PROFILE}\\Documents`]: "documents",
-  [`${GUEST_PROFILE}\\Music`]:     "music",
-  [`${GUEST_PROFILE}\\Pictures`]:  "pictures",
-  [`${GUEST_PROFILE}\\Videos`]:    "video",
-  "C:\\$Recycle.Bin":              "recycle",
+  [`${GUEST_PROFILE}\\Music`]: "music",
+  [`${GUEST_PROFILE}\\Pictures`]: "pictures",
+  [`${GUEST_PROFILE}\\Videos`]: "video",
+  "C:\\$Recycle.Bin": "recycle",
 };
 
-// Inline SVG fallbacks (last resort, never fail)
-const SVG_FILE   = svgFallback("#546e7a", "📄");
-const SVG_FOLDER = svgFallback("#f9a825", "📁");
-const SVG_EXE    = svgFallback("#1565c0", "⚙");
-
-function svgFallback(bg: string, emoji: string): string {
-  return (
-    "data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">` +
-      `<rect width="48" height="48" rx="5" fill="${bg}"/>` +
-      `<text x="24" y="36" font-size="28" text-anchor="middle" fill="white">${emoji}</text>` +
-      "</svg>",
-    )
-  );
-}
-
-// ─── Caches ──────────────────────────────────────────────────────────────────
+// Caches
 
 /** Per (theme, path) resolved icon */
 const iconCache = new Map<string, Promise<ResolvedIcon>>();
@@ -114,7 +96,7 @@ const iconCache = new Map<string, Promise<ResolvedIcon>>();
 /** Per theme-asset-URL normalised data-URI (or null if 404/error) */
 const assetCache = new Map<string, Promise<string | null>>();
 
-// ─── Resolution ──────────────────────────────────────────────────────────────
+// Resolution
 
 async function doResolve(
   entry: DirectoryEntry,
@@ -124,38 +106,42 @@ async function doResolve(
 ): Promise<ResolvedIcon> {
   const name = entry.name.toLowerCase();
 
-  // ── Shortcut (.lnk) ────────────────────────────────────────────────────────
+  // Shortcut (.lnk)
   if (entry.kind === "file" && name.endsWith(".lnk")) {
     return resolveLnk(entry, runtime, theme);
   }
 
-  // ── Directory ──────────────────────────────────────────────────────────────
+  // Directory
   if (entry.kind === "directory") {
     const placeKey = PLACE_MAP[entry.path];
     const src =
       (placeKey ? await themeAsset(theme, `places/${placeKey}.webp`) : null) ??
       (await themeAsset(theme, "shell/folder.webp")) ??
-      SVG_FOLDER;
+      "";
     return { src };
   }
 
-  // ── PE executable (.exe / .dll) ────────────────────────────────────────────
+  // PE executable (.exe / .dll)
   if (name.endsWith(".exe") || name.endsWith(".dll")) {
+    const special = shellActionForPath(entry.path);
+    if (special) {
+      return { src: await shortcutActionIcon(theme, special) };
+    }
     const peIcon = await extractPeIcon(entry.path, runtime);
     const src =
       peIcon ??
       (await themeAsset(theme, "shell/default_executable.webp")) ??
-      SVG_EXE;
+      "";
     return { src };
   }
 
-  // ── Generic file ───────────────────────────────────────────────────────────
+  // Generic file
   const dot = entry.name.lastIndexOf(".");
   const ext = dot !== -1 ? entry.name.slice(dot + 1).toLowerCase() : "";
   const src =
     (ext ? await themeAsset(theme, `exts/${ext}.webp`) : null) ??
     (await themeAsset(theme, "exts/default.webp")) ??
-    SVG_FILE;
+    "";
   return { src };
 }
 
@@ -168,13 +154,24 @@ async function resolveLnk(
   const overlayPromise = themeAsset(theme, "shell/lnk.webp");
 
   try {
-    const bytes = await runtime.readFile(entry.path);
-    const targetPath = new TextDecoder("utf-8", { fatal: false })
-      .decode(bytes)
-      .replace(/\r?\n.*$/s, "") // first line only
-      .trim();
+    const bytes = await runtime.readRawFile(entry.path);
+    const target = parseShortcutTarget(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
 
-    if (targetPath) {
+    if (target) {
+      if (target.kind === "action") {
+        const src = await shortcutActionIcon(theme, target.action);
+        const overlay = (await overlayPromise) ?? undefined;
+        return { src, overlay };
+      }
+
+      const special = shellActionForPath(target.path);
+      if (special) {
+        const src = await shortcutActionIcon(theme, special);
+        const overlay = (await overlayPromise) ?? undefined;
+        return { src, overlay };
+      }
+
+      const targetPath = target.path;
       // Infer kind from path: no dot in last segment → directory
       const lastName = targetPath.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "";
       const synthetic: DirectoryEntry = {
@@ -189,16 +186,53 @@ async function resolveLnk(
       return { src: base.src, overlay };
     }
   } catch {
-    // Unreadable lnk — fall through
+    const fallback = shortcutActionForName(entry.name);
+    if (fallback) {
+      const src = await shortcutActionIcon(theme, fallback);
+      const overlay = (await overlayPromise) ?? undefined;
+      return { src, overlay };
+    }
+  }
+
+  const fallback = shortcutActionForName(entry.name);
+  if (fallback) {
+    const src = await shortcutActionIcon(theme, fallback);
+    const overlay = (await overlayPromise) ?? undefined;
+    return { src, overlay };
   }
 
   const src =
-    (await themeAsset(theme, "exts/default.webp")) ?? SVG_FILE;
+    (await themeAsset(theme, "exts/default.webp")) ?? "";
   const overlay = (await overlayPromise) ?? undefined;
   return { src, overlay };
 }
 
-// ─── Theme asset loading ──────────────────────────────────────────────────────
+async function shortcutActionIcon(theme: string, action: string): Promise<string> {
+  switch (action) {
+    case "this-pc":
+      return (await themeAsset(theme, "places/thispc.webp")) ?? "";
+    case "documents":
+      return (await themeAsset(theme, "places/documents.webp")) ?? "";
+    case "pictures":
+      return (await themeAsset(theme, "places/pictures.webp")) ?? "";
+    case "music":
+      return (await themeAsset(theme, "places/music.webp")) ?? "";
+    case "videos":
+      return (await themeAsset(theme, "places/video.webp")) ?? "";
+    case "themes":
+      return (await themeAsset(theme, "apps/themes.webp")) ?? "";
+    case "explorer":
+      return (await themeAsset(theme, "apps/explorer.webp")) ?? "";
+    case "upload-file":
+      return (await themeAsset(theme, "apps/upload-file.webp")) ?? "";
+    case "upload-folder":
+      return (await themeAsset(theme, "apps/upload-folder.webp")) ?? "";
+    default:
+      return "";
+  }
+}
+
+// Theme asset loading
 
 function themeAsset(theme: string, relPath: string): Promise<string | null> {
   const url = `/themes/${theme}/icons/${relPath}`;
@@ -219,7 +253,7 @@ async function fetchAndNormalise(url: string): Promise<string | null> {
   }
 }
 
-// ─── Image normalisation (any format → 48px PNG data-URI via canvas) ─────────
+// Image normalisation (any format → 48px PNG data-URI via canvas) 
 
 /**
  * Convert raw image bytes (ICO container, PNG, BMP…) to a normalised
@@ -240,7 +274,7 @@ async function normaliseImageBytes(
   return blobToCanvas(new Blob([raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as any]), size);
 }
 
-// ─── ICO container decoder ───────────────────────────────────────────────────
+// ICO container decoder
 
 async function decodeIco(raw: Uint8Array, size: number): Promise<string | null> {
   const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -253,9 +287,9 @@ async function decodeIco(raw: Uint8Array, size: number): Promise<string | null> 
     const b = 6 + i * 16;
     if (b + 16 > raw.length) break;
     entries.push({
-      w:      raw[b] || 256,
-      h:      raw[b + 1] || 256,
-      len:    v.getUint32(b + 8, true),
+      w: raw[b] || 256,
+      h: raw[b + 1] || 256,
+      len: v.getUint32(b + 8, true),
       offset: v.getUint32(b + 12, true),
     });
   }
@@ -279,11 +313,11 @@ async function decodeIcoImage(raw: Uint8Array, size: number): Promise<string | n
   // DIB (BITMAPINFOHEADER)
   if (raw.length < 40) return null;
   const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
-  const biWidth  = Math.abs(v.getInt32(4, true));
+  const biWidth = Math.abs(v.getInt32(4, true));
   const biHeight = Math.abs(v.getInt32(8, true)); // doubled: XOR + AND mask
   const bitCount = v.getUint16(14, true);
-  const actualH  = biHeight >> 1; // ÷2
-  const actualW  = biWidth;
+  const actualH = biHeight >> 1; // ÷2
+  const actualW = biWidth;
 
   if (actualW <= 0 || actualH <= 0) return null;
 
@@ -319,7 +353,7 @@ async function decode32BitDib(
       const s = srcRow + col * 4;
       const d = dstRow + col * 4;
       // BGRA → RGBA
-      dst[d]     = raw[s + 2];
+      dst[d] = raw[s + 2];
       dst[d + 1] = raw[s + 1];
       dst[d + 2] = raw[s];
       dst[d + 3] = raw[s + 3];
@@ -344,16 +378,16 @@ async function dibToBmpBlob(
 ): Promise<string | null> {
   // Palette size (bytes)
   const palColors = bitCount <= 8 ? (1 << bitCount) : 0;
-  const palBytes  = palColors * 4;
+  const palBytes = palColors * 4;
   const pixOffset = 14 + 40 + palBytes; // BITMAPFILEHEADER + BITMAPINFOHEADER + palette
-  const fileSize  = pixOffset + Math.ceil(w * bitCount / 32) * 4 * fullH;
+  const fileSize = pixOffset + Math.ceil(w * bitCount / 32) * 4 * fullH;
 
   const bmp = new Uint8Array(fileSize);
-  const bv  = new DataView(bmp.buffer);
+  const bv = new DataView(bmp.buffer);
 
   // BITMAPFILEHEADER
   bmp[0] = 0x42; bmp[1] = 0x4d; // "BM"
-  bv.setUint32(2,  fileSize, true);
+  bv.setUint32(2, fileSize, true);
   bv.setUint32(10, pixOffset, true);
 
   // Copy DIB (BITMAPINFOHEADER + palette + pixel data)
@@ -362,7 +396,7 @@ async function dibToBmpBlob(
   return blobToCanvas(new Blob([bmp.buffer], { type: "image/bmp" }), size);
 }
 
-// ─── Canvas helpers ───────────────────────────────────────────────────────────
+// Canvas helpers
 
 async function blobToCanvas(blob: Blob, size: number): Promise<string | null> {
   try {
@@ -394,15 +428,15 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload  = () => resolve(reader.result as string);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
 }
 
-// ─── PE icon extraction ───────────────────────────────────────────────────────
+// PE icon extraction
 
-const RT_ICON       = 3;
+const RT_ICON = 3;
 const RT_GROUP_ICON = 14;
 
 async function extractPeIcon(
@@ -428,24 +462,24 @@ async function parsePeIcon(raw: Uint8Array): Promise<string | null> {
 async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
 
-  // ── MZ + PE header ─────────────────────────────────────────────────────────
+  // MZ + PE header
   if (raw.length < 64 || v.getUint16(0, true) !== 0x5a4d) return null;
   const peOff = v.getUint32(60, true);
   if (peOff + 24 > raw.length) return null;
   if (v.getUint32(peOff, true) !== 0x00004550) return null; // "PE\0\0"
 
-  const numSec   = v.getUint16(peOff + 6, true);
-  const optSize  = v.getUint16(peOff + 20, true);
-  const secBase  = peOff + 24 + optSize;
+  const numSec = v.getUint16(peOff + 6, true);
+  const optSize = v.getUint16(peOff + 20, true);
+  const secBase = peOff + 24 + optSize;
 
-  // ── Find .rsrc section ─────────────────────────────────────────────────────
+  // Find .rsrc section
   let rsrcVA = 0, rsrcFileOff = 0;
   for (let i = 0; i < numSec; i++) {
     const s = secBase + i * 40;
     if (s + 40 > raw.length) break;
     const name = new TextDecoder().decode(raw.slice(s, s + 8)).replace(/\0+$/, "");
     if (name === ".rsrc") {
-      rsrcVA      = v.getUint32(s + 12, true); // VirtualAddress
+      rsrcVA = v.getUint32(s + 12, true); // VirtualAddress
       rsrcFileOff = v.getUint32(s + 20, true); // PointerToRawData
       break;
     }
@@ -455,7 +489,7 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   // Convert resource-section RVA → file offset
   const rva2file = (rva: number) => rva - rsrcVA + rsrcFileOff;
 
-  // ── Resource directory helpers (offsets relative to section start) ──────────
+  // Resource directory helpers (offsets relative to section start)
   const R = rsrcFileOff;
 
   function dirEntryCount(secOff: number): number {
@@ -467,19 +501,19 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   interface ResEntry {
     id: number;
     subdirOff: number | null; // section-relative, when high bit set
-    leafOff:   number | null;
+    leafOff: number | null;
   }
 
   function readEntry(secOff: number, idx: number): ResEntry | null {
     const a = R + secOff + 16 + idx * 8;
     if (a + 8 > raw.length) return null;
     const nameId = v.getUint32(a, true);
-    const val    = v.getUint32(a + 4, true);
-    const sub    = (val & 0x80000000) !== 0;
+    const val = v.getUint32(a + 4, true);
+    const sub = (val & 0x80000000) !== 0;
     return {
-      id:        nameId & 0x7fffffff,
-      subdirOff: sub  ? (val & 0x7fffffff) : null,
-      leafOff:   !sub ? val : null,
+      id: nameId & 0x7fffffff,
+      subdirOff: sub ? (val & 0x7fffffff) : null,
+      leafOff: !sub ? val : null,
     };
   }
 
@@ -489,7 +523,7 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
     return { fileOff: rva2file(v.getUint32(a, true)), size: v.getUint32(a + 4, true) };
   }
 
-  // ── Level 1: locate RT_GROUP_ICON and RT_ICON ──────────────────────────────
+  // Level 1: locate RT_GROUP_ICON and RT_ICON
   const l1n = dirEntryCount(0);
   let grpDirOff: number | null = null;
   let icoDirOff: number | null = null;
@@ -498,11 +532,11 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
     const e = readEntry(0, i);
     if (!e || e.subdirOff === null) continue;
     if (e.id === RT_GROUP_ICON) grpDirOff = e.subdirOff;
-    if (e.id === RT_ICON)       icoDirOff = e.subdirOff;
+    if (e.id === RT_ICON) icoDirOff = e.subdirOff;
   }
   if (grpDirOff === null || icoDirOff === null) return null;
 
-  // ── Level 2 → Level 3: RT_GROUP_ICON → first group → first language ────────
+  // Level 2 → Level 3: RT_GROUP_ICON → first group → first language
   if (dirEntryCount(grpDirOff) === 0) return null;
   const grpNameEntry = readEntry(grpDirOff, 0);
   if (!grpNameEntry || grpNameEntry.subdirOff === null) return null;
@@ -514,12 +548,12 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   const grpData = readDataEntry(grpLangEntry.leafOff);
   if (!grpData || grpData.fileOff + 6 > raw.length) return null;
 
-  // ── Parse GRPICONDIR ───────────────────────────────────────────────────────
+  // Parse GRPICONDIR
   //  WORD reserved, WORD type, WORD count
   //  GRPICONDIRENTRY[count]: BYTE w, BYTE h, BYTE cc, BYTE res, WORD planes,
   //                          WORD bitCount, DWORD bytesInRes, WORD id
-  const gb         = grpData.fileOff;
-  const grpCount   = v.getUint16(gb + 4, true);
+  const gb = grpData.fileOff;
+  const grpCount = v.getUint16(gb + 4, true);
   if (grpCount === 0) return null;
 
   interface GrpIcon { w: number; h: number; id: number; size: number; }
@@ -528,10 +562,10 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
     const eb = gb + 6 + i * 14;
     if (eb + 14 > raw.length) break;
     grpIcons.push({
-      w:    raw[eb]     || 256,
-      h:    raw[eb + 1] || 256,
+      w: raw[eb] || 256,
+      h: raw[eb + 1] || 256,
       size: v.getUint32(eb + 8, true),
-      id:   v.getUint16(eb + 12, true),
+      id: v.getUint16(eb + 12, true),
     });
   }
   if (grpIcons.length === 0) return null;
@@ -540,7 +574,7 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   grpIcons.sort((a, b) => b.w * b.h - a.w * a.h);
   const best = grpIcons.find((e) => e.w >= ICON_CSS_PX) ?? grpIcons[0];
 
-  // ── Level 2 → Level 3: RT_ICON → id=best.id → first language ─────────────
+  // Level 2 → Level 3: RT_ICON → id=best.id → first language
   const l2n = dirEntryCount(icoDirOff);
   let icoChildOff: number | null = null;
   for (let i = 0; i < l2n; i++) {
@@ -557,7 +591,7 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   const icoData = readDataEntry(icoLangEntry.leafOff);
   if (!icoData || icoData.fileOff + best.size > raw.length) return null;
 
-  // ── Decode the icon image ──────────────────────────────────────────────────
+  // Decode the icon image
   const iconBytes = raw.slice(icoData.fileOff, icoData.fileOff + best.size);
   return decodeIcoImage(iconBytes, ICON_CANVAS_PX);
 }

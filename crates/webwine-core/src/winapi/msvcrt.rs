@@ -21,7 +21,14 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "strcmp", strcmp),
         ("msvcrt.dll", "strncmp", strncmp),
         ("msvcrt.dll", "strcpy", strcpy),
+        ("msvcrt.dll", "strncpy", strncpy),
         ("msvcrt.dll", "strcat", strcat),
+        ("msvcrt.dll", "strncat", strncat),
+        ("msvcrt.dll", "getenv", getenv_fn),
+        ("msvcrt.dll", "_getcwd", getcwd_fn),
+        ("msvcrt.dll", "getcwd", getcwd_fn),
+        ("msvcrt.dll", "_chdir", chdir_fn),
+        ("msvcrt.dll", "chdir", chdir_fn),
         ("msvcrt.dll", "strchr", strchr),
         ("msvcrt.dll", "strrchr", strrchr),
         ("msvcrt.dll", "strstr", strstr),
@@ -37,7 +44,21 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "sprintf", sprintf_fn),
         ("msvcrt.dll", "snprintf", snprintf_fn),
         ("msvcrt.dll", "_snprintf", snprintf_fn),
-        ("msvcrt.dll", "_vsnprintf", stub_zero_cdecl_1),
+        ("msvcrt.dll", "vprintf", vprintf_fn),
+        ("msvcrt.dll", "vfprintf", vfprintf_fn),
+        ("msvcrt.dll", "vsprintf", vsprintf_fn),
+        ("msvcrt.dll", "_vsnprintf", vsnprintf_fn),
+        ("msvcrt.dll", "vsnprintf", vsnprintf_fn),
+        ("msvcrt.dll", "_strdup", strdup_fn),
+        ("msvcrt.dll", "strdup", strdup_fn),
+        ("msvcrt.dll", "signal", |c| {
+            c.ret_cdecl(0);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "raise", |c| {
+            c.ret_cdecl(0);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "abort", |c| Handled::ExitProcess(3)),
         ("msvcrt.dll", "_initterm", initterm),
         ("msvcrt.dll", "_initterm_e", initterm_e),
@@ -65,13 +86,93 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "fwrite", fwrite),
         ("msvcrt.dll", "fputc", fputc),
         ("msvcrt.dll", "fputs", fputs),
+        // stdio backed by the VFS
+        ("msvcrt.dll", "fopen", fopen),
+        ("msvcrt.dll", "_fsopen", fsopen),
+        ("msvcrt.dll", "freopen", freopen),
+        ("msvcrt.dll", "fclose", fclose),
+        ("msvcrt.dll", "fread", fread),
+        ("msvcrt.dll", "fseek", fseek),
+        ("msvcrt.dll", "ftell", ftell),
+        ("msvcrt.dll", "rewind", rewind),
+        ("msvcrt.dll", "fgetc", fgetc),
+        ("msvcrt.dll", "getc", fgetc),
+        ("msvcrt.dll", "fgets", fgets),
+        ("msvcrt.dll", "feof", feof),
+        // scanf family: we don't parse formatted input yet, so report EOF (-1).
+        // Returning 0 ("no fields") makes typical `while (fscanf(..)!=EOF)` config
+        // readers spin forever; EOF terminates them cleanly (defaults are used).
+        ("msvcrt.dll", "fscanf", scanf_eof),
+        ("msvcrt.dll", "scanf", scanf_eof),
+        ("msvcrt.dll", "sscanf", scanf_eof),
+        ("msvcrt.dll", "vfscanf", scanf_eof),
+        ("msvcrt.dll", "vsscanf", scanf_eof),
+        ("msvcrt.dll", "ferror", stub_zero_cdecl_1),
+        ("msvcrt.dll", "setvbuf", stub_zero_cdecl_1),
+        ("msvcrt.dll", "setbuf", stub_void_1_cdecl),
+        // character classification / conversion
+        ("msvcrt.dll", "isspace", |c| {
+            ret_class(c, |b| b.is_ascii_whitespace())
+        }),
+        ("msvcrt.dll", "isdigit", |c| {
+            ret_class(c, |b| b.is_ascii_digit())
+        }),
+        ("msvcrt.dll", "isalpha", |c| {
+            ret_class(c, |b| b.is_ascii_alphabetic())
+        }),
+        ("msvcrt.dll", "isalnum", |c| {
+            ret_class(c, |b| b.is_ascii_alphanumeric())
+        }),
+        ("msvcrt.dll", "isupper", |c| {
+            ret_class(c, |b| b.is_ascii_uppercase())
+        }),
+        ("msvcrt.dll", "islower", |c| {
+            ret_class(c, |b| b.is_ascii_lowercase())
+        }),
+        ("msvcrt.dll", "isxdigit", |c| {
+            ret_class(c, |b| b.is_ascii_hexdigit())
+        }),
+        ("msvcrt.dll", "ispunct", |c| {
+            ret_class(c, |b| b.is_ascii_punctuation())
+        }),
+        ("msvcrt.dll", "iscntrl", |c| {
+            ret_class(c, |b| b.is_ascii_control())
+        }),
+        ("msvcrt.dll", "isprint", |c| {
+            ret_class(c, |b| b.is_ascii_graphic() || b == b' ')
+        }),
+        ("msvcrt.dll", "isgraph", |c| {
+            ret_class(c, |b| b.is_ascii_graphic())
+        }),
+        ("msvcrt.dll", "tolower", |c| {
+            let v = c.arg(0) as u8;
+            c.ret_cdecl(v.to_ascii_lowercase() as u32);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "toupper", |c| {
+            let v = c.arg(0) as u8;
+            c.ret_cdecl(v.to_ascii_uppercase() as u32);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "__set_app_type", stub_void_1_cdecl),
         ("msvcrt.dll", "_set_app_type", stub_void_1_cdecl),
         ("msvcrt.dll", "_configure_narrow_argv", stub_zero_cdecl_1),
         ("msvcrt.dll", "_configure_wide_argv", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_initialize_narrow_environment", stub_zero_cdecl_0),
-        ("msvcrt.dll", "_initialize_wide_environment", stub_zero_cdecl_0),
-        ("msvcrt.dll", "_get_initial_wide_environment", stub_zero_cdecl_0),
+        (
+            "msvcrt.dll",
+            "_initialize_narrow_environment",
+            stub_zero_cdecl_0,
+        ),
+        (
+            "msvcrt.dll",
+            "_initialize_wide_environment",
+            stub_zero_cdecl_0,
+        ),
+        (
+            "msvcrt.dll",
+            "_get_initial_wide_environment",
+            stub_zero_cdecl_0,
+        ),
         ("msvcrt.dll", "__p___wargv", p_argv),
         ("msvcrt.dll", "_set_fmode", stub_zero_cdecl_1),
         ("msvcrt.dll", "_setmode", stub_zero_cdecl_1),
@@ -85,8 +186,16 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "atexit", stub_zero_cdecl_1),
         // _onexit/__onexit return the registered function pointer on success
         // (NULL means failure, which some CRTs treat as fatal).
-        ("msvcrt.dll", "_onexit", |c| { let f = c.arg(0); c.ret_cdecl(f); Handled::Ok }),
-        ("msvcrt.dll", "__onexit", |c| { let f = c.arg(0); c.ret_cdecl(f); Handled::Ok }),
+        ("msvcrt.dll", "_onexit", |c| {
+            let f = c.arg(0);
+            c.ret_cdecl(f);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "__onexit", |c| {
+            let f = c.arg(0);
+            c.ret_cdecl(f);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "_lock", stub_void_1_cdecl),
         ("msvcrt.dll", "_unlock", stub_void_1_cdecl),
         ("msvcrt.dll", "__lconv_init", stub_zero_cdecl_0),
@@ -243,6 +352,62 @@ fn strcpy(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// getenv(name): we have no environment, so every variable is unset (NULL).
+fn getenv_fn(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+// _getcwd(buf, size): write the CWD; if buf is NULL, malloc one (size bytes).
+fn getcwd_fn(ctx: &mut ApiContext) -> Handled {
+    let mut buf = ctx.arg(0);
+    let size = ctx.arg(1);
+    let mut bytes = ctx.cwd.clone().into_bytes();
+    bytes.push(0);
+    if buf == 0 {
+        buf = ctx.heap_alloc(size.max(bytes.len() as u32));
+    }
+    let _ = ctx.memory.write_bytes(buf, &bytes);
+    ctx.ret_cdecl(buf);
+    Handled::Ok
+}
+
+// _chdir(path): set the working directory. Returns 0 on success.
+fn chdir_fn(ctx: &mut ApiContext) -> Handled {
+    let raw = ctx.cstr(ctx.arg(0));
+    *ctx.cwd = ctx.resolve_path(&raw);
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn strncpy(ctx: &mut ApiContext) -> Handled {
+    // strncpy(dst, src, n): copy at most n bytes; pad with NUL if src is shorter.
+    let dst = ctx.arg(0);
+    let src = ctx.arg(1);
+    let n = ctx.arg(2) as usize;
+    let s = ctx.memory.read_cstr(src).into_bytes();
+    let mut buf = vec![0u8; n];
+    let copy = s.len().min(n);
+    buf[..copy].copy_from_slice(&s[..copy]);
+    let _ = ctx.memory.write_bytes(dst, &buf);
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
+fn strncat(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let src = ctx.arg(1);
+    let n = ctx.arg(2) as usize;
+    let existing = ctx.memory.read_cstr(dst);
+    let append = ctx.memory.read_cstr(src);
+    let take: String = append.chars().take(n).collect();
+    let mut bytes = (existing + &take).into_bytes();
+    bytes.push(0);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
 fn strcat(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
@@ -336,11 +501,12 @@ fn printf(ctx: &mut ApiContext) -> Handled {
 
 fn fprintf(ctx: &mut ApiContext) -> Handled {
     // arg0 = FILE*, arg1 = fmt, rest = args
+    let stream = ctx.arg(0);
     let fmt_ptr = ctx.arg(1);
     let fmt = ctx.cstr(fmt_ptr);
     let result = format_string(ctx, &fmt, 2);
     let n = result.len();
-    ctx.console.stdout.extend_from_slice(result.as_bytes());
+    write_stream(ctx, stream, result.as_bytes());
     ctx.ret_cdecl(n as u32);
     Handled::Ok
 }
@@ -373,6 +539,70 @@ fn snprintf_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// vprintf(fmt, va_list) -> console
+fn vprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let fmt = ctx.cstr(ctx.arg(0));
+    let va = ctx.arg(1);
+    let result = format_va(ctx, &fmt, va);
+    let n = result.len();
+    ctx.console.stdout.extend_from_slice(result.as_bytes());
+    ctx.ret_cdecl(n as u32);
+    Handled::Ok
+}
+
+// vfprintf(FILE*, fmt, va_list)
+fn vfprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let stream = ctx.arg(0);
+    let fmt = ctx.cstr(ctx.arg(1));
+    let va = ctx.arg(2);
+    let result = format_va(ctx, &fmt, va);
+    let n = result.len();
+    write_stream(ctx, stream, result.as_bytes());
+    ctx.ret_cdecl(n as u32);
+    Handled::Ok
+}
+
+// vsprintf(buf, fmt, va_list)
+fn vsprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let fmt = ctx.cstr(ctx.arg(1));
+    let va = ctx.arg(2);
+    let result = format_va(ctx, &fmt, va);
+    let n = result.len();
+    let mut bytes = result.into_bytes();
+    bytes.push(0);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(n as u32);
+    Handled::Ok
+}
+
+// _vsnprintf(buf, count, fmt, va_list)
+fn vsnprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let cap = ctx.arg(1) as usize;
+    let fmt = ctx.cstr(ctx.arg(2));
+    let va = ctx.arg(3);
+    let result = format_va(ctx, &fmt, va);
+    let n = result.len().min(cap.saturating_sub(1));
+    let mut bytes = result.into_bytes();
+    bytes.truncate(n);
+    bytes.push(0);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(n as u32);
+    Handled::Ok
+}
+
+// _strdup(s): malloc a copy of the C string.
+fn strdup_fn(ctx: &mut ApiContext) -> Handled {
+    let s = ctx.cstr(ctx.arg(0));
+    let mut bytes = s.into_bytes();
+    bytes.push(0);
+    let p = ctx.heap_alloc(bytes.len() as u32);
+    let _ = ctx.memory.write_bytes(p, &bytes);
+    ctx.ret_cdecl(p);
+    Handled::Ok
+}
+
 fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
     // __stdio_common_vfprintf(options, stream, format, locale, va_list)
     let fmt_ptr = ctx.arg(2);
@@ -384,29 +614,320 @@ fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
 }
 
 fn fwrite(ctx: &mut ApiContext) -> Handled {
+    // fwrite(buf, size, count, FILE*)
     let buf = ctx.arg(0);
     let size = ctx.arg(1);
     let n = ctx.arg(2);
+    let stream = ctx.arg(3);
     let bytes = ctx
         .memory
         .read_bytes(buf, (size * n) as usize)
         .unwrap_or_default();
-    ctx.console.stdout.extend_from_slice(&bytes);
+    write_stream(ctx, stream, &bytes);
     ctx.ret_cdecl(n);
     Handled::Ok
 }
 
 fn fputc(ctx: &mut ApiContext) -> Handled {
+    // fputc(c, FILE*)
     let c = ctx.arg(0) as u8;
-    ctx.console.stdout.push(c);
+    let stream = ctx.arg(1);
+    write_stream(ctx, stream, &[c]);
     ctx.ret_cdecl(c as u32);
     Handled::Ok
 }
 
 fn fputs(ctx: &mut ApiContext) -> Handled {
+    // fputs(str, FILE*)
     let s = ctx.cstr(ctx.arg(0));
-    ctx.console.stdout.extend_from_slice(s.as_bytes());
+    let stream = ctx.arg(1);
+    write_stream(ctx, stream, s.as_bytes());
     ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+// VFS-backed stdio
+// A FILE* is either one of the fake stdout/stderr pointers from __acrt_iob_func
+// (>= 0x7FFD_0000), or a small VFS handle returned by fopen. Writes to a VFS
+// handle hit the file; everything else goes to the console.
+
+fn is_vfs_stream(stream: u32) -> bool {
+    stream != 0 && stream < 0x7FFD_0000
+}
+
+fn write_stream(ctx: &mut ApiContext, stream: u32, bytes: &[u8]) {
+    use crate::vm::handles::KernelObject;
+    let target = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
+            Some((path.clone(), *cursor))
+        }
+        _ => None,
+    };
+    match target {
+        Some((path, cursor)) => {
+            let mut content = ctx.fs.read_file(&path).unwrap_or_default();
+            let start = cursor as usize;
+            let end = start + bytes.len();
+            if content.len() < end {
+                content.resize(end, 0);
+            }
+            content[start..end].copy_from_slice(bytes);
+            let _ = ctx.fs.mount_file(&path, content);
+            if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+                *cursor += bytes.len() as u64;
+            }
+        }
+        None => ctx.console.stdout.extend_from_slice(bytes),
+    }
+}
+
+// fopen(path, mode) -> FILE*
+fn fopen(ctx: &mut ApiContext) -> Handled {
+    let path = ctx.cstr(ctx.arg(0));
+    let mode = ctx.cstr(ctx.arg(1));
+    let h = open_vfs(ctx, &path, &mode);
+    ctx.ret_cdecl(h);
+    Handled::Ok
+}
+
+// _fsopen(path, mode, shflag) -> FILE*
+fn fsopen(ctx: &mut ApiContext) -> Handled {
+    let path = ctx.cstr(ctx.arg(0));
+    let mode = ctx.cstr(ctx.arg(1));
+    let h = open_vfs(ctx, &path, &mode);
+    ctx.ret_cdecl(h);
+    Handled::Ok
+}
+
+// freopen(path, mode, stream) -> stream (or NULL). We open/truncate the file but
+// keep redirecting the original stream's writes to the console, so program log
+// output stays visible rather than vanishing into a file.
+fn freopen(ctx: &mut ApiContext) -> Handled {
+    let path = ctx.cstr(ctx.arg(0));
+    let mode = ctx.cstr(ctx.arg(1));
+    let stream = ctx.arg(2);
+    open_vfs(ctx, &path, &mode);
+    ctx.ret_cdecl(stream);
+    Handled::Ok
+}
+
+fn open_vfs(ctx: &mut ApiContext, raw_path: &str, mode: &str) -> u32 {
+    use crate::vm::handles::KernelObject;
+    let path = ctx.resolve_path(raw_path);
+    let writable = mode.contains('w') || mode.contains('a') || mode.contains('+');
+    let truncate = mode.contains('w');
+    let append = mode.contains('a');
+    let exists = ctx.fs.node_exists(&path);
+
+    if !writable && !exists {
+        return 0; // fopen("r") on a missing file fails
+    }
+    if truncate || !exists {
+        if ctx.fs.mount_file(&path, Vec::new()).is_err() {
+            return 0;
+        }
+    }
+    let cursor = if append {
+        ctx.fs.read_file(&path).map(|b| b.len() as u64).unwrap_or(0)
+    } else {
+        0
+    };
+    ctx.handles.insert(KernelObject::VfsFile {
+        path,
+        cursor,
+        writable,
+    })
+}
+
+fn fclose(ctx: &mut ApiContext) -> Handled {
+    let stream = ctx.arg(0);
+    if is_vfs_stream(stream) {
+        ctx.handles.remove(stream);
+    }
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+// fread(buf, size, count, FILE*) -> count of full elements read
+fn fread(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let buf = ctx.arg(0);
+    let size = ctx.arg(1).max(1);
+    let count = ctx.arg(2);
+    let stream = ctx.arg(3);
+    let total = (size * count) as usize;
+
+    let info = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
+            Some((path.clone(), *cursor))
+        }
+        _ => None,
+    };
+    let Some((path, cursor)) = info else {
+        ctx.ret_cdecl(0);
+        return Handled::Ok;
+    };
+
+    let content = ctx.fs.read_file(&path).unwrap_or_default();
+    let start = (cursor as usize).min(content.len());
+    let end = (start + total).min(content.len());
+    let chunk = &content[start..end];
+    let read_bytes = chunk.len();
+    let _ = ctx.memory.write_bytes(buf, &chunk.to_vec());
+    if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+        *cursor += read_bytes as u64;
+    }
+    ctx.ret_cdecl((read_bytes / size as usize) as u32);
+    Handled::Ok
+}
+
+// fseek(FILE*, offset, origin): 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
+fn fseek(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let stream = ctx.arg(0);
+    let offset = ctx.arg(1) as i32 as i64;
+    let origin = ctx.arg(2);
+
+    let len = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, .. }) if is_vfs_stream(stream) => {
+            ctx.fs.read_file(path).map(|b| b.len() as i64).unwrap_or(0)
+        }
+        _ => {
+            ctx.ret_cdecl(0xFFFF_FFFF);
+            return Handled::Ok;
+        }
+    };
+    if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+        let base = match origin {
+            1 => *cursor as i64,
+            2 => len,
+            _ => 0,
+        };
+        *cursor = (base + offset).max(0) as u64;
+    }
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn ftell(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let stream = ctx.arg(0);
+    let pos = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { cursor, .. }) if is_vfs_stream(stream) => *cursor as u32,
+        _ => 0xFFFF_FFFF,
+    };
+    ctx.ret_cdecl(pos);
+    Handled::Ok
+}
+
+fn rewind(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let stream = ctx.arg(0);
+    if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+        *cursor = 0;
+    }
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+// fgetc(FILE*) -> int (byte or EOF=-1)
+fn fgetc(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let stream = ctx.arg(0);
+    let info = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
+            Some((path.clone(), *cursor))
+        }
+        _ => None,
+    };
+    let Some((path, cursor)) = info else {
+        ctx.ret_cdecl(0xFFFF_FFFF);
+        return Handled::Ok;
+    };
+    let content = ctx.fs.read_file(&path).unwrap_or_default();
+    let byte = content.get(cursor as usize).copied();
+    match byte {
+        Some(b) => {
+            if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+                *cursor += 1;
+            }
+            ctx.ret_cdecl(b as u32);
+        }
+        None => ctx.ret_cdecl(0xFFFF_FFFF), // EOF
+    }
+    Handled::Ok
+}
+
+// fgets(buf, n, FILE*): read up to n-1 bytes or until newline.
+fn fgets(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let buf = ctx.arg(0);
+    let n = ctx.arg(1) as usize;
+    let stream = ctx.arg(2);
+    let info = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
+            Some((path.clone(), *cursor))
+        }
+        _ => None,
+    };
+    let Some((path, cursor)) = info else {
+        ctx.ret_cdecl(0);
+        return Handled::Ok;
+    };
+    if n == 0 {
+        ctx.ret_cdecl(0);
+        return Handled::Ok;
+    }
+
+    let content = ctx.fs.read_file(&path).unwrap_or_default();
+    let start = cursor as usize;
+    if start >= content.len() {
+        ctx.ret_cdecl(0);
+        return Handled::Ok;
+    }
+    let mut line = Vec::new();
+    for &b in &content[start..] {
+        if line.len() >= n - 1 {
+            break;
+        }
+        line.push(b);
+        if b == b'\n' {
+            break;
+        }
+    }
+    let read = line.len();
+    line.push(0);
+    let _ = ctx.memory.write_bytes(buf, &line);
+    if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
+        *cursor += read as u64;
+    }
+    ctx.ret_cdecl(buf);
+    Handled::Ok
+}
+
+fn feof(ctx: &mut ApiContext) -> Handled {
+    use crate::vm::handles::KernelObject;
+    let stream = ctx.arg(0);
+    let eof = match ctx.handles.get(stream) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
+            let len = ctx.fs.read_file(path).map(|b| b.len() as u64).unwrap_or(0);
+            *cursor >= len
+        }
+        _ => false,
+    };
+    ctx.ret_cdecl(eof as u32);
+    Handled::Ok
+}
+
+// scanf/fscanf/sscanf: return EOF (-1). cdecl, caller cleans the stack.
+fn scanf_eof(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_cdecl(0xFFFF_FFFF);
+    Handled::Ok
+}
+
+fn ret_class(ctx: &mut ApiContext, pred: impl Fn(u8) -> bool) -> Handled {
+    let v = ctx.arg(0) as u8;
+    ctx.ret_cdecl(if pred(v) { 1 } else { 0 });
     Handled::Ok
 }
 
@@ -423,13 +944,13 @@ fn acrt_iob(ctx: &mut ApiContext) -> Handled {
 // runs them (a handler can't call guest code itself).
 fn initterm(ctx: &mut ApiContext) -> Handled {
     let first = ctx.arg(0);
-    let last  = ctx.arg(1);
+    let last = ctx.arg(1);
     Handled::CallChain(collect_init_table(ctx, first, last))
 }
 
 fn initterm_e(ctx: &mut ApiContext) -> Handled {
     let first = ctx.arg(0);
-    let last  = ctx.arg(1);
+    let last = ctx.arg(1);
     Handled::CallChain(collect_init_table(ctx, first, last))
 }
 
@@ -467,7 +988,7 @@ fn p_argv(ctx: &mut ApiContext) -> Handled {
 fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let argc_p = ctx.arg(0);
     let argv_p = ctx.arg(1);
-    let env_p  = ctx.arg(2);
+    let env_p = ctx.arg(2);
 
     // argv[0] = the real launched image path, argv[1] = NULL
     let mut name_bytes = ctx.exe_path.as_bytes().to_vec();
@@ -480,9 +1001,15 @@ fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, 1); }
-    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
-    if env_p  != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    if argc_p != 0 {
+        let _ = ctx.memory.write_u32(argc_p, 1);
+    }
+    if argv_p != 0 {
+        let _ = ctx.memory.write_u32(argv_p, argv);
+    }
+    if env_p != 0 {
+        let _ = ctx.memory.write_u32(env_p, env);
+    }
     ctx.ret_cdecl(0);
     Handled::Ok
 }
@@ -491,7 +1018,7 @@ fn getmainargs(ctx: &mut ApiContext) -> Handled {
 fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let argc_p = ctx.arg(0);
     let argv_p = ctx.arg(1);
-    let env_p  = ctx.arg(2);
+    let env_p = ctx.arg(2);
 
     let mut s = ctx.exe_path.to_string();
     s.push('\0');
@@ -504,9 +1031,15 @@ fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, 1); }
-    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
-    if env_p  != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    if argc_p != 0 {
+        let _ = ctx.memory.write_u32(argc_p, 1);
+    }
+    if argv_p != 0 {
+        let _ = ctx.memory.write_u32(argv_p, argv);
+    }
+    if env_p != 0 {
+        let _ = ctx.memory.write_u32(env_p, env);
+    }
     ctx.ret_cdecl(0);
     Handled::Ok
 }
@@ -527,9 +1060,55 @@ fn p_fmode(ctx: &mut ApiContext) -> Handled {
 
 // printf formatter
 
+// Source of variadic arguments for the printf family. Stack-based functions
+// (printf, fprintf) read successive 4-byte slots above ESP; the v* variants read
+// from a va_list pointer into guest memory.
+enum ArgSrc {
+    Stack { esp: u32, idx: u32 },
+    Va { ptr: u32, idx: u32 },
+}
+
+impl ArgSrc {
+    fn next(&mut self, mem: &crate::vm::memory::GuestMemory) -> u32 {
+        match self {
+            ArgSrc::Stack { esp, idx } => {
+                let v = mem.read_u32(*esp + 4 + 4 * *idx).unwrap_or(0);
+                *idx += 1;
+                v
+            }
+            ArgSrc::Va { ptr, idx } => {
+                let v = mem.read_u32(*ptr + 4 * *idx).unwrap_or(0);
+                *idx += 1;
+                v
+            }
+        }
+    }
+}
+
 fn format_string(ctx: &ApiContext, fmt: &str, first_arg: u32) -> String {
+    format_args_src(
+        ctx,
+        fmt,
+        ArgSrc::Stack {
+            esp: ctx.cpu.esp,
+            idx: first_arg,
+        },
+    )
+}
+
+fn format_va(ctx: &ApiContext, fmt: &str, va_ptr: u32) -> String {
+    format_args_src(
+        ctx,
+        fmt,
+        ArgSrc::Va {
+            ptr: va_ptr,
+            idx: 0,
+        },
+    )
+}
+
+fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> String {
     let mut out = String::new();
-    let mut arg_idx = first_arg;
     let chars: Vec<char> = fmt.chars().collect();
     let mut i = 0;
     while i < chars.len() {
@@ -552,66 +1131,26 @@ fn format_string(ctx: &ApiContext, fmt: &str, first_arg: u32) -> String {
         let spec = chars[i];
         i += 1;
         match spec {
-            'd' | 'i' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0) as i32;
-                out.push_str(&v.to_string());
-                arg_idx += 1;
-            }
-            'u' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0);
-                out.push_str(&v.to_string());
-                arg_idx += 1;
-            }
-            'x' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0);
-                out.push_str(&format!("{v:x}"));
-                arg_idx += 1;
-            }
-            'X' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0);
-                out.push_str(&format!("{v:X}"));
-                arg_idx += 1;
-            }
-            'p' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0);
-                out.push_str(&format!("{v:08X}"));
-                arg_idx += 1;
-            }
-            'c' => {
-                let v = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0) as u8;
-                out.push(v as char);
-                arg_idx += 1;
-            }
+            'd' | 'i' => out.push_str(&(src.next(&ctx.memory) as i32).to_string()),
+            'u' => out.push_str(&src.next(&ctx.memory).to_string()),
+            'x' => out.push_str(&format!("{:x}", src.next(&ctx.memory))),
+            'X' => out.push_str(&format!("{:X}", src.next(&ctx.memory))),
+            'p' => out.push_str(&format!("{:08X}", src.next(&ctx.memory))),
+            'c' => out.push(src.next(&ctx.memory) as u8 as char),
             's' => {
-                let ptr = ctx
-                    .memory
-                    .read_u32(ctx.cpu.esp + 4 + 4 * arg_idx)
-                    .unwrap_or(0);
+                let ptr = src.next(&ctx.memory);
                 out.push_str(&ctx.memory.read_cstr(ptr));
-                arg_idx += 1;
+            }
+            'f' | 'g' | 'e' => {
+                // doubles occupy two arg slots; reconstruct the f64 bit pattern.
+                let lo = src.next(&ctx.memory) as u64;
+                let hi = src.next(&ctx.memory) as u64;
+                out.push_str(&f64::from_bits((hi << 32) | lo).to_string());
             }
             '%' => out.push('%'),
             'n' => {
-                arg_idx += 1;
-            } // skip
+                src.next(&ctx.memory);
+            }
             _ => {
                 out.push('%');
                 out.push(spec);

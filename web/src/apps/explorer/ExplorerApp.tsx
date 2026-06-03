@@ -5,6 +5,7 @@ import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
 import type { DirectoryEntry } from "../../lib/worker.js";
 import { formatSize } from "../../lib/utils.js";
 import { useThemeStore } from "../../stores/useThemeStore.js";
+import { launchGuestPath } from "../../lib/guest-launch.js";
 
 const ROOT_PATH = "";
 const DRIVE_PATH = "C:\\";
@@ -256,9 +257,13 @@ function ExplorerRow({
   const type = isDir
     ? entry.path === DRIVE_PATH
       ? "Drive"
+      : lowerName.endsWith(".lnk")
+        ? "Shortcut"
       : "File folder"
     : lowerName.endsWith(".exe")
       ? "Application"
+      : lowerName.endsWith(".lnk")
+        ? "Shortcut"
       : lowerName.endsWith(".txt") || lowerName.endsWith(".log")
         ? "Text document"
         : "File";
@@ -270,14 +275,8 @@ function ExplorerRow({
       onDoubleClick={() => {
         if (isDir) {
           onNavigate(entry.path);
-        } else if (lowerName.endsWith(".exe")) {
-          import("../pe-inspector/PeInspectorApp.js").then((m) =>
-            m.openPeInspector(entry.path, runtime),
-          );
         } else {
-          import("../text-reader/TextReaderApp.js").then((m) =>
-            m.openTextReader(entry.path, runtime),
-          );
+          void launchGuestPath(entry.path, runtime);
         }
       }}
     >

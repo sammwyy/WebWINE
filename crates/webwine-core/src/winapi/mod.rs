@@ -3,6 +3,7 @@ pub mod kernel32;
 pub mod msvcrt;
 pub mod ntdll;
 pub mod user32;
+pub mod winmm;
 
 pub use context::{ApiContext, Handled};
 
@@ -124,6 +125,7 @@ pub fn register_all(r: &mut WinApiRegistry) {
     msvcrt::register(r);
     ntdll::register(r);
     user32::register(r);
+    winmm::register(r);
     r.finalize(); // allocate GetProcAddress trampolines for every registered name
 }
 
@@ -136,22 +138,59 @@ fn default_stdcall_args(name: &str) -> u32 {
         // 0 args
         "GetLastError" | "GetCurrentThread" | "GetCurrentProcess"
         | "GetCurrentThreadId" | "GetCurrentProcessId" | "GetCommandLineA"
-        | "GetCommandLineW" | "GetTickCount" | "GetTickCount64" => 0,
+        | "GetCommandLineW" | "GetTickCount" | "GetTickCount64"
+        | "GetCursor" | "ReleaseCapture" | "GetDesktopWindow"
+        | "GetActiveWindow" | "GetForegroundWindow" => 0,
         // 1 arg
         "CloseHandle" | "SetLastError" | "ExitProcess" | "Sleep" | "LocalFree"
         | "GlobalFree" | "SetThreadLocale" | "GetThreadLocale" | "IsWindow"
         | "DestroyWindow" | "FreeLibrary" | "DeleteObject" | "GetDC"
-        | "SetThreadStackGuarantee" | "RtlDeleteCriticalSection" => 1,
+        | "SetThreadStackGuarantee" | "RtlDeleteCriticalSection"
+        | "ClipCursor" | "DestroyCursor" | "DestroyIcon" | "GetCursorPos"
+        | "GetKeyState" | "GetAsyncKeyState" | "GetKeyboardLayout"
+        | "GetKeyboardLayoutNameA" | "GetKeyboardState" | "GetMenu" | "GetParent"
+        | "IsZoomed" | "IsIconic" | "SetCapture" | "SetCursor" | "SetFocus"
+        | "SetForegroundWindow" | "PostQuitMessage" | "GetSystemMetrics"
+        | "DeleteDC" | "RealizePalette" | "GetSystemPaletteUse"
+        | "UnrealizeObject" | "CreatePalette" | "UpdateWindow"
+        | "GetWindowDC" | "SwapBuffers" => 1,
         // 2 args
         "GetProcAddress" | "SetEvent" | "WaitForSingleObject" | "ReleaseMutex"
-        | "EnableWindow" | "ShowWindow" | "MoveWindow" | "GetWindowRect" => 2,
+        | "EnableWindow" | "ShowWindow" | "GetWindowRect" | "ReleaseDC"
+        | "ClientToScreen" | "ScreenToClient" | "ChangeDisplaySettingsA"
+        | "GetWindowLongA" | "GetWindowLongW" | "KillTimer" | "LoadKeyboardLayoutA"
+        | "SetCursorPos" | "UnregisterClassA" | "UnregisterClassW"
+        | "WindowFromPoint" | "SetWindowTextA" | "SetWindowTextW"
+        | "GetClientRect" | "BeginPaint" | "EndPaint" | "SetDeviceGammaRamp"
+        | "GetDeviceGammaRamp" | "GetDeviceCaps" | "SetSystemPaletteUse"
+        | "ChoosePixelFormat" | "GetStockObject" => 2,
         // 3 args
         "OpenThread" | "VirtualFree" | "TlsSetValue" | "HeapDestroy"
-        | "SetWindowPos" | "VirtualLock" => 3,
-        // 4+ args (common)
-        "VirtualAlloc" | "MessageBoxA" | "MessageBoxW" | "CreateThread" => 4,
-        "VirtualProtect" => 4,
-        "CreateFileMappingW" | "RegOpenKeyExW" | "RegQueryValueExW" => 6,
+        | "VirtualLock" | "EnumDisplaySettingsA" | "GetClassInfoA"
+        | "InvalidateRect" | "MapVirtualKeyExA" | "SetClassLongA"
+        | "SetWindowLongA" | "SetWindowLongW" | "AdjustWindowRect" | "PtInRect"
+        | "SetPixelFormat" | "SelectPalette" => 3,
+        // 4 args
+        "VirtualAlloc" | "MessageBoxA" | "MessageBoxW" | "CreateThread"
+        | "VirtualProtect" | "AdjustWindowRectEx" | "MapWindowPoints"
+        | "PostMessageA" | "PostMessageW" | "SetTimer" | "GetMessageA"
+        | "GetMessageW" | "DefWindowProcA" | "DefWindowProcW"
+        | "DescribePixelFormat" | "SetDIBColorTable" | "SetPaletteEntries"
+        | "GetSystemPaletteEntries" => 4,
+        // 5 args
+        "CallWindowProcA" | "PeekMessageA" | "PeekMessageW" | "ToAsciiEx"
+        | "ToUnicode" => 5,
+        // 6 args
+        "CreateFileMappingW" | "RegOpenKeyExW" | "RegQueryValueExW" | "RegOpenKeyExA"
+        | "RegQueryValueExA" | "MoveWindow" | "LoadImageA" | "LoadImageW" => 6,
+        // 7 args
+        "CreateCursor" | "CreateIconFromResourceEx" | "SetWindowPos"
+        | "GetDIBits" => 7,
+        // 9+ args
+        "BitBlt" => 9,
+        "StretchBlt" => 11,
+        "SetDIBitsToDevice" => 12,
+        "StretchDIBits" => 13,
         "CreateProcessW" | "CreateProcessA" => 10,
         "CreateWindowExA" | "CreateWindowExW" => 12,
         // Unknown stdcall: assume 1 arg (most common). Better than leaking on a

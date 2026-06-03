@@ -52,6 +52,7 @@ html[data-theme="luna"] {
   --window-frame-bg: #ece9d8;
   --window-frame-border: #0f4fc4;
   --window-frame-radius: 8px 8px 3px 3px;
+  --window-focus-border: #8bcfff;
   --window-titlebar-bg: linear-gradient(180deg,
       #7dbbff 0%,
       #4d99f0 7%,
@@ -297,6 +298,13 @@ html[data-theme="luna"] .ctx-item.selected {
   background: linear-gradient(180deg, #5d9df1 0%, #316ac5 100%) !important;
 }
 
+html[data-theme="luna"] .shell-menu-item[aria-disabled="true"],
+html[data-theme="luna"] .ctx-item[aria-disabled="true"] {
+  color: #8a8a8a !important;
+  opacity: 0.58;
+  text-shadow: none;
+}
+
 html[data-theme="luna"] .shell-menu-separator,
 html[data-theme="luna"] .ctx-separator {
   height: 1px;
@@ -317,6 +325,15 @@ html[data-theme="luna"] .window {
     inset 0 -1px 0 #002f8f,
     0 10px 28px rgba(0, 0, 0, .48);
   overflow: hidden;
+}
+
+html[data-theme="luna"] .window.window--active {
+  box-shadow:
+    inset 1px 0 0 #75a7ef,
+    inset -1px 0 0 #002f8f,
+    inset 0 -1px 0 #002f8f,
+    0 0 0 1px var(--window-focus-border, #8bcfff),
+    0 10px 28px rgba(0, 0, 0, .48);
 }
 
 html[data-theme="luna"] .window::before {

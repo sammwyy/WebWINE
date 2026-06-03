@@ -134,6 +134,8 @@ fn handle_trampoline(
             logs,
             pid: proc.pid,
             exe_path: proc.path.as_str(),
+            cwd: &mut proc.cwd,
+            cmdline: proc.cmdline.as_str(),
             proc_addr: api.proc_addr_map(),
         };
         api.dispatch(va, &mut ctx)

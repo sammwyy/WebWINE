@@ -44,6 +44,10 @@ pub struct ApiContext<'a> {
     pub pid:       u32,
     /// Guest path of the running image (e.g. C:\Users\guest\Desktop\calc.exe).
     pub exe_path:  &'a str,
+    /// Current working directory; relative paths resolve against it.
+    pub cwd:       &'a mut String,
+    /// Full command line (argv[0] is the quoted image path).
+    pub cmdline:   &'a str,
     /// Function-name → trampoline VA, for GetProcAddress (0 = not available).
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
 }
@@ -71,6 +75,12 @@ impl<'a> ApiContext<'a> {
         self.cpu.eip = ret;
     }
 
+    /// Resolve a guest path against this process's current working directory,
+    /// normalizing `.`/`..` and `/` separators to an absolute `X:\...` form.
+    pub fn resolve_path(&self, raw: &str) -> String {
+        normalize_guest_path(self.cwd, raw)
+    }
+
     /// Read a null-terminated ASCII string from guest memory.
     pub fn cstr(&self, va: u32) -> String {
         self.memory.read_cstr(va)
@@ -86,7 +96,10 @@ impl<'a> ApiContext<'a> {
         if size == 0 { return 0; }
         let aligned = (size + 15) & !15;
         let ptr = *self.heap_next;
-        *self.heap_next = self.heap_next.wrapping_add(aligned);
+        let new_next = self.heap_next.wrapping_add(aligned);
+        // Back the new range with real memory (grows the heap region on demand).
+        self.memory.ensure_mapped(ptr, new_next);
+        *self.heap_next = new_next;
         self.heap_sizes.insert(ptr, size);
         ptr
     }
@@ -101,7 +114,9 @@ impl<'a> ApiContext<'a> {
 
         // Most-recent allocation? Extend in place.
         if old.wrapping_add(aligned_old) == *self.heap_next {
-            *self.heap_next = old.wrapping_add((new_size + 15) & !15);
+            let new_next = old.wrapping_add((new_size + 15) & !15);
+            self.memory.ensure_mapped(old, new_next);
+            *self.heap_next = new_next;
             self.heap_sizes.insert(old, new_size);
             return old;
         }
@@ -115,5 +130,67 @@ impl<'a> ApiContext<'a> {
             }
         }
         new_ptr
+    }
+}
+
+/// Resolve `raw` against `cwd` and normalize it to an absolute `X:\...` path.
+/// Handles `/` separators, the `\\?\` verbatim prefix, drive-relative and
+/// root-relative paths, and `.`/`..` components.
+pub fn normalize_guest_path(cwd: &str, raw: &str) -> String {
+    let r = raw.replace('/', "\\");
+    let r = r.strip_prefix("\\\\?\\").unwrap_or(&r);
+
+    let combined = if r.len() >= 2 && r.as_bytes()[1] == b':' {
+        // Already absolute with a drive letter.
+        r.to_string()
+    } else if r.starts_with('\\') {
+        // Rooted on the current drive.
+        let drive = cwd.get(0..2).unwrap_or("C:");
+        format!("{drive}{r}")
+    } else {
+        // Relative to the working directory.
+        format!("{}\\{}", cwd.trim_end_matches('\\'), r)
+    };
+
+    let (drive, rest) = if combined.len() >= 2 && combined.as_bytes()[1] == b':' {
+        (&combined[0..2], &combined[2..])
+    } else {
+        ("C:", combined.as_str())
+    };
+
+    let mut parts: Vec<&str> = Vec::new();
+    for comp in rest.split('\\') {
+        match comp {
+            "" | "." => {}
+            ".." => { parts.pop(); }
+            c => parts.push(c),
+        }
+    }
+    format!("{}\\{}", drive, parts.join("\\"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_guest_path;
+
+    #[test]
+    fn resolves_relative_against_cwd() {
+        let cwd = "C:\\Games\\Doom";
+        assert_eq!(normalize_guest_path(cwd, "doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
+        // `.` and `/` separators, the shapes an app's IWAD search uses.
+        assert_eq!(normalize_guest_path(cwd, ".\\doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
+        assert_eq!(normalize_guest_path(cwd, "./doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
+        assert_eq!(normalize_guest_path(cwd, "wads/e1m1.lmp"), "C:\\Games\\Doom\\wads\\e1m1.lmp");
+    }
+
+    #[test]
+    fn resolves_parent_and_absolute() {
+        let cwd = "C:\\Games\\Doom";
+        assert_eq!(normalize_guest_path(cwd, "..\\config.cfg"), "C:\\Games\\config.cfg");
+        assert_eq!(normalize_guest_path(cwd, "C:\\abs\\file.txt"), "C:\\abs\\file.txt");
+        // Drive-rooted path keeps the cwd's drive.
+        assert_eq!(normalize_guest_path(cwd, "\\rooted\\x"), "C:\\rooted\\x");
+        // Verbatim prefix is stripped.
+        assert_eq!(normalize_guest_path(cwd, "\\\\?\\C:\\v\\y"), "C:\\v\\y");
     }
 }

@@ -6,6 +6,7 @@ type InMsg =
   | { type: "create_dir"; path: string }
   | { type: "list_dir"; requestId: string; path: string }
   | { type: "read_file"; requestId: string; path: string }
+  | { type: "read_raw_file"; requestId: string; path: string }
   | { type: "inspect_pe"; requestId: string; path: string }
   | { type: "delete_node"; path: string }
   | { type: "rename_node"; path: string; new_name: string }
@@ -98,6 +99,7 @@ export type UiEvent =
   | { kind: "ellipse"; hwnd: number; x: number; y: number; w: number; h: number; fill: number; stroke: number }
   | { kind: "line"; hwnd: number; x1: number; y1: number; x2: number; y2: number; color: number }
   | { kind: "set_pixel"; hwnd: number; x: number; y: number; color: number }
+  | { kind: "blit"; hwnd: number; x: number; y: number; w: number; h: number; src_w: number; src_h: number; pixels: number[] }
   | { kind: "beep"; freq: number; duration: number };
 
 export interface SliceResult {
@@ -190,6 +192,15 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       send({ type: "dir_list", requestId: msg.requestId, entries });
     } else if (msg.type === "read_file") {
       const bytes = runtime.readFile(msg.path) as Uint8Array;
+      flushLogs();
+      send({
+        type: "file_data",
+        requestId: msg.requestId,
+        path: msg.path,
+        bytes: bytes.buffer as ArrayBuffer,
+      });
+    } else if (msg.type === "read_raw_file") {
+      const bytes = runtime.readRawFile(msg.path) as Uint8Array;
       flushLogs();
       send({
         type: "file_data",

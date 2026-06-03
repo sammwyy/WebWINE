@@ -6,7 +6,7 @@
  * to refresh icons.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRuntimeStore } from "../../stores/useRuntimeStore.js";
 import { useDesktopStore } from "../../stores/useDesktopStore.js";
 import { useClipboardStore } from "../../stores/useClipboardStore.js";
@@ -26,8 +26,20 @@ interface DesktopProps {
 
 export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   const { runtime } = useRuntimeStore();
-  const { entries, positions, refresh, clearSelection } = useDesktopStore();
+  const {
+    entries,
+    positions,
+    refresh,
+    clearSelection,
+    iconSize,
+    setIconSize,
+  } = useDesktopStore();
   const clipboard = useClipboardStore();
+  const iconSizeOptions = [
+    { key: "small" as const, label: "Small icons" },
+    { key: "medium" as const, label: "Medium icons" },
+    { key: "large" as const, label: "Large icons" },
+  ];
 
   const gridRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -38,6 +50,26 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   const doRefresh = useCallback(() => {
     if (runtime) refresh(runtime, DESKTOP_PATH);
   }, [runtime, refresh]);
+
+  const layout = useMemo(
+    () => {
+      switch (iconSize) {
+        case "small":
+          return { iconSize: 52, cellWidth: 80, cellHeight: 92 };
+        case "large":
+          return { iconSize: 88, cellWidth: 112, cellHeight: 120 };
+        default:
+          return { iconSize: 72, cellWidth: 96, cellHeight: 104 };
+      }
+    },
+    [iconSize],
+  );
+
+  const desktopStyle = {
+    "--icon-size": `${layout.iconSize}px`,
+    "--desktop-icon-cell-w": `${layout.cellWidth}px`,
+    "--desktop-icon-cell-h": `${layout.cellHeight}px`,
+  } as React.CSSProperties;
 
   // Initial load and event-based refreshes.
   useEffect(() => {
@@ -72,9 +104,18 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   );
 
   const buildDesktopMenu = useCallback((): MenuItem[] => {
+    const sizeItems = iconSizeOptions.map((option) => ({
+      label: option.label,
+      disabled: iconSize === option.key,
+      action: () => setIconSize(option.key),
+    }));
+
     return [
+      ...sizeItems,
+      SEPARATOR,
       {
         label: "New File",
+        disabled: !runtime,
         action: () => {
           setRenameEntry({ name: "", path: "", kind: "file", size: 0 });
           setRenameValue("untitled.txt");
@@ -82,6 +123,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       },
       {
         label: "New Folder",
+        disabled: !runtime,
         action: () => {
           setRenameEntry({ name: "", path: "", kind: "directory", size: 0 });
           setRenameValue("New Folder");
@@ -90,7 +132,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       SEPARATOR,
       {
         label: "Paste",
-        disabled: !clipboard.has(),
+        disabled: !runtime || !clipboard.has(),
         action: async () => {
           if (!runtime || !clipboard.entry) return;
           try {
@@ -103,7 +145,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
         },
       },
     ];
-  }, [clipboard, runtime, doRefresh]);
+  }, [clipboard, runtime, doRefresh, iconSize, setIconSize]);
 
   const confirmRename = useCallback(async () => {
     if (!runtime || !renameEntry || !renameValue.trim()) return;
@@ -127,6 +169,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     <div
       id="desktop"
       className={`${styles.desktop} ${dragOver ? styles["drag-over"] + " drag-over" : ""}`}
+      style={desktopStyle}
       onClick={(e) => {
         if (e.target === e.currentTarget || (e.target as HTMLElement).id === "icon-grid") {
           clearSelection();

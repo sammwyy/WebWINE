@@ -66,7 +66,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     >
       {items.map((item, i) => {
         if (item.label === "---") {
-          return <li key={i} className="ctx-sep" role="separator" />;
+          return <li key={i} className="ctx-separator" role="separator" />;
         }
         return (
           <li

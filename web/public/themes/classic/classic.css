@@ -49,6 +49,7 @@ html[data-theme="classic"] {
 
   --window-frame-bg: var(--win98-face);
   --window-frame-border: var(--win98-black);
+  --window-focus-border: #9bcfff;
   --window-frame-radius: 0;
   --window-titlebar-bg: linear-gradient(90deg, var(--win98-blue), var(--win98-blue-2));
   --window-titlebar-border: var(--win98-shadow);
@@ -321,6 +322,14 @@ html[data-theme="classic"] .window {
   border: 1px solid;
   border-color: var(--win98-light) var(--win98-black) var(--win98-black) var(--win98-light);
   box-shadow:
+    inset 1px 1px 0 var(--win98-hilight),
+    inset -1px -1px 0 var(--win98-shadow),
+    4px 4px 0 rgba(0, 0, 0, .28);
+}
+
+html[data-theme="classic"] .window.window--active {
+  box-shadow:
+    0 0 0 1px var(--window-focus-border, #9bcfff),
     inset 1px 1px 0 var(--win98-hilight),
     inset -1px -1px 0 var(--win98-shadow),
     4px 4px 0 rgba(0, 0, 0, .28);

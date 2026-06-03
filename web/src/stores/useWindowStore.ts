@@ -144,11 +144,13 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
 
   focusWindow: (id) => {
     set((state) => ({
-      windows: state.windows.map((w) =>
-        w.id === id
-          ? { ...w, zIndex: nextZIndex++, minimized: false }
-          : w,
-      ),
+      windows: state.windows.map((w) => {
+        if (w.id === id) {
+          const z = nextZIndex++;
+          return { ...w, zIndex: z, style: { ...w.style, zIndex: z }, minimized: false };
+        }
+        return w;
+      }),
       activeId: id,
     }));
     window.dispatchEvent(new Event("webwine:windows-changed"));
@@ -179,17 +181,19 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
           height: String(w.style.height ?? ""),
           transform: String(w.style.transform ?? ""),
         };
+        const z = nextZIndex++;
         return {
           ...w,
           maximized: true,
           restoreRect,
+          zIndex: z,
           style: {
             left: 0,
             top: 0,
             width: "100%",
             height: "100%",
             transform: "none",
-            zIndex: nextZIndex++,
+            zIndex: z,
           },
         };
       }),
@@ -203,10 +207,12 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       windows: state.windows.map((w) => {
         if (w.id !== id) return w;
         const r = w.restoreRect;
+        const z = nextZIndex++;
         return {
           ...w,
           minimized: false,
           maximized: false,
+          zIndex: z,
           style: r
             ? {
                 left: r.left,
@@ -214,9 +220,9 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
                 width: r.width,
                 height: r.height,
                 transform: r.transform,
-                zIndex: nextZIndex++,
+                zIndex: z,
               }
-            : { ...w.style, zIndex: nextZIndex++ },
+            : { ...w.style, zIndex: z },
         };
       }),
     }));
@@ -274,7 +280,7 @@ function topWindowId(windows: WindowRecord[]): string | null {
   let topId: string | null = null;
   let topZ = -1;
   for (const w of windows) {
-    const z = Number(w.style.zIndex) || 0;
+    const z = w.zIndex || 0;
     if (z > topZ) {
       topZ = z;
       topId = w.id;

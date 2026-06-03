@@ -77,7 +77,197 @@ impl VirtualFileSystem {
         Self::ensure_dir_chain(&mut c, &["Users", "guest", "Pictures"]);
         Self::ensure_dir_chain(&mut c, &["Users", "guest", "Music"]);
         Self::ensure_dir_chain(&mut c, &["Users", "guest", "Videos"]);
+        Self::ensure_dir_chain(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+            ],
+        );
+        Self::ensure_dir_chain(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+            ],
+        );
         Self::ensure_dir_chain(&mut c, &["Windows", "System32"]);
+        Self::ensure_file(
+            &mut c,
+            &["Windows", "System32", "explorer.exe"],
+            b"special:explorer".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &["Windows", "System32", "themes.exe"],
+            b"special:themes".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &["Windows", "System32", "uploadfile.exe"],
+            b"special:upload-file".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &["Windows", "System32", "uploadfolder.exe"],
+            b"special:upload-folder".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "Your PC.lnk",
+            ],
+            b"action:this-pc".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "File Explorer.lnk",
+            ],
+            b"C:\\Windows\\System32\\explorer.exe".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "Themes.lnk",
+            ],
+            b"C:\\Windows\\System32\\themes.exe".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "Upload File.lnk",
+            ],
+            b"C:\\Windows\\System32\\uploadfile.exe".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Start Menu",
+                "Programs",
+                "Upload Folder.lnk",
+            ],
+            b"C:\\Windows\\System32\\uploadfolder.exe".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+                "Your PC.lnk",
+            ],
+            b"action:this-pc".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+                "Documents.lnk",
+            ],
+            b"C:\\Users\\guest\\Documents".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+                "Pictures.lnk",
+            ],
+            b"C:\\Users\\guest\\Pictures".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+                "Music.lnk",
+            ],
+            b"C:\\Users\\guest\\Music".to_vec(),
+        );
+        Self::ensure_file(
+            &mut c,
+            &[
+                "Users",
+                "guest",
+                "AppData",
+                "Roaming",
+                "Microsoft",
+                "Windows",
+                "Places",
+                "Videos.lnk",
+            ],
+            b"C:\\Users\\guest\\Videos".to_vec(),
+        );
         Self::ensure_dir_chain(&mut c, &["Temp"]);
         self.root.insert('C', c);
     }
@@ -95,6 +285,34 @@ impl VirtualFileSystem {
         });
         if let VfsNode::Directory(child) = entry {
             Self::ensure_dir_chain(child, &parts[1..]);
+        }
+    }
+
+    fn ensure_file(dir: &mut VfsDirectory, parts: &[&str], bytes: Vec<u8>) {
+        if parts.is_empty() {
+            return;
+        }
+        if parts.len() == 1 {
+            let key = parts[0].to_ascii_uppercase();
+            dir.children.insert(
+                key,
+                VfsNode::File(VfsFile {
+                    name: parts[0].to_string(),
+                    bytes,
+                }),
+            );
+            return;
+        }
+
+        let key = parts[0].to_ascii_uppercase();
+        let entry = dir.children.entry(key).or_insert_with(|| {
+            VfsNode::Directory(VfsDirectory {
+                name: parts[0].to_string(),
+                children: IndexMap::new(),
+            })
+        });
+        if let VfsNode::Directory(child) = entry {
+            Self::ensure_file(child, &parts[1..], bytes);
         }
     }
 
@@ -246,6 +464,39 @@ impl VirtualFileSystem {
 
         let key = file_name.to_ascii_uppercase();
         match dir.children.get(&key) {
+            Some(VfsNode::File(f)) if file_name.to_lowercase().ends_with(".lnk") => {
+                if let Some(target) = Self::shortcut_target(&f.bytes) {
+                    if target.to_lowercase().starts_with("action:") {
+                        return Ok(f.bytes.clone());
+                    }
+                    if self.node_exists(&target) {
+                        return self.read_file(&target);
+                    }
+                }
+                Ok(f.bytes.clone())
+            }
+            Some(VfsNode::File(f)) => Ok(f.bytes.clone()),
+            Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
+            None => Err(VmError::NotFound(guest_path.to_string())),
+        }
+    }
+
+    pub fn read_raw_file(&self, guest_path: &str) -> Result<Vec<u8>> {
+        let path = GuestPath::parse(guest_path)?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("path has no filename".into()))?;
+
+        let parent_components = path
+            .parent()
+            .map(|p| p.components)
+            .unwrap_or_default();
+
+        let drive = self.get_drive(path.drive)?;
+        let dir = Self::resolve_dir(drive, &parent_components)?;
+
+        let key = file_name.to_ascii_uppercase();
+        match dir.children.get(&key) {
             Some(VfsNode::File(f)) => Ok(f.bytes.clone()),
             Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
             None => Err(VmError::NotFound(guest_path.to_string())),
@@ -332,6 +583,16 @@ impl VirtualFileSystem {
         let key = path.components.last().unwrap().to_ascii_uppercase();
         dir.children.contains_key(&key)
     }
+
+    fn shortcut_target(bytes: &[u8]) -> Option<String> {
+        let text = String::from_utf8_lossy(bytes);
+        let raw = text.lines().next()?.trim();
+        if raw.is_empty() {
+            None
+        } else {
+            Some(raw.to_string())
+        }
+    }
 }
 
 impl Default for VirtualFileSystem {
@@ -351,6 +612,30 @@ mod tests {
             let entries = fs.list_dir(&format!("C:\\Users\\guest\\{folder}\\")).unwrap();
             assert!(entries.is_empty());
         }
+        let start_menu = fs
+            .list_dir("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\")
+            .unwrap();
+        assert!(start_menu.iter().any(|e| e.name == "File Explorer.lnk"));
+        let places = fs
+            .list_dir("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Places\\")
+            .unwrap();
+        assert!(places.iter().any(|e| e.name == "Your PC.lnk"));
+        let system32 = fs.list_dir("C:\\Windows\\System32\\").unwrap();
+        assert!(system32.iter().any(|e| e.name == "explorer.exe"));
+    }
+
+    #[test]
+    fn lnk_reads_follow_target_but_raw_is_preserved() {
+        let fs = VirtualFileSystem::new();
+        let resolved = fs
+            .read_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk")
+            .unwrap();
+        assert_eq!(resolved, b"special:explorer");
+
+        let raw = fs
+            .read_raw_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk")
+            .unwrap();
+        assert_eq!(raw, b"C:\\Windows\\System32\\explorer.exe");
     }
 
     #[test]

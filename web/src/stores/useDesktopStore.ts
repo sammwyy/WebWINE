@@ -13,7 +13,19 @@ export interface IconPosition {
   row: number;
 }
 
+export type DesktopIconSize = "small" | "medium" | "large";
+
+export const DESKTOP_ICON_LAYOUTS: Record<
+  DesktopIconSize,
+  { iconSize: number; cellWidth: number; cellHeight: number }
+> = {
+  small: { iconSize: 52, cellWidth: 80, cellHeight: 92 },
+  medium: { iconSize: 72, cellWidth: 96, cellHeight: 104 },
+  large: { iconSize: 88, cellWidth: 112, cellHeight: 120 },
+};
+
 const POSITIONS_KEY = "webwine.desktop.iconPositions";
+const ICON_SIZE_KEY = "webwine.desktop.iconSize";
 
 function loadPositions(): Record<string, IconPosition> {
   try {
@@ -34,6 +46,16 @@ function loadPositions(): Record<string, IconPosition> {
   }
 }
 
+function loadIconSize(): DesktopIconSize {
+  try {
+    const raw = localStorage.getItem(ICON_SIZE_KEY);
+    if (raw === "small" || raw === "medium" || raw === "large") return raw;
+  } catch {
+    // Non-persistent storage should not break desktop rendering.
+  }
+  return "medium";
+}
+
 function savePositions(positions: Record<string, IconPosition>): void {
   try {
     localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
@@ -47,11 +69,13 @@ interface DesktopStore {
   positions: Record<string, IconPosition>;
   selectedIds: string[];
   refreshing: boolean;
+  iconSize: DesktopIconSize;
 
   refresh: (runtime: RuntimeBridge, desktopPath: string) => Promise<void>;
   setPosition: (path: string, pos: IconPosition) => void;
   selectIcon: (path: string, multi?: boolean) => void;
   clearSelection: () => void;
+  setIconSize: (size: DesktopIconSize) => void;
 }
 
 export const useDesktopStore = create<DesktopStore>((set, get) => ({
@@ -59,6 +83,7 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
   positions: loadPositions(),
   selectedIds: [],
   refreshing: false,
+  iconSize: loadIconSize(),
 
   refresh: async (runtime, desktopPath) => {
     set({ refreshing: true });
@@ -95,4 +120,13 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
   },
 
   clearSelection: () => set({ selectedIds: [] }),
+
+  setIconSize: (iconSize) => {
+    try {
+      localStorage.setItem(ICON_SIZE_KEY, iconSize);
+    } catch {
+      // Ignore persistence failures.
+    }
+    set({ iconSize });
+  },
 }));

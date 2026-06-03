@@ -17,9 +17,17 @@ pub struct X86Cpu {
 impl Default for X86Cpu {
     fn default() -> Self {
         X86Cpu {
-            eax: 0, ebx: 0, ecx: 0, edx: 0,
-            esi: 0, edi: 0, ebp: 0, esp: 0,
-            eip: 0, eflags: 0, last_error: 0,
+            eax: 0,
+            ebx: 0,
+            ecx: 0,
+            edx: 0,
+            esi: 0,
+            edi: 0,
+            ebp: 0,
+            esp: 0,
+            eip: 0,
+            eflags: 0,
+            last_error: 0,
             xmm: [[0u8; 16]; 8],
         }
     }
@@ -27,7 +35,10 @@ impl Default for X86Cpu {
 
 impl X86Cpu {
     pub fn new() -> Self {
-        X86Cpu { eflags: 0x202, ..Default::default() }
+        X86Cpu {
+            eflags: 0x202,
+            ..Default::default()
+        }
     }
 }
 
@@ -40,15 +51,31 @@ pub const SF: u32 = 1 << 7;
 pub const DF: u32 = 1 << 10;
 pub const OF: u32 = 1 << 11;
 
-pub fn get_cf(f: u32) -> bool { f & CF != 0 }
-pub fn get_pf(f: u32) -> bool { f & PF != 0 }
-pub fn get_zf(f: u32) -> bool { f & ZF != 0 }
-pub fn get_sf(f: u32) -> bool { f & SF != 0 }
-pub fn get_df(f: u32) -> bool { f & DF != 0 }
-pub fn get_of(f: u32) -> bool { f & OF != 0 }
+pub fn get_cf(f: u32) -> bool {
+    f & CF != 0
+}
+pub fn get_pf(f: u32) -> bool {
+    f & PF != 0
+}
+pub fn get_zf(f: u32) -> bool {
+    f & ZF != 0
+}
+pub fn get_sf(f: u32) -> bool {
+    f & SF != 0
+}
+pub fn get_df(f: u32) -> bool {
+    f & DF != 0
+}
+pub fn get_of(f: u32) -> bool {
+    f & OF != 0
+}
 
 fn set(f: &mut u32, bit: u32, v: bool) {
-    if v { *f |= bit } else { *f &= !bit }
+    if v {
+        *f |= bit
+    } else {
+        *f &= !bit
+    }
 }
 
 pub fn set_szp(f: &mut u32, r: u32) {
@@ -85,13 +112,17 @@ pub fn set_sub8(f: &mut u32, a: u8, b: u8, r: u8) {
     set(f, PF, r.count_ones() % 2 == 0);
 }
 
-// ── width-aware flag helpers (8/16/32-bit) ───────────────────────────────────
+// width-aware flag helpers (8/16/32-bit)
 // `w` is the operand width in bytes (1, 2, or 4). These compute SF/ZF/PF/CF/OF
 // on the correctly-sized result, which the fixed-width helpers above did not do
 // for 16-bit operands.
 
 fn mask_for(w: u32) -> u64 {
-    if w >= 4 { 0xFFFF_FFFF } else { (1u64 << (w * 8)) - 1 }
+    if w >= 4 {
+        0xFFFF_FFFF
+    } else {
+        (1u64 << (w * 8)) - 1
+    }
 }
 
 fn set_szp_w(f: &mut u32, r: u32, w: u32) {
