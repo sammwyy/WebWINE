@@ -180,6 +180,63 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_cdecl(v.to_ascii_uppercase() as u32);
             Handled::Ok
         }),
+        // wide-char classification / conversion
+        ("msvcrt.dll", "towupper", |c| {
+            let wc = c.arg(0) as u32;
+            // Simple ASCII-range upcasing; for full Unicode use char::to_uppercase.
+            let out = if wc <= 0xFFFF {
+                char::from_u32(wc).map(|ch| ch.to_uppercase().next().unwrap_or(ch) as u32).unwrap_or(wc)
+            } else { wc };
+            c.ret_cdecl(out);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "towlower", |c| {
+            let wc = c.arg(0) as u32;
+            let out = if wc <= 0xFFFF {
+                char::from_u32(wc).map(|ch| ch.to_lowercase().next().unwrap_or(ch) as u32).unwrap_or(wc)
+            } else { wc };
+            c.ret_cdecl(out);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswalpha", |c| {
+            let wc = c.arg(0) as u32;
+            let r = char::from_u32(wc).map(|ch| ch.is_alphabetic()).unwrap_or(false);
+            c.ret_cdecl(if r { 1 } else { 0 });
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswdigit", |c| {
+            let wc = c.arg(0) as u32;
+            let r = char::from_u32(wc).map(|ch| ch.is_ascii_digit()).unwrap_or(false);
+            c.ret_cdecl(if r { 1 } else { 0 });
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswspace", |c| {
+            let wc = c.arg(0) as u32;
+            let r = char::from_u32(wc).map(|ch| ch.is_whitespace()).unwrap_or(false);
+            c.ret_cdecl(if r { 1 } else { 0 });
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswalnum", |c| {
+            let wc = c.arg(0) as u32;
+            let r = char::from_u32(wc).map(|ch| ch.is_alphanumeric()).unwrap_or(false);
+            c.ret_cdecl(if r { 1 } else { 0 });
+            Handled::Ok
+        }),
+        // _wcsnicmp(s1, s2, count) — case-insensitive wide-string compare, cdecl, 3 args.
+        ("msvcrt.dll", "_wcsnicmp", wcsnicmp_fn),
+        ("msvcrt.dll", "wcsnicmp",  wcsnicmp_fn),
+        // C++ operator delete[] (decorated as ??_V@YAXPAX@Z) — 1 arg, cdecl, returns void.
+        ("msvcrt.dll", "??_V@YAXPAX@Z", stub_void_1_cdecl),
+        // operator new[] / delete
+        ("msvcrt.dll", "??2@YAPAXI@Z",  malloc),    // operator new[](size)
+        ("msvcrt.dll", "??3@YAXPAX@Z",  stub_void_1_cdecl), // operator delete
+        // MSVC SEH helpers
+        // _local_unwind4(cookie*, funcinfo*, target_level) — 3 args, cdecl.
+        // We stub it as a no-op; the actual unwind (destructor calls) would
+        // require full frame-walking, not needed for basic cmd.exe.
+        ("msvcrt.dll", "_local_unwind4", stub_zero_cdecl_3),
+        ("msvcrt.dll", "__local_unwind4", stub_zero_cdecl_3),
+        ("msvcrt.dll", "_global_unwind2", stub_zero_cdecl_1),
         ("msvcrt.dll", "__set_app_type", stub_void_1_cdecl),
         ("msvcrt.dll", "_set_app_type", stub_void_1_cdecl),
         ("msvcrt.dll", "_configure_narrow_argv", stub_zero_cdecl_1),
@@ -233,7 +290,7 @@ pub fn register(r: &mut WinApiRegistry) {
             "__current_exception_context",
             stub_zero_cdecl_0,
         ),
-        ("msvcrt.dll", "_except_handler4_common", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_except_handler4_common", stub_zero_cdecl_4),
         // ucrtbase / vcruntime aliases
         ("ucrtbase.dll", "exit", exit),
         ("ucrtbase.dll", "_exit", exit),
@@ -1423,6 +1480,10 @@ fn stub_zero_cdecl_3(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
+fn stub_zero_cdecl_4(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
 fn stub_void_1_cdecl(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
@@ -1433,5 +1494,38 @@ fn stub_void_0(c: &mut ApiContext) -> Handled {
 }
 fn stub_void_1(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
+    Handled::Ok
+}
+
+/// _wcsnicmp(s1, s2, count) — case-insensitive wide-string comparison, cdecl, 3 args.
+/// Returns negative/0/positive like strcmp.
+fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
+    let p1    = ctx.arg(0);
+    let p2    = ctx.arg(1);
+    let count = ctx.arg(2) as usize;
+    let a: Vec<u16> = {
+        let s = ctx.wstr(p1);
+        s.encode_utf16().take(count).collect()
+    };
+    let b: Vec<u16> = {
+        let s = ctx.wstr(p2);
+        s.encode_utf16().take(count).collect()
+    };
+    // Case-fold both sides using to_uppercase on each char.
+    let fold = |units: &[u16]| -> Vec<u16> {
+        units.iter().flat_map(|&u| {
+            char::from_u32(u as u32)
+                .map(|ch| {
+                    ch.to_uppercase()
+                        .flat_map(|c| c.encode_utf16(&mut [0u16; 2]).to_vec())
+                        .collect::<Vec<u16>>()
+                })
+                .unwrap_or_else(|| vec![u])
+        }).collect()
+    };
+    let fa = fold(&a);
+    let fb = fold(&b);
+    let r = fa.cmp(&fb) as i32;
+    ctx.ret_cdecl(r as u32);
     Handled::Ok
 }

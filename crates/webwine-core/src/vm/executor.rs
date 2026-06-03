@@ -83,6 +83,19 @@ pub fn run_slice(
                     &format!("[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}", proc.cpu.eip),
                     Some(proc.pid),
                 );
+                // Try SEH: walk the exception chain at fs:[0] (TEB+0x00).
+                // Each node: { next: u32, handler: u32 }.  Sentinel = 0xFFFFFFFF.
+                // We call handler(exceptionRecord, establisherFrame, context, dispatcher)
+                // with a stub EXCEPTION_RECORD and CONTEXT.  If the handler returns
+                // EXCEPTION_CONTINUE_EXECUTION (0) we resume; any other value crashes.
+                let handled_by_seh = try_seh(proc, api, fs, logs, &r);
+                if handled_by_seh {
+                    // Handler absorbed the exception. EIP was updated (possibly via
+                    // longjmp inside _except_handler4_common). Continue executing
+                    // from wherever EIP now points — don't break the slice.
+                    executed += 1;
+                    continue;
+                }
                 proc.state = ProcessState::Crashed { reason: r };
                 break;
             }
@@ -271,6 +284,133 @@ fn call_guest_fn_args(
             }
         }
     }
+}
+
+/// Attempt to handle a CPU fault via the Win32 SEH chain (fs:[0]).
+///
+/// Walks the EXCEPTION_REGISTRATION_RECORD chain stored at TEB+0x00.
+/// For each node {next, handler} we build a minimal EXCEPTION_RECORD and
+/// CONTEXT on the guest stack and call `handler(record, frame, ctx, dispatch)`.
+///
+/// **MSVC `_except_handler4_common` behaviour**: instead of returning a
+/// disposition code it calls `longjmp` internally, which restores EIP and ESP
+/// from the jmp_buf saved by `_setjmp3`.  Our `longjmp_fn` updates cpu.eip /
+/// cpu.esp directly, so after `call_guest_fn_args` returns the new EIP will
+/// be the `__except`-block address — NOT the CALL_SENTINEL.
+///
+/// Returns `true` if a handler absorbed the exception (process continues),
+/// `false` if no handler was found (caller should crash the process).
+fn try_seh(
+    proc: &mut GuestProcess,
+    api: &WinApiRegistry,
+    fs: &mut VirtualFileSystem,
+    logs: &mut LogBuffer,
+    reason: &str,
+) -> bool {
+    use crate::pe::loader::TEB_VA;
+    // Exception disposition values (for handlers that return normally).
+    const EXCEPTION_CONTINUE_EXECUTION: u32 = 0;
+    const EXCEPTION_EXECUTE_HANDLER:    u32 = 0xFFFF_FFFF; // -1i32 as u32
+    const EXCEPTION_CODE: u32 = 0xC000_0005; // STATUS_ACCESS_VIOLATION
+
+    // ExceptionList is at TEB+0x00.
+    let mut node = proc.memory.read_u32(TEB_VA).unwrap_or(0xFFFF_FFFF);
+    let fault_eip = proc.cpu.eip;
+    let fault_esp = proc.cpu.esp;
+    let mut depth = 0u32;
+
+    while node != 0xFFFF_FFFF && node != 0 && depth < 32 {
+        depth += 1;
+        let handler = proc.memory.read_u32(node + 4).unwrap_or(0);
+        if handler == 0 || handler >= TRAMPOLINE_BASE {
+            // Skip invalid / trampoline "handlers" — not real SEH handlers.
+            node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
+            continue;
+        }
+
+        // Build a minimal EXCEPTION_RECORD on the guest stack.
+        // Layout: ExceptionCode, ExceptionFlags, NextRecord*, ExceptionAddress,
+        //         NumberParameters  — 5 dwords = 20 bytes.
+        let rec_va = fault_esp.wrapping_sub(20);
+        let _ = proc.memory.write_u32(rec_va,      EXCEPTION_CODE);
+        let _ = proc.memory.write_u32(rec_va + 4,  0);              // ExceptionFlags
+        let _ = proc.memory.write_u32(rec_va + 8,  0);              // NextRecord = NULL
+        let _ = proc.memory.write_u32(rec_va + 12, fault_eip);      // ExceptionAddress
+        let _ = proc.memory.write_u32(rec_va + 16, 0);              // NumberParameters
+
+        // Build a minimal CONTEXT_i386 (0x2CC bytes).
+        // We fill ContextFlags, EIP, and ESP; everything else is zeroed.
+        const CTX_SIZE: u32 = 0x2CC;
+        let ctx_va = rec_va.wrapping_sub(CTX_SIZE);
+        let _ = proc.memory.write_bytes(ctx_va, &vec![0u8; CTX_SIZE as usize]);
+        let _ = proc.memory.write_u32(ctx_va,        0x0001_0007); // CONTEXT_FULL
+        let _ = proc.memory.write_u32(ctx_va + 0xB8, fault_eip);   // EIP offset
+        let _ = proc.memory.write_u32(ctx_va + 0xC4, fault_esp);   // ESP offset
+
+        // Prepare ESP below the on-stack structures and call the handler.
+        // handler(ExceptionRecord*, EstablisherFrame*, ContextRecord*, Dispatcher*)
+        // stdcall — 4 args (callee cleans the stack).
+        let args = [rec_va, node, ctx_va, 0u32];
+        let esp_for_handler = ctx_va.wrapping_sub(16); // room below context
+
+        let saved_eip = proc.cpu.eip;
+        let saved_esp = proc.cpu.esp;
+        proc.cpu.eip = fault_eip; // in case handler reads it (shouldn't matter)
+        proc.cpu.esp = esp_for_handler;
+
+        let flow = call_guest_fn_args(proc, api, fs, logs, handler, &args, 1);
+
+        // ── Check if longjmp fired ──────────────────────────────────────────
+        // If _except_handler4_common called longjmp, our longjmp_fn already
+        // restored cpu.eip/esp to the __except block.  Detect this by checking
+        // whether EIP now points to real (mapped) code that is NOT the sentinel.
+        let eip_after = proc.cpu.eip;
+        let longjmp_fired = eip_after != CALL_SENTINEL
+            && eip_after != 0
+            && eip_after < TRAMPOLINE_BASE
+            && proc.memory.read_instruction_window(eip_after).is_ok();
+
+        if longjmp_fired {
+            // longjmp redirected execution to the __except block.  The handler
+            // already restored ESP from the jmp_buf, so we don't touch it.
+            logs.log(LogLevel::Info, "seh",
+                &format!("SEH longjmp → 0x{eip_after:08X} for fault: {reason}"),
+                Some(proc.pid));
+            return true;
+        }
+
+        // Handler returned normally (or faulted).
+        match flow {
+            Flow::Continue => {}
+            _ => {
+                // Handler faulted or the process exited — restore and search on.
+                proc.cpu.eip = saved_eip;
+                proc.cpu.esp = saved_esp;
+                node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
+                continue;
+            }
+        }
+
+        let retval = proc.cpu.eax;
+        if retval == EXCEPTION_CONTINUE_EXECUTION {
+            logs.log(LogLevel::Info, "seh",
+                &format!("SEH handler at 0x{handler:08X} absorbed fault: {reason}"),
+                Some(proc.pid));
+            // Restore ESP to the pre-fault position; keep EIP from handler.
+            proc.cpu.esp = fault_esp;
+            return true;
+        }
+        if retval == EXCEPTION_EXECUTE_HANDLER {
+            logs.log(LogLevel::Info, "seh",
+                &format!("SEH EXECUTE_HANDLER at 0x{handler:08X}: {reason}"),
+                Some(proc.pid));
+            proc.cpu.esp = fault_esp;
+            return true;
+        }
+        // EXCEPTION_CONTINUE_SEARCH (1) — try the next node in the chain.
+        node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
+    }
+    false
 }
 
 /// Decode the instruction at `addr` for a crash report. For memory-operand

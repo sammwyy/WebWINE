@@ -10,6 +10,8 @@ import { resolveIcon } from "../../shared/lib/icon-resolver";
 interface ConsoleOptions {
   debug?: boolean;
   attachPid?: number;
+  /** Extra command-line arguments appended after argv[0] (the image path). */
+  args?: string;
 }
 
 export async function openProcessConsole(
@@ -18,8 +20,7 @@ export async function openProcessConsole(
   opts: ConsoleOptions = {},
 ) {
   const name = basename(path);
-  
-  
+
   // Try to extract icon from PE, fallback to default_executable
   const resolved = await resolveIcon(
     { name, path, kind: "file", size: 0 },
@@ -130,6 +131,10 @@ function ProcessConsoleApp({
             launchLogs: [] as LogEvent[],
             attached: true,
           })
+        : opts.args
+        ? runtime
+            .launchProcessWithArgs(path, opts.args)
+            .then((r) => ({ ...r, attached: false }))
         : runtime
             .launchProcess(path)
             .then((r) => ({ ...r, attached: false }));
@@ -210,7 +215,7 @@ function ProcessConsoleApp({
     return () => {
       active = false;
     };
-  }, [path, runtime, opts.attachPid, debug, write, writeLog]);
+  }, [path, runtime, opts.attachPid, opts.args, debug, write, writeLog]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -219,7 +224,7 @@ function ProcessConsoleApp({
       if (e.key === "Enter") {
         e.preventDefault();
         write("\n", debug ? "text-[#a6e3a1]" : undefined);
-        runtime.writeStdin(pid, "\n");
+        runtime.writeStdin(pid, "\r\n");
       } else if (e.key === "Backspace") {
         e.preventDefault();
         runtime.writeStdin(pid, "\x08");

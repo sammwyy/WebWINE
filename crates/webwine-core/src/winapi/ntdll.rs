@@ -28,6 +28,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ntdll.dll", "RtlGetLastWin32Error", |c| { let e = c.cpu.last_error; c.ret_stdcall(e, 0); Handled::Ok }),
         ("ntdll.dll", "RtlSetLastWin32Error", |c| { c.cpu.last_error = c.arg(0); c.ret_stdcall(0, 1); Handled::Ok }),
         ("ntdll.dll", "RtlNtStatusToDosError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ntdll.dll", "RtlCreateUnicodeStringFromAsciiz", rtl_create_unicode_from_ascii),
+        ("ntdll.dll", "RtlFreeUnicodeString", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
     ];
     for &(dll, name, f) in fns { r.add(dll, name, f); }
 }
@@ -153,3 +155,36 @@ fn nt_terminate(ctx: &mut ApiContext) -> Handled {
 
 fn stub_void_0(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 0); Handled::Ok }
 fn stub_void_1(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 1); Handled::Ok }
+
+/// RtlCreateUnicodeStringFromAsciiz(DestinationString, SourceString)
+/// Allocates a UNICODE_STRING (Length u16, MaximumLength u16, Buffer ptr) on the
+/// process heap, converts the ASCII source to UTF-16, and writes the struct.
+/// Returns TRUE (1) on success, FALSE (0) on failure.
+fn rtl_create_unicode_from_ascii(ctx: &mut ApiContext) -> Handled {
+    let dest   = ctx.arg(0); // PUNICODE_STRING
+    let source = ctx.arg(1); // PCSZ (const char*)
+
+    if dest == 0 {
+        ctx.ret_stdcall(0, 2);
+        return Handled::Ok;
+    }
+
+    let s = ctx.memory.read_cstr(source);
+    let encoded: Vec<u8> = s.encode_utf16()
+        .chain(std::iter::once(0u16)) // null terminator
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
+    let byte_len = (encoded.len() - 2) as u16; // length without null
+    let max_len  = encoded.len() as u16;
+
+    let buf = ctx.heap_alloc(encoded.len() as u32);
+    let _ = ctx.memory.write_bytes(buf, &encoded);
+
+    // UNICODE_STRING layout: Length(u16), MaximumLength(u16), Buffer(u32)
+    let _ = ctx.memory.write_u16(dest,     byte_len);
+    let _ = ctx.memory.write_u16(dest + 2, max_len);
+    let _ = ctx.memory.write_u32(dest + 4, buf);
+
+    ctx.ret_stdcall(1, 2); // TRUE, 2 args
+    Handled::Ok
+}

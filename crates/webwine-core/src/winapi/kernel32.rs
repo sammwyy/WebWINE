@@ -266,8 +266,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "RaiseException", raise_exception),
         ("kernel32.dll", "GetStringTypeW", r0_4),
         ("kernel32.dll", "GetStringTypeA", r0_5),
-        ("kernel32.dll", "FormatMessageA", r0_7),
-        ("kernel32.dll", "FormatMessageW", r0_7),
+        ("kernel32.dll", "FormatMessageA", format_message_a),
+        ("kernel32.dll", "FormatMessageW", format_message_w),
         ("kernel32.dll", "OutputDebugStringA", output_debug_string_a),
         ("kernel32.dll", "OutputDebugStringW", r0_1),
         ("kernel32.dll", "EncodePointer", |c| {
@@ -301,10 +301,52 @@ pub fn register(r: &mut WinApiRegistry) {
             "InterlockedCompareExchange",
             interlocked_cmpxchg,
         ),
+        // ── API-MS-WIN API set forwarders ──────────────────────────────────
+        // ApiSetQueryApiSetPresence(ApiSetName, Present*) — checks if an API set
+        // DLL is present.  We say "no" (FALSE) so callers skip optional features.
+        ("api-ms-win-core-apiquery-l1-1-0.dll", "ApiSetQueryApiSetPresence",
+            |c| { let p = c.arg(1); if p != 0 { let _ = c.memory.write_u32(p, 0); } c.ret_stdcall(0, 2); Handled::Ok }),
+        // GlobalAlloc / GlobalFree / GlobalLock / GlobalUnlock — thin wrappers
+        // around the process heap; we just forward to our heap routines.
+        ("kernel32.dll",                         "GlobalAlloc",  global_alloc),
+        ("kernel32.dll",                         "GlobalFree",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll",                         "GlobalLock",   |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
+        ("kernel32.dll",                         "GlobalUnlock", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll",                         "GlobalHandle", |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
+        ("kernel32.dll",                         "GlobalSize",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalAlloc",  global_alloc),
+        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalFree",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalLock",   |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
+        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalUnlock", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        // FormatMessageW forwarded through the localization API set.
+        ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageW", format_message_w_fwd),
+        ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageA", format_message_a_fwd),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
+}
+
+/// FormatMessageW forwarded from the localization API set DLL.
+/// Delegates to the same implementation used by kernel32.dll!FormatMessageW.
+fn format_message_w_fwd(ctx: &mut ApiContext) -> Handled {
+    let r = format_message_core(ctx, true);
+    ctx.ret_stdcall(r, 7);
+    Handled::Ok
+}
+fn format_message_a_fwd(ctx: &mut ApiContext) -> Handled {
+    let r = format_message_core(ctx, false);
+    ctx.ret_stdcall(r, 7);
+    Handled::Ok
+}
+
+fn global_alloc(ctx: &mut ApiContext) -> Handled {
+    // GlobalAlloc(uFlags, dwBytes) — allocate `dwBytes` from the heap.
+    // We ignore the flags (GMEM_FIXED, GMEM_ZEROINIT etc.) and just allocate.
+    let size = ctx.arg(1);
+    let ptr = ctx.heap_alloc(size);
+    ctx.ret_stdcall(ptr, 2);
+    Handled::Ok
 }
 
 fn exit_process(ctx: &mut ApiContext) -> Handled {
@@ -430,12 +472,12 @@ fn read_file(ctx: &mut ApiContext) -> Handled {
         }
         n
     } else {
-        // console stdin: block until input is available (interactive prompt).
-        if ctx.console.stdin.is_empty() {
+        // Console stdin is line-buffered in the default console mode. Do not
+        // return a partial command to callers like cmd.exe before Enter.
+        let Some(data) = read_console_line(ctx, max as usize) else {
             return Handled::Block;
-        }
-        let n = max.min(ctx.console.stdin.len() as u32) as usize;
-        let data: Vec<u8> = ctx.console.stdin.drain(..n).collect();
+        };
+        let n = data.len();
         if !data.is_empty() {
             let _ = ctx.memory.write_bytes(buf, &data);
         }
@@ -460,19 +502,24 @@ fn close_handle(ctx: &mut ApiContext) -> Handled {
 // process stdin buffer. Blocks (WaitingForInput) when no input is available, so
 // the frontend can supply typed text. Returns the raw bytes consumed.
 fn read_console_line(ctx: &mut ApiContext, limit: usize) -> Option<Vec<u8>> {
+    if limit == 0 {
+        return Some(Vec::new());
+    }
     if ctx.console.stdin.is_empty() {
         return None; // caller turns this into Handled::Block
     }
-    let mut line = Vec::new();
-    while line.len() < limit {
-        match ctx.console.stdin.pop_front() {
-            Some(b) => {
-                line.push(b);
-                if b == b'\n' {
-                    break;
-                }
-            }
-            None => break,
+
+    let newline = ctx.console.stdin.iter().position(|&b| b == b'\n');
+    let available = match newline {
+        Some(pos) => (pos + 1).min(limit),
+        None if ctx.console.stdin.len() >= limit => limit,
+        None => return None,
+    };
+
+    let mut line = Vec::with_capacity(available);
+    for _ in 0..available {
+        if let Some(b) = ctx.console.stdin.pop_front() {
+            line.push(b);
         }
     }
     Some(line)
@@ -486,7 +533,10 @@ fn read_console_w(ctx: &mut ApiContext) -> Handled {
     let Some(line) = read_console_line(ctx, n_chars) else {
         return Handled::Block;
     };
-    let wide: Vec<u8> = line.iter().flat_map(|&b| (b as u16).to_le_bytes()).collect();
+    let wide: Vec<u8> = line
+        .iter()
+        .flat_map(|&b| (b as u16).to_le_bytes())
+        .collect();
     let _ = ctx.memory.write_bytes(buf, &wide);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, line.len() as u32);
@@ -1391,10 +1441,10 @@ fn get_file_type(ctx: &mut ApiContext) -> Handled {
 fn get_version_ex(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
-        let _ = ctx.memory.write_u32(p + 4, 5);    // major
-        let _ = ctx.memory.write_u32(p + 8, 1);    // minor
+        let _ = ctx.memory.write_u32(p + 4, 5); // major
+        let _ = ctx.memory.write_u32(p + 8, 1); // minor
         let _ = ctx.memory.write_u32(p + 12, 2600); // build
-        let _ = ctx.memory.write_u32(p + 16, 2);   // VER_PLATFORM_WIN32_NT
+        let _ = ctx.memory.write_u32(p + 16, 2); // VER_PLATFORM_WIN32_NT
     }
     ctx.ret_stdcall(1, 1);
     Handled::Ok
@@ -1406,10 +1456,10 @@ fn get_console_screen_buffer_info(ctx: &mut ApiContext) -> Handled {
         let cols: u16 = 80;
         let rows: u16 = 25;
         let coord = |x: u16, y: u16| (x as u32) | ((y as u32) << 16);
-        let _ = ctx.memory.write_u32(p, coord(cols, rows));      // dwSize
-        let _ = ctx.memory.write_u32(p + 4, coord(0, 0));        // dwCursorPosition
-        let _ = ctx.memory.write_u16(p + 8, 0x07);               // wAttributes (gray on black)
-        // srWindow: Left=0, Top=0, Right=cols-1, Bottom=rows-1 (i16 each)
+        let _ = ctx.memory.write_u32(p, coord(cols, rows)); // dwSize
+        let _ = ctx.memory.write_u32(p + 4, coord(0, 0)); // dwCursorPosition
+        let _ = ctx.memory.write_u16(p + 8, 0x07); // wAttributes (gray on black)
+                                                   // srWindow: Left=0, Top=0, Right=cols-1, Bottom=rows-1 (i16 each)
         let _ = ctx.memory.write_u16(p + 10, 0);
         let _ = ctx.memory.write_u16(p + 12, 0);
         let _ = ctx.memory.write_u16(p + 14, cols - 1);
@@ -1588,5 +1638,192 @@ stubs! {
 
 fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
     c.ret_stdcall(INVALID_HANDLE, 7);
+    Handled::Ok
+}
+
+// ─── FormatMessage ────────────────────────────────────────────────────────────
+// FormatMessage(dwFlags, lpSource, dwMessageId, dwLanguageId,
+//               lpBuffer, nSize, Arguments) — 7 args, stdcall.
+//
+// Flags we honour:
+//   FORMAT_MESSAGE_FROM_SYSTEM (0x1000)  → look up dwMessageId in the table.
+//   FORMAT_MESSAGE_FROM_STRING (0x0400)  → format lpSource as template.
+//   FORMAT_MESSAGE_ALLOCATE_BUFFER (0x100) → heap-allocate; write ptr at lpBuffer.
+//   FORMAT_MESSAGE_IGNORE_INSERTS (0x200) → skip %n substitution.
+//
+// Everything else silently falls back to a generic "unknown error" message so
+// the caller's error-checking paths still work.
+
+const FORMAT_MESSAGE_ALLOCATE_BUFFER: u32 = 0x0000_0100;
+const FORMAT_MESSAGE_IGNORE_INSERTS:  u32 = 0x0000_0200;
+const FORMAT_MESSAGE_FROM_STRING:     u32 = 0x0000_0400;
+const FORMAT_MESSAGE_FROM_SYSTEM:     u32 = 0x0000_1000;
+
+/// Minimal table of Win32 error strings (MESSAGE_RESOURCE_ENTRY equivalents).
+/// cmd.exe prints these via its own internal wording anyway; we just need
+/// non-empty strings so callers don't treat a 0-length result as a failure.
+fn win32_error_string(code: u32) -> Option<&'static str> {
+    Some(match code {
+        0    => "The operation completed successfully.",
+        1    => "Incorrect function.",
+        2    => "The system cannot find the file specified.",
+        3    => "The system cannot find the path specified.",
+        4    => "The system cannot open the file.",
+        5    => "Access is denied.",
+        6    => "The handle is invalid.",
+        7    => "The storage control blocks were destroyed.",
+        8    => "Not enough storage is available to process this command.",
+        9    => "The storage control block address is invalid.",
+        10   => "The environment is incorrect.",
+        11   => "An attempt was made to load a program with an incorrect format.",
+        12   => "The access code is invalid.",
+        13   => "The data is invalid.",
+        14   => "Not enough storage is available to complete this operation.",
+        15   => "The system cannot find the drive specified.",
+        16   => "The directory cannot be removed.",
+        17   => "The system cannot move the file to a different disk drive.",
+        18   => "There are no more files.",
+        19   => "The media is write protected.",
+        20   => "The system cannot find the device specified.",
+        32   => "The process cannot access the file because it is being used by another process.",
+        33   => "The process cannot access the file because another process has locked a portion of the file.",
+        80   => "The file exists.",
+        87   => "The parameter is incorrect.",
+        122  => "The data area passed to a system call is too small.",
+        183  => "Cannot create a file when that file already exists.",
+        203  => "The system could not find the environment option that was entered.",
+        206  => "The filename or extension is too long.",
+        232  => "The pipe is being closed.",
+        995  => "The I/O operation has been aborted because of either a thread exit or an application request.",
+        997  => "Overlapped I/O operation is in progress.",
+        1004 => "Invalid flags.",
+        1168 => "Element not found.",
+        1392 => "The file or directory is corrupted and unreadable.",
+        1450 => "Insufficient system resources exist to complete the requested service.",
+        3221225477 => "Access violation.",  // 0xC0000005
+        _    => return None,
+    })
+}
+
+/// Apply basic %1 .. %9 argument insertion from the `Arguments` va_list pointer.
+/// We read at most 9 dword-wide pointers (each a pointer to a C string) and
+/// substitute %1..%9.  If IGNORE_INSERTS is set, or Arguments is NULL, we just
+/// pass the template through unchanged.
+fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext) -> String {
+    if flags & FORMAT_MESSAGE_IGNORE_INSERTS != 0 || arg_ptr == 0 {
+        return template.to_string();
+    }
+    let mut args: Vec<String> = Vec::new();
+    for i in 0u32..9 {
+        let p = ctx.memory.read_u32(arg_ptr + i * 4).unwrap_or(0);
+        if p == 0 { break; }
+        args.push(ctx.memory.read_cstr(p));
+    }
+
+    let mut out = String::with_capacity(template.len());
+    let bytes = template.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            if next >= b'1' && next <= b'9' {
+                let idx = (next - b'1') as usize;
+                if idx < args.len() {
+                    out.push_str(&args[idx]);
+                }
+                i += 2;
+                continue;
+            } else if next == b'%' {
+                out.push('%');
+                i += 2;
+                continue;
+            } else if next == b'n' || next == b'r' {
+                out.push('\n');
+                i += 2;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Shared core: build the formatted string and write it to lpBuffer.
+fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
+    let flags   = ctx.arg(0);
+    let source  = ctx.arg(1);
+    let msg_id  = ctx.arg(2);
+    // arg(3) = language id — ignored, we always produce en-US
+    let lp_buf  = ctx.arg(4);
+    let n_size  = ctx.arg(5);
+    let arg_ptr = ctx.arg(6);
+
+    // Build the message text.
+    let text: String = if flags & FORMAT_MESSAGE_FROM_STRING != 0 {
+        // lpSource is a pointer to the format string.
+        let template = if wide { ctx.memory.read_wstr(source) } else { ctx.memory.read_cstr(source) };
+        apply_inserts(&template, flags, arg_ptr, ctx)
+    } else if flags & FORMAT_MESSAGE_FROM_SYSTEM != 0 {
+        let raw = win32_error_string(msg_id)
+            .unwrap_or("Unknown error.")
+            .to_string();
+        let with_ins = apply_inserts(&raw, flags, arg_ptr, ctx);
+        // Windows appends "\r\n" to system messages.
+        format!("{}\r\n", with_ins.trim_end_matches(|c| c == '\r' || c == '\n'))
+    } else {
+        // Unsupported flags — return empty (caller checks len).
+        return 0;
+    };
+
+    if text.is_empty() { return 0; }
+    let char_count = text.chars().count() as u32;
+
+    if flags & FORMAT_MESSAGE_ALLOCATE_BUFFER != 0 {
+        // Allocate a heap buffer, write pointer to *lpBuffer.
+        let byte_len = if wide { char_count * 2 + 2 } else { char_count + 1 };
+        let p = ctx.heap_alloc(byte_len);
+        if wide {
+            let encoded: Vec<u8> = text.encode_utf16()
+                .flat_map(|c| c.to_le_bytes()).collect();
+            let _ = ctx.memory.write_bytes(p, &encoded);
+            let _ = ctx.memory.write_u16(p + char_count * 2, 0);
+        } else {
+            let _ = ctx.memory.write_bytes(p, text.as_bytes());
+            let _ = ctx.memory.write_u8(p + char_count, 0);
+        }
+        if lp_buf != 0 { let _ = ctx.memory.write_u32(lp_buf, p); }
+        char_count
+    } else if lp_buf != 0 && n_size > 0 {
+        let limit = (n_size as usize).min(text.chars().count() + 1);
+        if wide {
+            let encoded: Vec<u8> = text.encode_utf16()
+                .take(limit.saturating_sub(1))
+                .flat_map(|c| c.to_le_bytes()).collect();
+            let written = (encoded.len() / 2) as u32;
+            let _ = ctx.memory.write_bytes(lp_buf, &encoded);
+            let _ = ctx.memory.write_u16(lp_buf + written * 2, 0);
+            written
+        } else {
+            let bytes = text.as_bytes();
+            let n = (limit.saturating_sub(1)).min(bytes.len());
+            let _ = ctx.memory.write_bytes(lp_buf, &bytes[..n]);
+            let _ = ctx.memory.write_u8(lp_buf + n as u32, 0);
+            n as u32
+        }
+    } else {
+        0
+    }
+}
+
+fn format_message_a(ctx: &mut ApiContext) -> Handled {
+    let r = format_message_core(ctx, false);
+    ctx.ret_stdcall(r, 7);
+    Handled::Ok
+}
+
+fn format_message_w(ctx: &mut ApiContext) -> Handled {
+    let r = format_message_core(ctx, true);
+    ctx.ret_stdcall(r, 7);
     Handled::Ok
 }

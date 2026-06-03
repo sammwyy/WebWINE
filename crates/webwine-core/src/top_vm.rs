@@ -191,7 +191,29 @@ impl WebWineVm {
     pub fn write_stdin(&mut self, pid: u32, text: &str) -> Result<()> {
         let proc = self.processes.get_mut(pid)
             .ok_or(VmError::ProcessNotFound(pid))?;
-        proc.console.stdin.extend(text.bytes());
+        let mut prev_was_cr = proc.console.stdin.back().copied() == Some(b'\r');
+        for b in text.bytes() {
+            match b {
+                b'\x08' | b'\x7f' => {
+                    proc.console.stdin.pop_back();
+                    prev_was_cr = proc.console.stdin.back().copied() == Some(b'\r');
+                }
+                b'\n' => {
+                    if !prev_was_cr {
+                        proc.console.stdin.push_back(b'\r');
+                    }
+                    proc.console.stdin.push_back(b'\n');
+                    prev_was_cr = false;
+                }
+                _ => {
+                    proc.console.stdin.push_back(b);
+                    prev_was_cr = b == b'\r';
+                }
+            }
+        }
+        if matches!(proc.state, ProcessState::WaitingForInput) {
+            proc.state = ProcessState::Running;
+        }
         Ok(())
     }
 

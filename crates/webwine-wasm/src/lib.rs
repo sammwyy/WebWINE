@@ -50,6 +50,13 @@ impl Runtime {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = readRawFile)]
+    pub fn read_raw_file(&self, path: &str) -> Result<Vec<u8>, JsValue> {
+        self.vm
+            .read_raw_file(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = deleteNode)]
     pub fn delete_node(&mut self, path: &str) -> Result<(), JsValue> {
         self.vm

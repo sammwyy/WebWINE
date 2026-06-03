@@ -212,6 +212,29 @@ export class RuntimeBridge {
     });
   }
 
+  async launchProcessWithArgs(
+    path: string,
+    args: string,
+  ): Promise<{ pid: number; info: ProcessInfo; launchLogs: LogEvent[] }> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => {
+          const msg = r as {
+            pid: number;
+            info: ProcessInfo;
+            launchLogs: LogEvent[];
+          };
+          const launchLogs = msg.launchLogs ?? [];
+          this.globalLogListener?.(launchLogs);
+          resolve({ pid: msg.pid, info: msg.info, launchLogs });
+        },
+        reject,
+      });
+      this.send({ type: "launch_process_with_args", requestId, path, args });
+    });
+  }
+
   runProcess(pid: number): void {
     this.send({ type: "run_process", pid });
   }

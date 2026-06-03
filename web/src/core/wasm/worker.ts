@@ -11,6 +11,7 @@ type InMsg =
   | { type: "delete_node"; path: string }
   | { type: "rename_node"; path: string; new_name: string }
   | { type: "launch_process"; requestId: string; path: string }
+  | { type: "launch_process_with_args"; requestId: string; path: string; args: string }
   | { type: "run_process"; pid: number }
   | { type: "write_stdin"; pid: number; text: string }
   | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
@@ -113,6 +114,7 @@ export interface SliceResult {
 }
 
 let runtime: Runtime | null = null;
+const runningPids = new Set<number>();
 
 function send(msg: OutMsg) {
   postMessage(msg);
@@ -128,38 +130,44 @@ function flushLogs() {
 
 async function runProcessLoop(pid: number) {
   if (!runtime) return;
+  if (runningPids.has(pid)) return;
+  runningPids.add(pid);
   const BUDGET = 50_000;
 
-  while (true) {
-    const result = runtime.runProcessSlice(pid, BUDGET) as SliceResult;
+  try {
+    while (true) {
+      const result = runtime.runProcessSlice(pid, BUDGET) as SliceResult;
 
-    // Attribute logs drained during this process's run to it (for debug mode),
-    // and still forward to the global system-log panel via the bridge.
-    const logs = runtime.drainLogs() as LogEvent[];
-    if (logs.length > 0) send({ type: "process_log", pid, events: logs });
+      // Attribute logs drained during this process's run to it (for debug mode),
+      // and still forward to the global system-log panel via the bridge.
+      const logs = runtime.drainLogs() as LogEvent[];
+      if (logs.length > 0) send({ type: "process_log", pid, events: logs });
 
-    if (result.stdout) send({ type: "process_stdout", pid, text: result.stdout });
-    if (result.stderr) send({ type: "process_stderr", pid, text: result.stderr });
-    if (result.ui_events && result.ui_events.length > 0)
-      send({ type: "process_ui", pid, events: result.ui_events });
-    if (result.spawned && result.spawned.length > 0) {
-      for (const [cpid, path] of result.spawned)
-        send({ type: "process_spawned", parent: pid, pid: cpid, path });
+      if (result.stdout) send({ type: "process_stdout", pid, text: result.stdout });
+      if (result.stderr) send({ type: "process_stderr", pid, text: result.stderr });
+      if (result.ui_events && result.ui_events.length > 0)
+        send({ type: "process_ui", pid, events: result.ui_events });
+      if (result.spawned && result.spawned.length > 0) {
+        for (const [cpid, path] of result.spawned)
+          send({ type: "process_spawned", parent: pid, pid: cpid, path });
+      }
+
+      const s = result.state.state;
+      if (s === "exited") {
+        send({ type: "process_exited", pid, exit_code: (result.state as { state: "exited"; exit_code: number }).exit_code });
+        break;
+      }
+      if (s === "crashed") {
+        send({ type: "process_crashed", pid, reason: (result.state as { state: "crashed"; reason: string }).reason });
+        break;
+      }
+      if (s !== "running" && s !== "created") break;
+
+      // yield to event loop so we don't block the worker
+      await new Promise<void>((r) => setTimeout(r, 0));
     }
-
-    const s = result.state.state;
-    if (s === "exited") {
-      send({ type: "process_exited", pid, exit_code: (result.state as { state: "exited"; exit_code: number }).exit_code });
-      break;
-    }
-    if (s === "crashed") {
-      send({ type: "process_crashed", pid, reason: (result.state as { state: "crashed"; reason: string }).reason });
-      break;
-    }
-    if (s !== "running" && s !== "created") break;
-
-    // yield to event loop so we don't block the worker
-    await new Promise<void>((r) => setTimeout(r, 0));
+  } finally {
+    runningPids.delete(pid);
   }
 }
 
@@ -218,10 +226,16 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       const launchLogs = runtime.drainLogs() as LogEvent[];
       const info = runtime.getProcessInfo(pid) as ProcessInfo;
       send({ type: "process_launched", requestId: msg.requestId, pid, info, launchLogs });
+    } else if (msg.type === "launch_process_with_args") {
+      const pid = runtime.launchProcessWithArgs(msg.path, msg.args) as number;
+      const launchLogs = runtime.drainLogs() as LogEvent[];
+      const info = runtime.getProcessInfo(pid) as ProcessInfo;
+      send({ type: "process_launched", requestId: msg.requestId, pid, info, launchLogs });
     } else if (msg.type === "run_process") {
       runProcessLoop(msg.pid);
     } else if (msg.type === "write_stdin") {
       runtime.writeProcessStdin(msg.pid, msg.text);
+      runProcessLoop(msg.pid);
     } else if (msg.type === "post_message") {
       runtime.postWindowMessage(msg.pid, msg.hwnd, msg.message, msg.wparam, msg.lparam);
       // Resume the (suspended) message loop.
