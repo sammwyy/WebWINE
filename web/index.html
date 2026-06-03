@@ -1,54 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="fluent">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebWINE</title>
-    <link rel="stylesheet" href="/src/styles/main.css" />
   </head>
   <body>
-    <div id="desktop">
-      <div id="icon-grid"></div>
-      <div id="window-layer"></div>
-    </div>
-
-    <div id="taskbar">
-      <button id="start-button" type="button" aria-haspopup="true" aria-expanded="false">
-        <span class="start-mark" aria-hidden="true"></span>
-        <span>WebWINE</span>
-      </button>
-      <div id="start-menu" class="shell-menu" hidden>
-        <div class="start-menu-header">
-          <span class="start-menu-mark" aria-hidden="true">ww</span>
-          <span class="start-menu-heading">
-            <span class="start-menu-title">WebWINE</span>
-            <span class="start-menu-subtitle">Browser shell</span>
-          </span>
-        </div>
-        <div class="shell-menu-title">Apps</div>
-        <button class="shell-menu-item" type="button" data-action="explorer">File Explorer</button>
-        <button class="shell-menu-item" type="button" data-action="themes">Themes</button>
-        <button class="shell-menu-item" type="button" data-action="upload-file">Upload File</button>
-        <button class="shell-menu-item" type="button" data-action="upload-folder">Upload Folder</button>
-      </div>
-      <div id="taskbar-window-list" aria-label="Open windows"></div>
-      <div id="taskbar-tray">
-        <button id="tray-toggle" type="button" aria-label="Show hidden icons" aria-haspopup="true" aria-expanded="false">^</button>
-        <div id="tray-menu" class="shell-menu" hidden></div>
-        <div id="taskbar-clock"></div>
-      </div>
-      <input id="file-input" type="file" multiple hidden />
-      <input id="folder-input" type="file" multiple webkitdirectory hidden />
-    </div>
-
-    <div id="log-panel">
-      <div id="log-panel-header">
-        <span>System Log</span>
-        <button id="log-clear-btn">Clear</button>
-      </div>
-      <div id="log-output"></div>
-    </div>
-
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,248 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useWindowStore } from "../../stores/useWindowStore.js";
+import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
+import type { LogEvent, UiEvent } from "../../lib/worker.js";
+import { handleUiEvents } from "../guest-window/GuestWindowApp.js";
+import { basename } from "../../lib/utils.js";
+
+interface ConsoleOptions {
+  debug?: boolean;
+  attachPid?: number;
+}
+
+export function openProcessConsole(
+  path: string,
+  runtime: RuntimeBridge,
+  opts: ConsoleOptions = {},
+) {
+  const fileName = basename(path);
+  const debug = opts.debug ?? false;
+  
+  // Create window first to get ID, then we update it
+  let winId = "";
+  winId = useWindowStore.getState().openWindow({
+    title: `${fileName}`,
+    icon: debug ? "🐞" : "🖥️",
+    width: 660,
+    height: 420,
+    content: (
+      <ProcessConsoleApp
+        path={path}
+        runtime={runtime}
+        opts={opts}
+        winId={() => winId} // lazy eval because winId is assigned after openWindow returns
+      />
+    ),
+  });
+}
+
+// Split text into lines, marking which ended with a newline — so the debug
+// "[stdout]" prefix is only emitted once per actual line.
+function splitKeepLast(text: string): { content: string; nl: boolean }[] {
+  const parts = text.split("\n");
+  const out: { content: string; nl: boolean }[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const isLast = i === parts.length - 1;
+    if (isLast && parts[i] === "") continue;
+    out.push({ content: parts[i], nl: !isLast });
+  }
+  return out;
+}
+
+interface TermSpan {
+  text: string;
+  cls?: string;
+}
+
+function ProcessConsoleApp({
+  path,
+  runtime,
+  opts,
+  winId,
+}: {
+  path: string;
+  runtime: RuntimeBridge;
+  opts: ConsoleOptions;
+  winId: () => string;
+}) {
+  const fileName = basename(path);
+  const debug = opts.debug ?? false;
+
+  const [spans, setSpans] = useState<TermSpan[]>([]);
+  const [inputLine, setInputLine] = useState("");
+  const [stateText, setStateText] = useState("starting");
+  const [pid, setPid] = useState<number | null>(null);
+  const [running, setRunning] = useState(false);
+  const [exited, setExited] = useState(false);
+
+  const termRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll term
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight;
+    }
+  }, [spans, inputLine]);
+
+  // Title sync
+  useEffect(() => {
+    const id = winId();
+    if (id) {
+      const tag = debug ? " | debug" : "";
+      useWindowStore
+        .getState()
+        .setTitle(
+          id,
+          `${fileName} | pid ${pid ?? "?"} | ${stateText}${tag}`,
+        );
+    }
+  }, [pid, stateText, debug, fileName, winId]);
+
+  const write = useCallback((text: string, cls?: string) => {
+    setSpans((s) => [...s, { text, cls }]);
+  }, []);
+
+  const writeLog = useCallback((ev: LogEvent) => {
+    setSpans((s) => [
+      ...s,
+      { text: `[${ev.target}] `, cls: `term-log term-log-${ev.level} term-log-target` },
+      { text: `${ev.message}\n`, cls: `term-log term-log-${ev.level}` },
+    ]);
+  }, []);
+
+  // Launch process
+  useEffect(() => {
+    let active = true;
+
+    const ready =
+      opts.attachPid !== undefined
+        ? Promise.resolve({
+            pid: opts.attachPid,
+            launchLogs: [] as LogEvent[],
+            attached: true,
+          })
+        : runtime
+            .launchProcess(path)
+            .then((r) => ({ ...r, attached: false }));
+
+    ready
+      .then(({ pid: newPid, launchLogs }) => {
+        if (!active) return;
+
+        setPid(newPid);
+        setRunning(true);
+        setStateText("running");
+
+        if (debug) {
+          launchLogs.forEach(writeLog);
+        }
+
+        runtime.onProcessOutput(newPid, {
+          stdout: (text) => {
+            if (!active) return;
+            if (debug) {
+              const parts = splitKeepLast(text);
+              const newSpans: TermSpan[] = [];
+              for (const line of parts) {
+                if (line.content) {
+                  newSpans.push({
+                    text: "[stdout] ",
+                    cls: "term-log term-log-info term-log-target",
+                  });
+                }
+                newSpans.push({
+                  text: line.content + (line.nl ? "\n" : ""),
+                  cls: "term-stdout-dbg",
+                });
+              }
+              setSpans((s) => [...s, ...newSpans]);
+            } else {
+              write(text);
+            }
+          },
+          stderr: (text) => {
+            if (active) write(text, debug ? "term-stderr-dbg" : "term-stderr");
+          },
+          ui: (events: UiEvent[]) => {
+            if (active) handleUiEvents(newPid, events, runtime);
+          },
+          log: debug
+            ? (events) => {
+                if (!active) return;
+                events.forEach(writeLog);
+              }
+            : undefined,
+          exited: (code) => {
+            if (!active) return;
+            setRunning(false);
+            setExited(true);
+            setStateText(`exited (${code})`);
+            write(`\n[process exited with code ${code}]\n`, "term-exit");
+            window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
+          },
+          crashed: (reason) => {
+            if (!active) return;
+            setRunning(false);
+            setExited(true);
+            setStateText("crashed");
+            write(`\n[process crashed: ${reason}]\n`, "term-crash");
+            window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
+          },
+        });
+
+        runtime.runProcess(newPid);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setStateText("error");
+        write(`\n[failed to launch: ${err}]\n`, "term-crash");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [path, runtime, opts.attachPid, debug, write, writeLog]);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!running || pid === null) return;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const line = inputLine + "\n";
+        write(line, debug ? "term-stdin" : undefined);
+        setInputLine("");
+        runtime.writeStdin(pid, line);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        setInputLine((prev) => prev.slice(0, -1));
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setInputLine((prev) => prev + e.key);
+      }
+    },
+    [running, pid, inputLine, write, debug, runtime],
+  );
+
+  return (
+    <div className="term-body" style={{ height: "100%" }}>
+      <div
+        className="term"
+        tabIndex={0}
+        ref={termRef}
+        onKeyDown={onKeyDown}
+        onMouseDown={() => termRef.current?.focus()}
+      >
+        <span className="term-output">
+          {spans.map((s, i) => (
+            <span key={i} className={s.cls}>
+              {s.text}
+            </span>
+          ))}
+        </span>
+        <span className="term-input">{inputLine}</span>
+        {!exited && <span className="term-cursor">█</span>}
+      </div>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-:root {
+html[data-theme="fluent"] {
   /* Windows 10 Fluent Dark / Acrylic-inspired */
   --bg: #000000;
   --desktop-bg: #0f1014;

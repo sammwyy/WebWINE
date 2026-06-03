@@ -1,4 +1,4 @@
-:root {
+html[data-theme="classic"] {
   --bg: #008080;
   --desktop-bg: #008080;
   --desktop-wallpaper: #008080;

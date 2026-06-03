@@ -1,7 +1,7 @@
 /* Windows XP Luna — closer 1:1 theme
    Drop this after your base theme so these rules can override it. */
 
-:root {
+html[data-theme="luna"] {
   --bg: #2352b7;
   --desktop-bg: #3a9bed;
   --desktop-wallpaper:
