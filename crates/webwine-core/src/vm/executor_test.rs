@@ -133,6 +133,31 @@ fn graphics_sample_emits_gdi_and_beep() {
 }
 
 #[test]
+fn runs_filesystem_std_sample() {
+    // Full Rust std binary doing std::fs file I/O. Exercises the optimized,
+    // CMOV-heavy std allocation/Vec code paths (RawVec::finish_grow), so this
+    // is the regression guard for conditional-move support in the interpreter.
+    let mut vm = WebWineVm::new();
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../samples/target/i686-pc-windows-msvc/debug/"
+    );
+    let bytes = std::fs::read(format!("{dir}filesystem.exe"))
+        .unwrap_or_else(|e| panic!("filesystem.exe not built: {e}"));
+    vm.mount_file("C:\\Users\\guest\\Desktop\\filesystem.exe", bytes).unwrap();
+    let pid = vm.launch_process("C:\\Users\\guest\\Desktop\\filesystem.exe").unwrap();
+    let (stdout, state) = run_to_completion(&mut vm, pid);
+
+    assert!(matches!(state, ProcessState::Exited { exit_code: 0 }), "got: {state:?}");
+    assert!(stdout.contains("created hello.txt"), "got: {stdout:?}");
+
+    let hello = vm.read_file("C:\\Users\\guest\\Desktop\\hello.txt").expect("hello.txt");
+    assert_eq!(hello, b"world", "hello.txt content");
+    let bar = vm.read_file("C:\\Users\\guest\\Desktop\\foo\\bar.txt").expect("foo\\bar.txt");
+    assert_eq!(bar.len(), 0, "bar.txt should be empty");
+}
+
+#[test]
 fn rejects_x64_executable() {
     // A PE32+ (x86-64) image must be rejected with a clear error, not crash.
     // Synthesize a minimal header with machine = 0x8664.

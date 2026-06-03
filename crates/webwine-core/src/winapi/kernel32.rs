@@ -97,8 +97,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetProcessHeaps", r0_2),
         ("kernel32.dll", "GetCommandLineA", get_command_line_a),
         ("kernel32.dll", "GetCommandLineW", get_command_line_w),
-        ("kernel32.dll", "GetStartupInfoA", get_startup_info_a),
-        ("kernel32.dll", "GetStartupInfoW", r0_1),
+        ("kernel32.dll", "GetStartupInfoA", get_startup_info),
+        ("kernel32.dll", "GetStartupInfoW", get_startup_info),
         (
             "kernel32.dll",
             "GetCurrentProcessId",
@@ -870,10 +870,13 @@ fn get_command_line_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn get_startup_info_a(ctx: &mut ApiContext) -> Handled {
+// STARTUPINFO is 68 bytes; cb at +0. Zero everything (so dwFlags has no
+// STARTF_USESTDHANDLES → the CRT falls back to GetStdHandle) and set cb.
+fn get_startup_info(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
         let _ = ctx.memory.write_bytes(p, &[0u8; 68]);
+        let _ = ctx.memory.write_u32(p, 68); // cb = sizeof(STARTUPINFO)
     }
     ctx.ret_stdcall(0, 1);
     Handled::Ok

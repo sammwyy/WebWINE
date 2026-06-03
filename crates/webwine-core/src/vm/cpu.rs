@@ -84,3 +84,50 @@ pub fn set_sub8(f: &mut u32, a: u8, b: u8, r: u8) {
     set(f, ZF, r == 0);
     set(f, PF, r.count_ones() % 2 == 0);
 }
+
+// ── width-aware flag helpers (8/16/32-bit) ───────────────────────────────────
+// `w` is the operand width in bytes (1, 2, or 4). These compute SF/ZF/PF/CF/OF
+// on the correctly-sized result, which the fixed-width helpers above did not do
+// for 16-bit operands.
+
+fn mask_for(w: u32) -> u64 {
+    if w >= 4 { 0xFFFF_FFFF } else { (1u64 << (w * 8)) - 1 }
+}
+
+fn set_szp_w(f: &mut u32, r: u32, w: u32) {
+    let sign = 1u64 << (w * 8 - 1);
+    set(f, SF, (r as u64 & sign) != 0);
+    set(f, ZF, r == 0);
+    set(f, PF, (r & 0xFF).count_ones() % 2 == 0); // PF = parity of low byte
+}
+
+/// ADD/ADC with carry-in. Returns the width-masked result.
+pub fn flags_add(f: &mut u32, a: u32, b: u32, carry: u32, w: u32) -> u32 {
+    let m = mask_for(w);
+    let (a, b, c) = (a as u64 & m, b as u64 & m, carry as u64);
+    let full = a + b + c;
+    let r = (full & m) as u32;
+    let sign = 1u64 << (w * 8 - 1);
+    set(f, CF, full & (1u64 << (w * 8)) != 0);
+    set(f, OF, (!(a ^ b) & (a ^ r as u64) & sign) != 0);
+    set_szp_w(f, r, w);
+    r
+}
+
+/// SUB/SBB/CMP with borrow-in. Returns the width-masked result.
+pub fn flags_sub(f: &mut u32, a: u32, b: u32, borrow: u32, w: u32) -> u32 {
+    let m = mask_for(w);
+    let (a, b, bo) = (a as u64 & m, b as u64 & m, borrow as u64);
+    let r = (a.wrapping_sub(b).wrapping_sub(bo) & m) as u32;
+    let sign = 1u64 << (w * 8 - 1);
+    set(f, CF, a < b + bo);
+    set(f, OF, ((a ^ b) & (a ^ r as u64) & sign) != 0);
+    set_szp_w(f, r, w);
+    r
+}
+
+/// AND/OR/XOR/TEST: CF=OF=0, SF/ZF/PF on the width-masked result.
+pub fn flags_logic(f: &mut u32, r: u32, w: u32) {
+    *f &= !(CF | OF);
+    set_szp_w(f, r, w);
+}

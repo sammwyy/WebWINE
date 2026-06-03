@@ -441,6 +441,24 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         Sets => exec_setcc(instr, cpu, mem, get_sf(cpu.eflags)),
         Setns => exec_setcc(instr, cpu, mem, !get_sf(cpu.eflags)),
 
+        // Conditional moves (CMOVcc): dst = src if condition. Flags unaffected.
+        Cmove  => exec_cmovcc(instr, cpu, mem, get_zf(cpu.eflags)),
+        Cmovne => exec_cmovcc(instr, cpu, mem, !get_zf(cpu.eflags)),
+        Cmovl  => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags) != get_of(cpu.eflags)),
+        Cmovle => exec_cmovcc(instr, cpu, mem, get_zf(cpu.eflags) || get_sf(cpu.eflags) != get_of(cpu.eflags)),
+        Cmovg  => exec_cmovcc(instr, cpu, mem, !get_zf(cpu.eflags) && get_sf(cpu.eflags) == get_of(cpu.eflags)),
+        Cmovge => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags) == get_of(cpu.eflags)),
+        Cmovb  => exec_cmovcc(instr, cpu, mem, get_cf(cpu.eflags)),
+        Cmovbe => exec_cmovcc(instr, cpu, mem, get_cf(cpu.eflags) || get_zf(cpu.eflags)),
+        Cmova  => exec_cmovcc(instr, cpu, mem, !get_cf(cpu.eflags) && !get_zf(cpu.eflags)),
+        Cmovae => exec_cmovcc(instr, cpu, mem, !get_cf(cpu.eflags)),
+        Cmovs  => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags)),
+        Cmovns => exec_cmovcc(instr, cpu, mem, !get_sf(cpu.eflags)),
+        Cmovo  => exec_cmovcc(instr, cpu, mem, get_of(cpu.eflags)),
+        Cmovno => exec_cmovcc(instr, cpu, mem, !get_of(cpu.eflags)),
+        Cmovp  => exec_cmovcc(instr, cpu, mem, get_pf(cpu.eflags)),
+        Cmovnp => exec_cmovcc(instr, cpu, mem, !get_pf(cpu.eflags)),
+
         Leave => {
             cpu.esp = cpu.ebp;
             match mem.read_u32(cpu.esp) {
@@ -975,55 +993,37 @@ fn exec_alu(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory, op: Al
         Err(e) => return fault(e),
         Ok(v) => v,
     };
-    let sz = op_size(instr, 0);
+    let w = op_size(instr, 0) as u32; // operand width in bytes (1/2/4)
 
     let (result, write_back) = match op {
-        AluOp::Add => {
-            let r = dst.wrapping_add(src);
-            if sz == 1 {
-                set_add8(&mut cpu.eflags, dst as u8, src as u8, r as u8)
-            } else {
-                set_add32(&mut cpu.eflags, dst, src, r)
-            };
-            (r, true)
-        }
+        AluOp::Add => (flags_add(&mut cpu.eflags, dst, src, 0, w), true),
         AluOp::Adc => {
             let c = get_cf(cpu.eflags) as u32;
-            let r = dst.wrapping_add(src).wrapping_add(c);
-            set_add32(&mut cpu.eflags, dst, src, r);
-            (r, true)
+            (flags_add(&mut cpu.eflags, dst, src, c, w), true)
         }
         AluOp::Sub | AluOp::Cmp => {
-            let r = dst.wrapping_sub(src);
-            if sz == 1 {
-                set_sub8(&mut cpu.eflags, dst as u8, src as u8, r as u8)
-            } else {
-                set_sub32(&mut cpu.eflags, dst, src, r)
-            };
-            (r, matches!(op, AluOp::Sub))
+            (flags_sub(&mut cpu.eflags, dst, src, 0, w), matches!(op, AluOp::Sub))
         }
         AluOp::Sbb => {
             let c = get_cf(cpu.eflags) as u32;
-            let r = dst.wrapping_sub(src).wrapping_sub(c);
-            set_sub32(&mut cpu.eflags, dst, src, r);
-            (r, true)
+            (flags_sub(&mut cpu.eflags, dst, src, c, w), true)
         }
         AluOp::And | AluOp::Test => {
-            let r = dst & src;
-            set_szp(&mut cpu.eflags, r);
-            cpu.eflags &= !(CF | OF);
+            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let r = (dst & src) & m;
+            flags_logic(&mut cpu.eflags, r, w);
             (r, matches!(op, AluOp::And))
         }
         AluOp::Or => {
-            let r = dst | src;
-            set_szp(&mut cpu.eflags, r);
-            cpu.eflags &= !(CF | OF);
+            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let r = (dst | src) & m;
+            flags_logic(&mut cpu.eflags, r, w);
             (r, true)
         }
         AluOp::Xor => {
-            let r = dst ^ src;
-            set_szp(&mut cpu.eflags, r);
-            cpu.eflags &= !(CF | OF);
+            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let r = (dst ^ src) & m;
+            flags_logic(&mut cpu.eflags, r, w);
             (r, true)
         }
     };
@@ -1053,8 +1053,8 @@ fn exec_neg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Ste
         Err(e) => return fault(e),
         Ok(v) => v,
     };
-    let r = (0u32).wrapping_sub(v);
-    set_sub32(&mut cpu.eflags, 0, v, r);
+    let w = op_size(instr, 0) as u32;
+    let r = flags_sub(&mut cpu.eflags, 0, v, 0, w); // NEG = 0 - v
     match write_op(instr, 0, r, cpu, mem) {
         Err(e) => fault(e),
         Ok(()) => StepResult::Continue,
@@ -1066,9 +1066,9 @@ fn exec_inc(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Ste
         Err(e) => return fault(e),
         Ok(v) => v,
     };
-    let r = v.wrapping_add(1);
+    let w = op_size(instr, 0) as u32;
     let old_cf = cpu.eflags & CF;
-    set_add32(&mut cpu.eflags, v, 1, r);
+    let r = flags_add(&mut cpu.eflags, v, 1, 0, w);
     cpu.eflags = (cpu.eflags & !CF) | old_cf; // INC doesn't affect CF
     match write_op(instr, 0, r, cpu, mem) {
         Err(e) => fault(e),
@@ -1081,10 +1081,10 @@ fn exec_dec(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Ste
         Err(e) => return fault(e),
         Ok(v) => v,
     };
-    let r = v.wrapping_sub(1);
+    let w = op_size(instr, 0) as u32;
     let old_cf = cpu.eflags & CF;
-    set_sub32(&mut cpu.eflags, v, 1, r);
-    cpu.eflags = (cpu.eflags & !CF) | old_cf;
+    let r = flags_sub(&mut cpu.eflags, v, 1, 0, w);
+    cpu.eflags = (cpu.eflags & !CF) | old_cf; // DEC doesn't affect CF
     match write_op(instr, 0, r, cpu, mem) {
         Err(e) => fault(e),
         Ok(()) => StepResult::Continue,
@@ -1304,6 +1304,28 @@ fn exec_setcc(
     cond: bool,
 ) -> StepResult {
     match write_op(instr, 0, cond as u32, cpu, mem) {
+        Err(e) => fault(e),
+        Ok(()) => StepResult::Continue,
+    }
+}
+
+// Conditional move: dst (reg) = src if cond. Flags are not modified. When the
+// condition is false the destination keeps its value. We only read the source
+// when the move is taken so an untaken CMOV with a memory operand can't fault.
+fn exec_cmovcc(
+    instr: &Instruction,
+    cpu: &mut X86Cpu,
+    mem: &mut GuestMemory,
+    cond: bool,
+) -> StepResult {
+    if !cond {
+        return StepResult::Continue;
+    }
+    let src = match read_op(instr, 1, cpu, mem) {
+        Ok(v) => v,
+        Err(e) => return fault(e),
+    };
+    match write_op(instr, 0, src, cpu, mem) {
         Err(e) => fault(e),
         Ok(()) => StepResult::Continue,
     }

@@ -112,6 +112,16 @@ fn main() {
             ProcessState::Crashed { reason } => {
                 println!("CRASH after {i} steps: {reason}\n--- last {} instructions ---", history.len());
                 for line in &history { println!("{line}"); }
+                let p = vm.processes.get(pid).unwrap();
+                println!("--- regs: esi=0x{:08X} edi=0x{:08X} ebx=0x{:08X} ebp=0x{:08X} ---",
+                    p.cpu.esi, p.cpu.edi, p.cpu.ebx, p.cpu.ebp);
+                for base in [p.cpu.esi, p.cpu.ebx] {
+                    print!("  struct@0x{base:08X}:");
+                    for off in 0..4u32 {
+                        print!(" [+{}]=0x{:08X}", off*4, p.memory.read_u32(base + off*4).unwrap_or(0xDEAD));
+                    }
+                    println!();
+                }
                 println!("--- cpu/api log ---");
                 for ev in vm.drain_logs() {
                     if ev.target == "cpu" || ev.target == "api" { println!("  [{}] {}", ev.target, ev.message); }

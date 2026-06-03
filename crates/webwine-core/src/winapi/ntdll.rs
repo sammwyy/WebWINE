@@ -1,4 +1,5 @@
 use super::{ApiContext, Handled, WinApiRegistry};
+use crate::vm::handles::KernelObject;
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
@@ -79,16 +80,53 @@ fn rtl_move(ctx: &mut ApiContext) -> Handled {
 
 // NtWriteFile(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock,
 //             Buffer, Length, ByteOffset, Key) — 9 args, stdcall.
-// This is the UCRT's real stdout path. Route to the process console.
+// std's File::write goes through here too (not just the console path), so a
+// VFS-backed handle must write to the file. Anything else routes to the
+// process console (the UCRT/std stdout/stderr path).
 fn nt_write_file(ctx: &mut ApiContext) -> Handled {
     let handle  = ctx.arg(0);
-    let iosb     = ctx.arg(4);
+    let iosb    = ctx.arg(4);
     let buffer  = ctx.arg(5);
     let length  = ctx.arg(6);
+    let byte_off = ctx.arg(7);
     let bytes = ctx.memory.read_bytes(buffer, length as usize).unwrap_or_default();
 
-    // STD_OUTPUT/STD_ERROR magic handles, or any handle -> stdout by default.
-    if handle == 0xFFFF_FFF4 {
+    // VFS-backed file handle? Write into the file at the requested offset (or
+    // the handle's current cursor when ByteOffset is NULL/special).
+    let target = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, cursor, .. }) => Some((path.clone(), *cursor)),
+        _ => None,
+    };
+
+    if let Some((path, cursor)) = target {
+        // ByteOffset is a pointer to a LARGE_INTEGER. A NULL pointer or the
+        // FILE_USE_FILE_POINTER_POSITION sentinel (-1/-2) means "current pos".
+        let offset = if byte_off != 0 {
+            match ctx.memory.read_u32(byte_off) {
+                Ok(lo) => {
+                    let hi = ctx.memory.read_u32(byte_off + 4).unwrap_or(0);
+                    let v = ((hi as u64) << 32) | lo as u64;
+                    if v >= 0xFFFF_FFFF_FFFF_FFFE { cursor } else { v }
+                }
+                Err(_) => cursor,
+            }
+        } else {
+            cursor
+        };
+
+        let mut content = ctx.fs.read_file(&path).unwrap_or_default();
+        let start = offset as usize;
+        let end = start + bytes.len();
+        if content.len() < end {
+            content.resize(end, 0);
+        }
+        content[start..end].copy_from_slice(&bytes);
+        let _ = ctx.fs.mount_file(&path, content);
+        if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(handle) {
+            *cursor = end as u64;
+        }
+    } else if handle == 0xFFFF_FFF4 {
+        // STD_ERROR magic handle.
         ctx.console.stderr.extend_from_slice(&bytes);
     } else {
         ctx.console.stdout.extend_from_slice(&bytes);
