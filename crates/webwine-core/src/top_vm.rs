@@ -98,18 +98,32 @@ impl WebWineVm {
     }
 
     pub fn launch_process(&mut self, guest_path: &str) -> Result<u32> {
+        self.launch_process_with_args(guest_path, "")
+    }
+
+    /// Launch with command-line arguments (e.g. `-iwad doom1.wad`). argv[0] is the
+    /// quoted image path; `args` is appended as the rest of the command line.
+    pub fn launch_process_with_args(&mut self, guest_path: &str, args: &str) -> Result<u32> {
         let bytes = self.fs.read_file(guest_path)?;
         let pid = self.processes.alloc_pid();
+        let cmdline = if args.trim().is_empty() {
+            format!("\"{guest_path}\"")
+        } else {
+            format!("\"{guest_path}\" {}", args.trim())
+        };
 
         // Managed (.NET) assemblies run on the CLR interpreter, not the x86 loader.
         if is_managed(&bytes) {
-            self.processes.insert(GuestProcess::new_managed(pid, guest_path, bytes));
+            let mut proc = GuestProcess::new_managed(pid, guest_path, bytes);
+            proc.cmdline = cmdline;
+            self.processes.insert(proc);
             self.logs.log(LogLevel::Info, "process",
                 &format!("launched managed (.NET) process pid={pid} {guest_path}"), None);
             return Ok(pid);
         }
 
-        let proc = load_pe(&bytes, guest_path, pid, &mut self.api, &mut self.logs)?;
+        let mut proc = load_pe(&bytes, guest_path, pid, &mut self.api, &mut self.logs)?;
+        proc.cmdline = cmdline;
         self.processes.insert(proc);
         Ok(pid)
     }

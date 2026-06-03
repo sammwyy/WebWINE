@@ -449,6 +449,36 @@ impl VirtualFileSystem {
         }
     }
 
+    /// Borrow a file's raw bytes without cloning. Used by range reads so large
+    /// files (e.g. a 4 MB game wad) aren't copied in full on every `fread`.
+    fn file_bytes(&self, guest_path: &str) -> Result<&[u8]> {
+        let path = GuestPath::parse(guest_path)?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("path has no filename".into()))?;
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
+        let drive = self.get_drive(path.drive)?;
+        let dir = Self::resolve_dir(drive, &parent_components)?;
+        match dir.children.get(&file_name.to_ascii_uppercase()) {
+            Some(VfsNode::File(f)) => Ok(&f.bytes),
+            Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
+            None => Err(VmError::NotFound(guest_path.to_string())),
+        }
+    }
+
+    /// Length of a file in bytes.
+    pub fn file_len(&self, guest_path: &str) -> Result<usize> {
+        Ok(self.file_bytes(guest_path)?.len())
+    }
+
+    /// Read at most `len` bytes starting at `offset`, cloning only that range.
+    pub fn read_range(&self, guest_path: &str, offset: usize, len: usize) -> Result<Vec<u8>> {
+        let bytes = self.file_bytes(guest_path)?;
+        let start = offset.min(bytes.len());
+        let end = (start + len).min(bytes.len());
+        Ok(bytes[start..end].to_vec())
+    }
+
     pub fn read_raw_file(&self, guest_path: &str) -> Result<Vec<u8>> {
         let path = GuestPath::parse(guest_path)?;
         let file_name = path

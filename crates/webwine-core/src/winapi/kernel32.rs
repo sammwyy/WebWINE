@@ -17,14 +17,25 @@ pub fn register(r: &mut WinApiRegistry) {
         // advapi32 registry: we have no registry, so report "key not found" and
         // clean the exact arg counts (a wrong count corrupts the guest stack).
         // ERROR_FILE_NOT_FOUND (2) makes apps fall back to defaults.
-        ("advapi32.dll", "RegOpenKeyExA", |c| { let o = c.arg(4); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 5); Handled::Ok }),
-        ("advapi32.dll", "RegOpenKeyExW", |c| { let o = c.arg(4); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 5); Handled::Ok }),
+        ("advapi32.dll", "RegOpenKeyExA", reg_open_key),
+        ("advapi32.dll", "RegOpenKeyExW", reg_open_key),
         ("advapi32.dll", "RegOpenKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
-        ("advapi32.dll", "RegQueryValueExA", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("advapi32.dll", "RegQueryValueExA", reg_query_value),
         ("advapi32.dll", "RegQueryValueExW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
         ("advapi32.dll", "RegCreateKeyExA", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
         ("advapi32.dll", "RegSetValueExA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
+        ("advapi32.dll", "RegSetValueExW", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
         ("advapi32.dll", "RegCloseKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("advapi32.dll", "RegOpenKeyW", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
+        ("advapi32.dll", "RegCreateKeyExW", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
+        ("advapi32.dll", "RegDeleteValueW", |c| { c.ret_stdcall(2, 2); Handled::Ok }),
+        ("advapi32.dll", "RegDeleteKeyW", |c| { c.ret_stdcall(2, 2); Handled::Ok }),
+        ("advapi32.dll", "RegEnumValueW", |c| { c.ret_stdcall(0x103, 8); Handled::Ok }),  // ERROR_NO_MORE_ITEMS
+        ("advapi32.dll", "RegEnumKeyExW", |c| { c.ret_stdcall(0x103, 8); Handled::Ok }),
+        ("advapi32.dll", "RegQueryInfoKeyW", |c| { c.ret_stdcall(0, 12); Handled::Ok }),
+        ("advapi32.dll", "RegQueryValueW", |c| { c.ret_stdcall(2, 4); Handled::Ok }),
+        ("advapi32.dll", "RegNotifyChangeKeyValue", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("advapi32.dll", "RegFlushKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
 
         ("kernel32.dll", "ExitProcess", exit_process),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
@@ -53,9 +64,27 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetCurrentDirectoryA", set_current_directory_a),
         ("kernel32.dll", "SetCurrentDirectoryW", set_current_directory_w),
         ("kernel32.dll", "GetProcAddress", get_proc_address),
-        ("kernel32.dll", "LoadLibraryA", r0_1),
-        ("kernel32.dll", "LoadLibraryW", r0_1),
-        ("kernel32.dll", "LoadLibraryExW", r0_3),
+        // UI language / locale (cmd.exe resolves these via GetProcAddress). 0x409 = en-US.
+        ("kernel32.dll", "SetThreadUILanguage", |c| { let l = c.arg(0); c.ret_stdcall(if l == 0 { 0x409 } else { l }, 1); Handled::Ok }),
+        ("kernel32.dll", "GetThreadUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetUserDefaultUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetSystemDefaultUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetUserDefaultLangID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetSystemDefaultLangID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetUserDefaultLCID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetSystemDefaultLCID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "GetLocaleInfoA", r0_4),
+        ("kernel32.dll", "GetLocaleInfoW", r0_4),
+        ("kernel32.dll", "GetThreadLocale", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "SetThreadLocale", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        // Report Windows XP (5.1 build 2600). GetVersion: (build<<16)|(minor<<8)|major.
+        ("kernel32.dll", "GetVersion", |c| { c.ret_stdcall(0x0A28_0105, 0); Handled::Ok }),
+        ("kernel32.dll", "GetVersionExA", get_version_ex),
+        ("kernel32.dll", "GetVersionExW", get_version_ex),
+        ("kernel32.dll", "LoadLibraryA", load_library_a),
+        ("kernel32.dll", "LoadLibraryW", load_library_w),
+        ("kernel32.dll", "LoadLibraryExA", |c| { c.ret_stdcall(FAKE_MODULE, 3); Handled::Ok }),
+        ("kernel32.dll", "LoadLibraryExW", |c| { c.ret_stdcall(FAKE_MODULE, 3); Handled::Ok }),
         ("kernel32.dll", "FreeLibrary", r1_1),
         ("kernel32.dll", "IsDebuggerPresent", r0_0),
         ("kernel32.dll", "IsProcessorFeaturePresent", r1_1),
@@ -161,8 +190,36 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(437, 0);
             Handled::Ok
         }),
-        ("kernel32.dll", "GetConsoleMode", r0_2),
+        ("kernel32.dll", "GetConsoleMode", get_console_mode),
         ("kernel32.dll", "SetConsoleMode", r1_2),
+        ("kernel32.dll", "GetConsoleScreenBufferInfo", get_console_screen_buffer_info),
+        ("kernel32.dll", "SetConsoleTextAttribute", r1_2),
+        ("kernel32.dll", "SetConsoleCursorPosition", r1_2),
+        ("kernel32.dll", "SetConsoleTitleA", r1_1),
+        ("kernel32.dll", "SetConsoleTitleW", r1_1),
+        ("kernel32.dll", "GetConsoleTitleA", r0_2),
+        ("kernel32.dll", "GetConsoleTitleW", r0_2),
+        ("kernel32.dll", "SetConsoleScreenBufferSize", r1_2),
+        ("kernel32.dll", "FillConsoleOutputCharacterA", r1_5),
+        ("kernel32.dll", "FillConsoleOutputAttribute", r1_5),
+        ("kernel32.dll", "ScrollConsoleScreenBufferA", r1_5),
+        ("kernel32.dll", "SetConsoleWindowInfo", r1_3),
+        ("kernel32.dll", "GetConsoleCursorInfo", r1_2),
+        ("kernel32.dll", "SetConsoleCursorInfo", r1_2),
+        ("kernel32.dll", "ReadConsoleA", read_file),
+        ("kernel32.dll", "ReadConsoleW", read_file),
+        ("kernel32.dll", "SetConsoleInputExeNameW", r1_1),
+        ("kernel32.dll", "SetConsoleInputExeNameA", r1_1),
+        ("kernel32.dll", "GetConsoleInputExeNameW", r1_2),
+        ("kernel32.dll", "GetConsoleInputExeNameA", r1_2),
+        ("kernel32.dll", "CopyFileExW", r1_6),
+        ("kernel32.dll", "CopyFileExA", r1_6),
+        ("kernel32.dll", "WriteConsoleInputW", r1_4),
+        ("kernel32.dll", "ReadConsoleInputW", r0_4),
+        ("kernel32.dll", "ReadConsoleInputA", r0_4),
+        ("kernel32.dll", "PeekConsoleInputW", r0_4),
+        ("kernel32.dll", "GetNumberOfConsoleInputEvents", r0_2),
+        ("kernel32.dll", "FlushConsoleInputBuffer", r1_1),
         ("kernel32.dll", "SetConsoleCtrlHandler", r1_2),
         ("kernel32.dll", "MultiByteToWideChar", multibyte_to_widechar),
         ("kernel32.dll", "WideCharToMultiByte", widechar_to_multibyte),
@@ -640,7 +697,14 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
         0 // imported by ordinal — not supported
     } else {
         let name = ctx.cstr(name_arg);
-        ctx.proc_addr.get(&name).copied().unwrap_or(0)
+        let v = ctx.proc_addr.get(&name).copied().unwrap_or(0);
+        if v == 0 {
+            // A miss means a dynamically-resolved import we don't provide; the
+            // guest may call NULL. Logged at trace for diagnosis ("Run as debug").
+            ctx.logs.log(crate::logs::LogLevel::Trace, "api",
+                &format!("GetProcAddress miss: {name}"), Some(ctx.pid));
+        }
+        v
     };
     ctx.ret_stdcall(va, 2);
     Handled::Ok
@@ -755,6 +819,23 @@ fn set_current_directory_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// We have no registry. Report "key not found" so apps fall back to defaults
+// (ERROR_FILE_NOT_FOUND). Returning success with bogus data breaks apps that
+// read real settings from the registry (e.g. cmd.exe's Command Processor key).
+fn reg_open_key(ctx: &mut ApiContext) -> Handled {
+    let phk = ctx.arg(4);
+    if phk != 0 {
+        let _ = ctx.memory.write_u32(phk, 0);
+    }
+    ctx.ret_stdcall(2, 5); // ERROR_FILE_NOT_FOUND
+    Handled::Ok
+}
+
+fn reg_query_value(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(2, 6); // ERROR_FILE_NOT_FOUND
+    Handled::Ok
+}
+
 fn get_last_error(ctx: &mut ApiContext) -> Handled {
     let e = ctx.cpu.last_error;
     ctx.ret_stdcall(e, 0);
@@ -821,6 +902,22 @@ fn virtual_protect(ctx: &mut ApiContext) -> Handled {
         let _ = ctx.memory.write_u32(old_out, 0x40);
     }
     ctx.ret_stdcall(1, 4);
+    Handled::Ok
+}
+
+// A non-zero fake HMODULE for dynamically loaded DLLs. GetProcAddress resolves
+// functions by name regardless of the module handle, so a single sentinel is
+// enough — and returning non-NULL lets delay-load helpers succeed instead of
+// raising ERROR_MOD_NOT_FOUND (0xC06D007E).
+const FAKE_MODULE: u32 = 0x5AD0_0000;
+
+fn load_library_a(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(FAKE_MODULE, 1);
+    Handled::Ok
+}
+
+fn load_library_w(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(FAKE_MODULE, 1);
     Handled::Ok
 }
 
@@ -972,6 +1069,63 @@ fn get_file_type(ctx: &mut ApiContext) -> Handled {
     Handled::Ok // FILE_TYPE_CHAR
 }
 
+// GetConsoleScreenBufferInfo(hConsole, lpInfo): fill a CONSOLE_SCREEN_BUFFER_INFO
+// so console apps that query the buffer geometry (cmd.exe) proceed.
+// Layout: dwSize(COORD)@0, dwCursorPosition(COORD)@4, wAttributes(WORD)@8,
+//         srWindow(SMALL_RECT)@10, dwMaximumWindowSize(COORD)@18.
+// GetVersionEx(lpVersionInfo): fill OSVERSIONINFO for Windows XP (5.1.2600).
+// dwOSVersionInfoSize@0, dwMajorVersion@4, dwMinorVersion@8, dwBuildNumber@12,
+// dwPlatformId@16 (VER_PLATFORM_WIN32_NT=2), szCSDVersion@20.
+fn get_version_ex(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    if p != 0 {
+        let _ = ctx.memory.write_u32(p + 4, 5);    // major
+        let _ = ctx.memory.write_u32(p + 8, 1);    // minor
+        let _ = ctx.memory.write_u32(p + 12, 2600); // build
+        let _ = ctx.memory.write_u32(p + 16, 2);   // VER_PLATFORM_WIN32_NT
+    }
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+fn get_console_screen_buffer_info(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(1);
+    if p != 0 {
+        let cols: u16 = 80;
+        let rows: u16 = 25;
+        let coord = |x: u16, y: u16| (x as u32) | ((y as u32) << 16);
+        let _ = ctx.memory.write_u32(p, coord(cols, rows));      // dwSize
+        let _ = ctx.memory.write_u32(p + 4, coord(0, 0));        // dwCursorPosition
+        let _ = ctx.memory.write_u16(p + 8, 0x07);               // wAttributes (gray on black)
+        // srWindow: Left=0, Top=0, Right=cols-1, Bottom=rows-1 (i16 each)
+        let _ = ctx.memory.write_u16(p + 10, 0);
+        let _ = ctx.memory.write_u16(p + 12, 0);
+        let _ = ctx.memory.write_u16(p + 14, cols - 1);
+        let _ = ctx.memory.write_u16(p + 16, rows - 1);
+        let _ = ctx.memory.write_u32(p + 18, coord(cols, rows)); // dwMaximumWindowSize
+    }
+    ctx.ret_stdcall(1, 2); // success
+    Handled::Ok
+}
+
+// GetConsoleMode(hConsole, lpMode): succeed with a standard console mode so
+// console apps (cmd.exe) believe they are attached to a real console.
+fn get_console_mode(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let lp_mode = ctx.arg(1);
+    // Input handle gets input flags; output handles get output flags.
+    let mode = if handle == STD_INPUT_HANDLE {
+        0x1F7 // ENABLE_PROCESSED/LINE/ECHO/MOUSE/INSERT/QUICKEDIT/EXTENDED
+    } else {
+        0x3 // ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT
+    };
+    if lp_mode != 0 {
+        let _ = ctx.memory.write_u32(lp_mode, mode);
+    }
+    ctx.ret_stdcall(1, 2); // success
+    Handled::Ok
+}
+
 fn dup_handle(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(5);
     if out != 0 {
@@ -982,6 +1136,9 @@ fn dup_handle(ctx: &mut ApiContext) -> Handled {
 }
 
 fn raise_exception(ctx: &mut ApiContext) -> Handled {
+    let code = ctx.arg(0);
+    ctx.logs.log(crate::logs::LogLevel::Warn, "api",
+        &format!("RaiseException code=0x{code:08X}"), Some(ctx.pid));
     Handled::ExitProcess(1)
 }
 
@@ -1114,7 +1271,7 @@ stubs! {
     r0_4 => (0, 4), r0_5 => (0, 5), r0_6 => (0, 6), r0_7 => (0, 7),
     r0_8 => (0, 8),
     r1_0 => (1, 0), r1_1 => (1, 1), r1_2 => (1, 2), r1_3 => (1, 3),
-    r1_4 => (1, 4), r1_6 => (1, 6), r1_7 => (1, 7),
+    r1_4 => (1, 4), r1_5 => (1, 5), r1_6 => (1, 6), r1_7 => (1, 7),
 }
 
 fn stub_invalid_handle(c: &mut ApiContext) -> Handled {

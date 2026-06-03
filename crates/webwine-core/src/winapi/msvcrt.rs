@@ -29,12 +29,33 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "getcwd", getcwd_fn),
         ("msvcrt.dll", "_chdir", chdir_fn),
         ("msvcrt.dll", "chdir", chdir_fn),
+        // setjmp/longjmp: cmd.exe uses these for command-loop error recovery.
+        ("msvcrt.dll", "_setjmp", setjmp_fn),
+        ("msvcrt.dll", "_setjmp3", setjmp_fn),
+        ("msvcrt.dll", "longjmp", longjmp_fn),
+        // wide-string helpers
+        ("msvcrt.dll", "wcscpy", wcscpy_fn),
+        ("msvcrt.dll", "wcscat", wcscat_fn),
+        ("msvcrt.dll", "wcscmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
+        ("msvcrt.dll", "_wcsicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
+        ("msvcrt.dll", "wcschr", wcschr_fn),
         ("msvcrt.dll", "strchr", strchr),
         ("msvcrt.dll", "strrchr", strrchr),
         ("msvcrt.dll", "strstr", strstr),
         ("msvcrt.dll", "strtol", strtol),
         ("msvcrt.dll", "strtoul", strtoul),
         ("msvcrt.dll", "atoi", atoi),
+        ("msvcrt.dll", "atol", atoi),
+        ("msvcrt.dll", "_ultoa", |c| itoa_radix(c, false)),
+        ("msvcrt.dll", "_ltoa", |c| itoa_radix(c, true)),
+        ("msvcrt.dll", "_itoa", |c| itoa_radix(c, true)),
+        ("msvcrt.dll", "ultoa", |c| itoa_radix(c, false)),
+        ("msvcrt.dll", "ltoa", |c| itoa_radix(c, true)),
+        ("msvcrt.dll", "itoa", |c| itoa_radix(c, true)),
+        // CRT fd <-> Win32 HANDLE mapping (cmd.exe queries its std handles).
+        ("msvcrt.dll", "_get_osfhandle", get_osfhandle),
+        ("msvcrt.dll", "_isatty", |c| { let fd = c.arg(0); c.ret_cdecl(if fd <= 2 { 1 } else { 0 }); Handled::Ok }),
+        ("msvcrt.dll", "_fileno", |c| { let s = c.arg(0); c.ret_cdecl(s); Handled::Ok }),
         ("msvcrt.dll", "atof", stub_zero_cdecl_1),
         ("msvcrt.dll", "puts", puts),
         ("msvcrt.dll", "putchar", putchar),
@@ -421,6 +442,53 @@ fn strcat(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// setjmp/_setjmp3: returns 0 (the initial-call return). NOTE: a faithful
+// longjmp needs MSVC's SEH-aware _setjmp3 semantics (registration/cookie fields
+// + stack unwinding); a naive register save/restore corrupts cmd.exe's control
+// flow, so for now these are no-ops. Full setjmp/longjmp is future work.
+fn setjmp_fn(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
+    let val = ctx.arg(1);
+    ctx.ret_cdecl(if val == 0 { 1 } else { val });
+    Handled::Ok
+}
+
+fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let s = ctx.wstr(ctx.arg(1));
+    let mut bytes: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    bytes.extend_from_slice(&[0, 0]);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
+fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let existing = ctx.wstr(dst);
+    let append = ctx.wstr(ctx.arg(1));
+    let combined = existing + &append;
+    let mut bytes: Vec<u8> = combined.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    bytes.extend_from_slice(&[0, 0]);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
+fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let needle = ctx.arg(1) as u16;
+    let s = ctx.wstr(p);
+    let pos = s.encode_utf16().position(|c| c == needle);
+    let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
+    ctx.ret_cdecl(r);
+    Handled::Ok
+}
+
 fn strchr(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let c = ctx.arg(1) as u8;
@@ -470,6 +538,49 @@ fn atoi(ctx: &mut ApiContext) -> Handled {
     let s = ctx.cstr(ctx.arg(0));
     let r = s.trim().parse::<i32>().unwrap_or(0) as u32;
     ctx.ret_cdecl(r);
+    Handled::Ok
+}
+
+// _itoa/_ltoa/_ultoa(value, char* str, int radix): write value in `radix` to str.
+fn itoa_radix(ctx: &mut ApiContext, signed: bool) -> Handled {
+    let value = ctx.arg(0);
+    let dst = ctx.arg(1);
+    let radix = ctx.arg(2).clamp(2, 36);
+
+    let mut s = if signed && radix == 10 && (value as i32) < 0 {
+        format!("-{}", (value as i32).unsigned_abs() as u64)
+    } else {
+        to_radix(value as u64, radix)
+    };
+    s.push('\0');
+    let _ = ctx.memory.write_bytes(dst, s.as_bytes());
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
+fn to_radix(mut v: u64, radix: u32) -> String {
+    if v == 0 {
+        return "0".to_string();
+    }
+    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut buf = Vec::new();
+    while v > 0 {
+        buf.push(digits[(v % radix as u64) as usize]);
+        v /= radix as u64;
+    }
+    buf.reverse();
+    String::from_utf8(buf).unwrap()
+}
+
+// _get_osfhandle(fd): map CRT fd 0/1/2 to the std Win32 HANDLEs.
+fn get_osfhandle(ctx: &mut ApiContext) -> Handled {
+    let h = match ctx.arg(0) {
+        0 => 0xFFFF_FFF6u32, // stdin
+        1 => 0xFFFF_FFF5,    // stdout
+        2 => 0xFFFF_FFF4,    // stderr
+        _ => 0xFFFF_FFFF,    // INVALID_HANDLE_VALUE
+    };
+    ctx.ret_cdecl(h);
     Handled::Ok
 }
 
@@ -768,12 +879,10 @@ fn fread(ctx: &mut ApiContext) -> Handled {
         return Handled::Ok;
     };
 
-    let content = ctx.fs.read_file(&path).unwrap_or_default();
-    let start = (cursor as usize).min(content.len());
-    let end = (start + total).min(content.len());
-    let chunk = &content[start..end];
+    // Read only the requested range (not the whole file) so large wad reads stay fast.
+    let chunk = ctx.fs.read_range(&path, cursor as usize, total).unwrap_or_default();
     let read_bytes = chunk.len();
-    let _ = ctx.memory.write_bytes(buf, &chunk.to_vec());
+    let _ = ctx.memory.write_bytes(buf, &chunk);
     if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
         *cursor += read_bytes as u64;
     }
@@ -790,7 +899,7 @@ fn fseek(ctx: &mut ApiContext) -> Handled {
 
     let len = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { path, .. }) if is_vfs_stream(stream) => {
-            ctx.fs.read_file(path).map(|b| b.len() as i64).unwrap_or(0)
+            ctx.fs.file_len(path).unwrap_or(0) as i64
         }
         _ => {
             ctx.ret_cdecl(0xFFFF_FFFF);
@@ -844,8 +953,7 @@ fn fgetc(ctx: &mut ApiContext) -> Handled {
         ctx.ret_cdecl(0xFFFF_FFFF);
         return Handled::Ok;
     };
-    let content = ctx.fs.read_file(&path).unwrap_or_default();
-    let byte = content.get(cursor as usize).copied();
+    let byte = ctx.fs.read_range(&path, cursor as usize, 1).ok().and_then(|b| b.first().copied());
     match byte {
         Some(b) => {
             if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
@@ -879,17 +987,14 @@ fn fgets(ctx: &mut ApiContext) -> Handled {
         return Handled::Ok;
     }
 
-    let content = ctx.fs.read_file(&path).unwrap_or_default();
-    let start = cursor as usize;
-    if start >= content.len() {
+    // Read up to n-1 bytes from the cursor; stop at newline.
+    let window = ctx.fs.read_range(&path, cursor as usize, n - 1).unwrap_or_default();
+    if window.is_empty() {
         ctx.ret_cdecl(0);
         return Handled::Ok;
     }
     let mut line = Vec::new();
-    for &b in &content[start..] {
-        if line.len() >= n - 1 {
-            break;
-        }
+    for &b in &window {
         line.push(b);
         if b == b'\n' {
             break;
@@ -910,7 +1015,7 @@ fn feof(ctx: &mut ApiContext) -> Handled {
     let stream = ctx.arg(0);
     let eof = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
-            let len = ctx.fs.read_file(path).map(|b| b.len() as u64).unwrap_or(0);
+            let len = ctx.fs.file_len(path).unwrap_or(0) as u64;
             *cursor >= len
         }
         _ => false,
@@ -983,6 +1088,26 @@ fn p_argv(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// Split a Windows command line into argv, respecting double-quoted segments.
+fn tokenize_cmdline(s: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+    for c in s.chars() {
+        match c {
+            '"' => { in_quotes = !in_quotes; started = true; }
+            c if c.is_whitespace() && !in_quotes => {
+                if started { args.push(std::mem::take(&mut cur)); started = false; }
+            }
+            c => { cur.push(c); started = true; }
+        }
+    }
+    if started { args.push(cur); }
+    if args.is_empty() { args.push(String::new()); }
+    args
+}
+
 // __getmainargs(int* argc, char*** argv, char*** env, int wild, _startupinfo*)
 // Fills argc/argv/env so the CRT can call main(argc, argv, env). cdecl.
 fn getmainargs(ctx: &mut ApiContext) -> Handled {
@@ -990,26 +1115,23 @@ fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let argv_p = ctx.arg(1);
     let env_p = ctx.arg(2);
 
-    // argv[0] = the real launched image path, argv[1] = NULL
-    let mut name_bytes = ctx.exe_path.as_bytes().to_vec();
-    name_bytes.push(0);
-    let name = ctx.heap_alloc(name_bytes.len() as u32);
-    let _ = ctx.memory.write_bytes(name, &name_bytes);
-    let argv = ctx.heap_alloc(8);
-    let _ = ctx.memory.write_u32(argv, name);
-    let _ = ctx.memory.write_u32(argv + 4, 0);
+    let args = tokenize_cmdline(ctx.cmdline);
+    let argc = args.len() as u32;
+    let argv = ctx.heap_alloc((argc + 1) * 4);
+    for (i, a) in args.iter().enumerate() {
+        let mut b = a.clone().into_bytes();
+        b.push(0);
+        let p = ctx.heap_alloc(b.len() as u32);
+        let _ = ctx.memory.write_bytes(p, &b);
+        let _ = ctx.memory.write_u32(argv + i as u32 * 4, p);
+    }
+    let _ = ctx.memory.write_u32(argv + argc * 4, 0); // NULL terminator
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 {
-        let _ = ctx.memory.write_u32(argc_p, 1);
-    }
-    if argv_p != 0 {
-        let _ = ctx.memory.write_u32(argv_p, argv);
-    }
-    if env_p != 0 {
-        let _ = ctx.memory.write_u32(env_p, env);
-    }
+    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, argc); }
+    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
+    if env_p != 0 { let _ = ctx.memory.write_u32(env_p, env); }
     ctx.ret_cdecl(0);
     Handled::Ok
 }
@@ -1020,26 +1142,24 @@ fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let argv_p = ctx.arg(1);
     let env_p = ctx.arg(2);
 
-    let mut s = ctx.exe_path.to_string();
-    s.push('\0');
-    let wide: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-    let name = ctx.heap_alloc(wide.len() as u32);
-    let _ = ctx.memory.write_bytes(name, &wide);
-    let argv = ctx.heap_alloc(8);
-    let _ = ctx.memory.write_u32(argv, name);
-    let _ = ctx.memory.write_u32(argv + 4, 0);
+    let args = tokenize_cmdline(ctx.cmdline);
+    let argc = args.len() as u32;
+    let argv = ctx.heap_alloc((argc + 1) * 4);
+    for (i, a) in args.iter().enumerate() {
+        let mut s = a.clone();
+        s.push('\0');
+        let wide: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        let p = ctx.heap_alloc(wide.len() as u32);
+        let _ = ctx.memory.write_bytes(p, &wide);
+        let _ = ctx.memory.write_u32(argv + i as u32 * 4, p);
+    }
+    let _ = ctx.memory.write_u32(argv + argc * 4, 0);
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 {
-        let _ = ctx.memory.write_u32(argc_p, 1);
-    }
-    if argv_p != 0 {
-        let _ = ctx.memory.write_u32(argv_p, argv);
-    }
-    if env_p != 0 {
-        let _ = ctx.memory.write_u32(env_p, env);
-    }
+    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, argc); }
+    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
+    if env_p != 0 { let _ = ctx.memory.write_u32(env_p, env); }
     ctx.ret_cdecl(0);
     Handled::Ok
 }

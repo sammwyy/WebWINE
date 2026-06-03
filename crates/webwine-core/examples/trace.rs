@@ -70,7 +70,11 @@ fn main() {
     let bytes = std::fs::read(&path).expect("read exe");
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\sample.exe", bytes).unwrap();
-    let pid = vm.launch_process("C:\\Users\\guest\\Desktop\\sample.exe").unwrap();
+    // Optional args via the ARGS env var (e.g. ARGS="-iwad doom1.wad").
+    let pid = match std::env::var("ARGS") {
+        Ok(args) => vm.launch_process_with_args("C:\\Users\\guest\\Desktop\\sample.exe", &args).unwrap(),
+        Err(_) => vm.launch_process("C:\\Users\\guest\\Desktop\\sample.exe").unwrap(),
+    };
     let mut history: Vec<String> = Vec::new();
     let mut stdout = String::new();
 
@@ -110,6 +114,13 @@ fn main() {
                 let p = vm.processes.get(pid).unwrap();
                 let stderr = String::from_utf8_lossy(&p.console.stderr).into_owned();
                 if !stderr.is_empty() { println!("stderr: {stderr:?}"); }
+                if std::env::var("HIST").is_ok() {
+                    for line in &history { println!("{line}"); }
+                }
+                let apis: Vec<String> = vm.drain_logs().into_iter()
+                    .filter(|e| e.target == "api").map(|e| e.message).collect();
+                println!("--- last api ---");
+                for m in apis.iter().rev().take(25).rev() { println!("  {m}"); }
                 return;
             }
             ProcessState::Crashed { reason } => {

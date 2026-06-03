@@ -94,6 +94,13 @@ impl Runtime {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = launchProcessWithArgs)]
+    pub fn launch_process_with_args(&mut self, path: &str, args: &str) -> Result<u32, JsValue> {
+        self.vm
+            .launch_process_with_args(path, args)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = getProcessInfo)]
     pub fn get_process_info(&self, pid: u32) -> Result<JsValue, JsValue> {
         let info: ProcessInfo = self
