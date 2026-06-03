@@ -242,6 +242,7 @@ pub fn load_pe(
         spawns: Vec::new(),
         next_child_pid: 0,
         state: ProcessState::Created,
+        managed: None,
     })
 }
 

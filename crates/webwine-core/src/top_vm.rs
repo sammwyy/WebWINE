@@ -4,7 +4,8 @@ use crate::logs::{LogBuffer, LogEvent, LogLevel};
 use crate::pe::inspector::{inspect_bytes, PeInfo};
 use crate::pe::loader::load_pe;
 use crate::vm::executor::{run_slice, SliceResult};
-use crate::vm::process::{ProcessInfo, ProcessTable};
+use crate::vm::process::{GuestProcess, ProcessInfo, ProcessState, ProcessTable};
+use crate::clr::{is_managed, ClrImage, ClrRuntime};
 use crate::winapi::{register_all, WinApiRegistry};
 
 pub struct WebWineVm {
@@ -75,15 +76,73 @@ impl WebWineVm {
         Ok(info)
     }
 
+    /// Inspect a managed (.NET) assembly's CLI metadata for the Inspect panel.
+    pub fn inspect_clr(&mut self, guest_path: &str) -> Result<crate::clr::ClrInfo> {
+        let bytes = self.fs.read_file(guest_path)?;
+        let info = crate::clr::inspect_clr(&bytes)?;
+        self.logs.log(LogLevel::Info, "clr", &format!(
+            "parsed managed {} — runtime {} entry {} types={} methods={}",
+            guest_path, info.runtime_version, info.entry_point_method,
+            info.types.len(), info.methods.len(),
+        ), None);
+        Ok(info)
+    }
+
+    /// True if the file at `guest_path` is a managed (.NET) assembly.
+    pub fn is_managed_file(&self, guest_path: &str) -> bool {
+        self.fs.read_file(guest_path).map(|b| is_managed(&b)).unwrap_or(false)
+    }
+
     pub fn launch_process(&mut self, guest_path: &str) -> Result<u32> {
         let bytes = self.fs.read_file(guest_path)?;
         let pid = self.processes.alloc_pid();
+
+        // Managed (.NET) assemblies run on the CLR interpreter, not the x86 loader.
+        if is_managed(&bytes) {
+            self.processes.insert(GuestProcess::new_managed(pid, guest_path, bytes));
+            self.logs.log(LogLevel::Info, "process",
+                &format!("launched managed (.NET) process pid={pid} {guest_path}"), None);
+            return Ok(pid);
+        }
+
         let proc = load_pe(&bytes, guest_path, pid, &mut self.api, &mut self.logs)?;
         self.processes.insert(proc);
         Ok(pid)
     }
 
+    /// Run a managed process's entry point to completion via the CLR interpreter,
+    /// buffering its output into the process console.
+    fn run_managed(&mut self, pid: u32) {
+        let Some(proc) = self.processes.get_mut(pid) else { return };
+        let Some(bytes) = proc.managed.take() else { return };
+
+        let (stdout, state) = match ClrImage::parse(&bytes) {
+            Ok(img) => {
+                let mut rt = ClrRuntime::new(&img);
+                match rt.run_entry() {
+                    Ok(code) => (rt.stdout, ProcessState::Exited { exit_code: code as u32 }),
+                    // Keep whatever was printed before the fault for debugging.
+                    Err(e) => (rt.stdout, ProcessState::Crashed { reason: e.to_string() }),
+                }
+            }
+            Err(e) => (String::new(), ProcessState::Crashed { reason: e.to_string() }),
+        };
+
+        proc.console.stdout.extend_from_slice(stdout.as_bytes());
+        proc.state = state.clone();
+        if let ProcessState::Crashed { reason } = &state {
+            self.logs.log(LogLevel::Warn, "clr",
+                &format!("managed pid={pid} crashed: {reason}"), Some(pid));
+        }
+    }
+
     pub fn run_process_slice(&mut self, pid: u32, budget: u32) -> Result<SliceResult> {
+        // Managed processes execute via the CLR runner; once finished, the normal
+        // slice path below drains their buffered console output and exit state.
+        if self.processes.get(pid).map(|p| p.managed.is_some()).unwrap_or(false) {
+            self.run_managed(pid);
+        }
+
         let next_pid = self.processes.peek_next_pid();
         let (mut result, spawns) = {
             let proc = self.processes.get_mut(pid)

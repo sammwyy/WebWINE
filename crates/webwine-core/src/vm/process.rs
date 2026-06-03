@@ -133,6 +133,9 @@ pub struct GuestProcess {
     pub spawns:      Vec<SpawnRequest>,
     pub next_child_pid: u32, // pid the next CreateProcess child will receive
     pub state:       ProcessState,
+    // Managed (.NET/CLI) image bytes, set when this is a managed process. Such a
+    // process has no meaningful x86 CPU state; it runs via the CLR interpreter.
+    pub managed:     Option<Vec<u8>>,
 }
 
 impl GuestProcess {
@@ -140,6 +143,30 @@ impl GuestProcess {
         ProcessInfo { pid: self.pid, path: self.path.clone(),
             image_base: self.image_base, entry_point: self.entry_point,
             state: self.state.clone() }
+    }
+
+    /// A process backed by a managed (.NET) assembly. The x86 fields are left
+    /// empty; execution is driven by the CLR interpreter on the first slice.
+    pub fn new_managed(pid: u32, path: &str, bytes: Vec<u8>) -> Self {
+        GuestProcess {
+            pid,
+            path: path.to_string(),
+            image_base: 0,
+            entry_point: 0,
+            heap_base: 0,
+            heap_next: 0,
+            heap_sizes: std::collections::HashMap::new(),
+            memory: GuestMemory::new(),
+            cpu: X86Cpu::new(),
+            handles: HandleTable::new(pid),
+            console: ConsoleStreams::new(),
+            ui_events: Vec::new(),
+            gui: GuiState::new(),
+            spawns: Vec::new(),
+            next_child_pid: 0,
+            state: ProcessState::Created,
+            managed: Some(bytes),
+        }
     }
 }
 

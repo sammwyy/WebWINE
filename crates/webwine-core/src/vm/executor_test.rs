@@ -158,6 +158,26 @@ fn runs_filesystem_std_sample() {
 }
 
 #[test]
+fn runs_managed_dotnet_sample() {
+    // A real .NET 2.0 assembly launched through the full VM: it must be routed
+    // to the CLR interpreter (not the x86 loader) and produce console output.
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../samples/10_dotnet_hello/dotnet_hello.exe"
+    );
+    let Ok(bytes) = std::fs::read(path) else { return }; // sample not built — skip
+
+    let mut vm = WebWineVm::new();
+    let guest = "C:\\Users\\guest\\Desktop\\dotnet_hello.exe";
+    vm.mount_file(guest, bytes).expect("mount");
+    let pid = vm.launch_process(guest).expect("launch managed");
+    let (stdout, state) = run_to_completion(&mut vm, pid);
+
+    assert!(matches!(state, ProcessState::Exited { exit_code: 0 }), "got: {state:?}");
+    assert_eq!(stdout, "Hello from managed WebWINE!\n42\n", "stdout: {stdout:?}");
+}
+
+#[test]
 fn rejects_x64_executable() {
     // A PE32+ (x86-64) image must be rejected with a clear error, not crash.
     // Synthesize a minimal header with machine = 0x8664.

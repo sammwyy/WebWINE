@@ -73,6 +73,20 @@ impl Runtime {
         serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
+    #[wasm_bindgen(js_name = inspectClr)]
+    pub fn inspect_clr(&mut self, path: &str) -> Result<JsValue, JsValue> {
+        let info = self
+            .vm
+            .inspect_clr(path)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = isManagedFile)]
+    pub fn is_managed_file(&self, path: &str) -> bool {
+        self.vm.is_managed_file(path)
+    }
+
     #[wasm_bindgen(js_name = launchProcess)]
     pub fn launch_process(&mut self, path: &str) -> Result<u32, JsValue> {
         self.vm
