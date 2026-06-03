@@ -2,9 +2,10 @@
  * Taskbar — the bottom bar with start button, window list, tray, and clock.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
 import { useRuntimeStore } from "../../stores/useRuntimeStore.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
 import { StartMenu, type StartMenuAction } from "./StartMenu.js";
 import { TrayMenu } from "./TrayMenu.js";
 import { Clock } from "./Clock.js";
@@ -20,9 +21,21 @@ interface TaskbarProps {
 export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
   const [startOpen, setStartOpen] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
+  const [orbStatus, setOrbStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [orbHover, setOrbHover] = useState(false);
 
   const { windows, activeId, activateFromTaskbar } = useWindowStore();
   const { runtime } = useRuntimeStore();
+  const { theme, getEffectiveTaskbarIconMode } = useThemeStore();
+  const mode = getEffectiveTaskbarIconMode();
+
+  useEffect(() => {
+    setOrbStatus("loading");
+    const img = new Image();
+    img.onload = () => setOrbStatus("loaded");
+    img.onerror = () => setOrbStatus("error");
+    img.src = `/themes/${theme}/orb.webp`;
+  }, [theme]);
 
   const handleStartAction = useCallback(
     (action: StartMenuAction) => {
@@ -49,16 +62,33 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
       <button
         id="start-button"
         type="button"
+        className={orbStatus === "loaded" ? "has-orb" : ""}
         aria-haspopup="true"
         aria-expanded={startOpen}
+        onMouseEnter={() => setOrbHover(true)}
+        onMouseLeave={() => setOrbHover(false)}
         onClick={(e) => {
           e.stopPropagation();
           setTrayOpen(false);
           setStartOpen((v) => !v);
         }}
       >
-        <span className="start-mark" aria-hidden="true" />
-        <span>WebWINE</span>
+        {orbStatus === "loaded" ? (
+          <img 
+            src={`/themes/${theme}/orb.webp`}
+            alt="Start"
+            draggable={false}
+            className="start-orb-sprite-img"
+            style={{
+              transform: `translateY(${startOpen ? '-66.666%' : (orbHover ? '-33.333%' : '0')})`
+            }}
+          />
+        ) : orbStatus === "error" ? (
+          <>
+            <span className="start-mark" aria-hidden="true" />
+            <span>WebWINE</span>
+          </>
+        ) : null}
       </button>
 
       {startOpen && (
@@ -81,6 +111,7 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
               win.id === activeId ? "active" : "",
               win.minimized ? "minimized" : "",
               win.maximized ? "maximized" : "",
+              `icon-mode-${mode}`
             ]
               .filter(Boolean)
               .join(" ")}
@@ -88,12 +119,18 @@ export function Taskbar({ fileInputRef, folderInputRef }: TaskbarProps) {
             title={win.title}
             onClick={() => activateFromTaskbar(win.id)}
           >
-            {win.icon && (
+            {(mode === "full" || mode === "only-icon") && win.icon && (
               <span className="taskbar-window-icon" aria-hidden="true">
-                {win.icon}
+                {win.icon.includes("/") ? (
+                  <img src={win.icon} alt="" style={{width: 16, height: 16, objectFit: "contain"}} draggable={false} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                ) : (
+                  win.icon
+                )}
               </span>
             )}
-            <span className="taskbar-window-title">{win.title}</span>
+            {(mode === "full" || mode === "only-label") && (
+              <span className="taskbar-window-title">{win.title}</span>
+            )}
           </button>
         ))}
       </div>

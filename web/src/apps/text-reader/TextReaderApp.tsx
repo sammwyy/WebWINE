@@ -3,11 +3,22 @@ import { useWindowStore } from "../../stores/useWindowStore.js";
 import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
 import { basename } from "../../lib/utils.js";
 
-export function openTextReader(path: string, runtime: RuntimeBridge) {
+import { useThemeStore } from "../../stores/useThemeStore.js";
+import { resolveIcon } from "../../lib/icon-resolver.js";
+
+export async function openTextReader(path: string, runtime: RuntimeBridge) {
+  const theme = useThemeStore.getState().theme;
   const name = basename(path);
+
+  const resolved = await resolveIcon(
+    { name, path, kind: "file", size: 0 },
+    runtime
+  );
+  const icon = resolved?.src || `/themes/${theme}/icons/exts/txt.webp`;
+
   useWindowStore.getState().openWindow({
     title: `${name} — Raw Viewer`,
-    icon: "📄",
+    icon,
     width: 640,
     height: 460,
     content: <TextReaderApp path={path} runtime={runtime} />,

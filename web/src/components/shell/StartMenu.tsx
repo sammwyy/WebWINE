@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { useThemeStore } from "../../stores/useThemeStore.js";
 
 export type StartMenuAction =
   | "explorer"
@@ -19,6 +20,7 @@ interface StartMenuProps {
 
 export function StartMenu({ onAction, onClose }: StartMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const { theme } = useThemeStore();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -47,10 +49,32 @@ export function StartMenu({ onAction, onClose }: StartMenuProps) {
       </div>
 
       <div className="shell-menu-title">Apps</div>
-
       {([
         ["explorer", "File Explorer"],
         ["themes", "Themes"],
+      ] as [StartMenuAction, string][]).map(([action, label]) => (
+        <button
+          key={action}
+          className="shell-menu-item"
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onClose();
+            onAction(action);
+          }}
+        >
+          <img 
+            src={`/themes/${theme}/icons/apps/${action}.webp`} 
+            alt="" 
+            style={{ width: 24, height: 24, marginRight: 8, objectFit: "contain" }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }} 
+          />
+          {label}
+        </button>
+      ))}
+
+      <div className="shell-menu-title" style={{ marginTop: 8 }}>Operations</div>
+      {([
         ["upload-file", "Upload File"],
         ["upload-folder", "Upload Folder"],
       ] as [StartMenuAction, string][]).map(([action, label]) => (

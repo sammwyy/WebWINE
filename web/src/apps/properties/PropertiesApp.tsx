@@ -1,11 +1,13 @@
 import { useWindowStore } from "../../stores/useWindowStore.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
 import type { DirectoryEntry } from "../../lib/worker.js";
 import { formatSize, basename } from "../../lib/utils.js";
 
 export function openProperties(entry: DirectoryEntry) {
+  const theme = useThemeStore.getState().theme;
   useWindowStore.getState().openWindow({
     title: `${entry.name} — Properties`,
-    icon: "🛈",
+    icon: `/themes/${theme}/icons/shell/msg_inform.webp`,
     variant: "dialog",
     width: 360,
     height: 260,

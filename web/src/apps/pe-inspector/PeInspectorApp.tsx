@@ -5,12 +5,23 @@ import type { PeInfo, PeSection, PeImportModule } from "../../lib/worker.js";
 import { basename, formatSize, escHtml } from "../../lib/utils.js";
 import { log } from "../../stores/useLogStore.js";
 
-export function openPeInspector(path: string, runtime: RuntimeBridge) {
+import { useThemeStore } from "../../stores/useThemeStore.js";
+import { resolveIcon } from "../../lib/icon-resolver.js";
+
+export async function openPeInspector(path: string, runtime: RuntimeBridge) {
   const name = basename(path);
+  const theme = useThemeStore.getState().theme;
+  
+  const resolved = await resolveIcon(
+    { name, path, kind: "file", size: 0 },
+    runtime
+  );
+  const icon = resolved?.src || `/themes/${theme}/icons/shell/default_executable.webp`;
+
   let winId = "";
   winId = useWindowStore.getState().openWindow({
     title: name,
-    icon: "🔬",
+    icon,
     width: 660,
     height: 520,
     content: <PeInspectorApp path={path} name={name} runtime={runtime} winId={() => winId} />,

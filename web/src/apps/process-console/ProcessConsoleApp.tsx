@@ -4,27 +4,35 @@ import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
 import type { LogEvent, UiEvent } from "../../lib/worker.js";
 import { handleUiEvents } from "../guest-window/GuestWindowApp.js";
 import { basename } from "../../lib/utils.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
+import { resolveIcon } from "../../lib/icon-resolver.js";
 
 interface ConsoleOptions {
   debug?: boolean;
   attachPid?: number;
 }
 
-export function openProcessConsole(
+export async function openProcessConsole(
   path: string,
   runtime: RuntimeBridge,
   opts: ConsoleOptions = {},
 ) {
-  const fileName = basename(path);
-  const debug = opts.debug ?? false;
+  const name = basename(path);
+  const theme = useThemeStore.getState().theme;
   
-  // Create window first to get ID, then we update it
+  // Try to extract icon from PE, fallback to default_executable
+  const resolved = await resolveIcon(
+    { name, path, kind: "file", size: 0 },
+    runtime
+  );
+  const icon = resolved?.src || `/themes/${theme}/icons/shell/default_executable.webp`;
+
   let winId = "";
   winId = useWindowStore.getState().openWindow({
-    title: `${fileName}`,
-    icon: debug ? "🐞" : "🖥️",
-    width: 660,
-    height: 420,
+    title: name,
+    icon,
+    width: 640,
+    height: 400,
     content: (
       <ProcessConsoleApp
         path={path}

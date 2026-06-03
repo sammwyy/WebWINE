@@ -4,11 +4,14 @@ import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
 import type { DirectoryEntry } from "../../lib/worker.js";
 import { formatSize } from "../../lib/utils.js";
 
+import { useThemeStore } from "../../stores/useThemeStore.js";
+
 export function openExplorer(initialPath: string, runtime: RuntimeBridge) {
-  useWindowStore.getState().openWindow({
-    title: initialPath,
-    icon: "📁",
-    width: 560,
+  const theme = useThemeStore.getState().theme;
+  const winId = useWindowStore.getState().openWindow({
+    title: "File Explorer",
+    icon: `/themes/${theme}/icons/apps/explorer.webp`,
+    width: 600,
     height: 400,
     content: <ExplorerApp initialPath={initialPath} runtime={runtime} />,
   });

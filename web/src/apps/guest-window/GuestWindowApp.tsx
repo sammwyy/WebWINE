@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useWindowStore } from "../../stores/useWindowStore.js";
+import { useThemeStore } from "../../stores/useThemeStore.js";
 import { showMessageBox } from "../message-box/MessageBoxApp.js";
 import { beep } from "../../lib/beep.js";
 import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
@@ -14,6 +15,7 @@ interface GuestWindowRecord {
   canvas: HTMLCanvasElement;
   ctx2d: CanvasRenderingContext2D;
   destroyed: boolean;
+  queue: UiEvent[];
 }
 
 const guestWindows = new Map<string, GuestWindowRecord>();
@@ -72,7 +74,10 @@ export function handleUiEvents(
       }
       default: {
         const g = guestWindows.get(key(pid, ev.hwnd as number));
-        if (g) draw(g.ctx2d, ev);
+        if (g) {
+          if (g.ctx2d) draw(g.ctx2d, ev);
+          else g.queue.push(ev);
+        }
       }
     }
   }
@@ -139,9 +144,10 @@ function createGuestWindow(
   const k = key(pid, ev.hwnd);
   if (guestWindows.has(k)) return;
 
+  const theme = useThemeStore.getState().theme;
   const winId = useWindowStore.getState().openWindow({
     title: ev.title || "Window",
-    icon: "🪟",
+    icon: `/themes/${theme}/icons/shell/default_executable.webp`,
     variant: "window",
     width: Math.max(ev.width, 200),
     height: Math.max(ev.height, 120) + 30,
@@ -155,6 +161,7 @@ function createGuestWindow(
     canvas: null as unknown as HTMLCanvasElement,
     ctx2d: null as unknown as CanvasRenderingContext2D,
     destroyed: false,
+    queue: [],
   });
 }
 
@@ -180,6 +187,11 @@ function GuestWindowApp({
     rec.ctx2d = canvasRef.current.getContext("2d")!;
     rec.ctx2d.fillStyle = "#fff";
     rec.ctx2d.fillRect(0, 0, rec.canvas.width, rec.canvas.height);
+
+    for (const queuedEv of rec.queue) {
+      draw(rec.ctx2d, queuedEv);
+    }
+    rec.queue = [];
 
     return () => {
       if (!rec.destroyed) {

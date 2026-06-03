@@ -98,7 +98,11 @@ export function WindowFrame({ record }: WindowFrameProps) {
       >
         {record.icon && (
           <span className="window-icon" aria-hidden="true">
-            {record.icon}
+            {record.icon.includes("/") ? (
+              <img src={record.icon} alt="" style={{ width: 16, height: 16, objectFit: "contain" }} draggable={false} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            ) : (
+              record.icon
+            )}
           </span>
         )}
         <span className="window-title">{record.title}</span>

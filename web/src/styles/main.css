@@ -251,20 +251,30 @@ html, body {
 }
 
 .taskbar-window-button {
-  flex: 0 0 156px;
-  min-width: 156px;
-  max-width: 156px;
-  height: 30px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  height: 100%;
+  padding: 0 12px;
+  max-width: 160px;
+  flex: 1;
   background: var(--taskbar-button);
   border: 1px solid var(--control-border);
   border-radius: var(--taskbar-button-radius);
   color: var(--taskbar-text);
+  font-family: inherit;
+  font-size: 13px;
   cursor: pointer;
-  padding: 0 9px;
-  text-align: left;
+  transition: background 0.15s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.taskbar-window-button.icon-mode-only-icon {
+  flex: 0 0 40px;
+  max-width: 40px;
+  padding: 0;
+  justify-content: center;
 }
 
 .taskbar-window-button:hover {
@@ -1102,7 +1112,7 @@ details[open] .pe-import-dll-name::before {
 
 .msgbox-text {
   font-size: 13px;
-  color: #1a1a1a;
+  color: var(--text, #1a1a1a);
   white-space: pre-wrap;
   word-break: break-word;
   padding-top: 3px;
@@ -1183,3 +1193,13 @@ details[open] .pe-import-dll-name::before {
   padding: 4px 0;
   word-break: break-all;
 }
+
+.start-orb-sprite-img {
+  height: 300%;
+  width: auto;
+  object-fit: contain;
+  transition: none;
+}
+
+#start-button.has-orb { padding: 0 !important; background: transparent !important; overflow: hidden; align-items: flex-start; }
+

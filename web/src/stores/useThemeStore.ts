@@ -9,31 +9,7 @@
 import { create } from "zustand";
 import { invalidateIconCache } from "../lib/icon-resolver.js";
 
-export type ThemeId = "fluent" | "luna" | "classic";
-
-export interface ThemeOption {
-  id: ThemeId;
-  name: string;
-  description: string;
-}
-
-export const THEMES: ThemeOption[] = [
-  {
-    id: "fluent",
-    name: "Fluent (Win10)",
-    description: "Dark square shell with blue focus accents.",
-  },
-  {
-    id: "luna",
-    name: "Luna (WinXP)",
-    description: "Bright blue taskbar, rounded chrome, and warm menu panels.",
-  },
-  {
-    id: "classic",
-    name: "Classic (Win98)",
-    description: "Flat gray controls, beveled borders, and compact chrome.",
-  },
-];
+import { THEMES, type ThemeId, type TaskbarIconMode } from "../lib/themes.js";
 
 const STORAGE_KEY = "webwine_theme";
 const THEME_LINK_ID = "webwine-theme-css";
@@ -82,11 +58,15 @@ function applyWallpaper(id: ThemeId): void {
 
 interface ThemeStore {
   theme: ThemeId;
+  userTaskbarIcon: TaskbarIconMode | null;
   setTheme: (id: ThemeId) => void;
+  setUserTaskbarIcon: (mode: TaskbarIconMode | null) => void;
+  getEffectiveTaskbarIconMode: () => TaskbarIconMode;
 }
 
-export const useThemeStore = create<ThemeStore>((set) => ({
+export const useThemeStore = create<ThemeStore>((set, get) => ({
   theme: storedTheme(),
+  userTaskbarIcon: null, // this could also be read from localStorage later
 
   setTheme: (id) => {
     localStorage.setItem(STORAGE_KEY, id);
@@ -94,6 +74,17 @@ export const useThemeStore = create<ThemeStore>((set) => ({
     applyThemeToDom(id);
     window.dispatchEvent(new Event("webwine:theme-changed"));
     set({ theme: id });
+  },
+
+  setUserTaskbarIcon: (mode) => {
+    set({ userTaskbarIcon: mode });
+  },
+
+  getEffectiveTaskbarIconMode: () => {
+    const { theme, userTaskbarIcon } = get();
+    if (userTaskbarIcon) return userTaskbarIcon;
+    const t = THEMES.find((x) => x.id === theme);
+    return t ? t.taskbarIcon : "full";
   },
 }));
 
