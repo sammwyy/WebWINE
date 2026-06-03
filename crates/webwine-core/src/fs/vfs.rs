@@ -110,11 +110,6 @@ impl VirtualFileSystem {
         );
         Self::ensure_file(
             &mut c,
-            &["Windows", "System32", "themes.exe"],
-            b"special:themes".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
             &["Windows", "System32", "uploadfile.exe"],
             b"special:upload-file".to_vec(),
         );
@@ -152,21 +147,6 @@ impl VirtualFileSystem {
                 "File Explorer.lnk",
             ],
             b"C:\\Windows\\System32\\explorer.exe".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &[
-                "Users",
-                "guest",
-                "AppData",
-                "Roaming",
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "Themes.lnk",
-            ],
-            b"C:\\Windows\\System32\\themes.exe".to_vec(),
         );
         Self::ensure_file(
             &mut c,
@@ -343,10 +323,7 @@ impl VirtualFileSystem {
         }
     }
 
-    fn resolve_dir<'a>(
-        dir: &'a VfsDirectory,
-        components: &[String],
-    ) -> Result<&'a VfsDirectory> {
+    fn resolve_dir<'a>(dir: &'a VfsDirectory, components: &[String]) -> Result<&'a VfsDirectory> {
         if components.is_empty() {
             return Ok(dir);
         }
@@ -365,10 +342,7 @@ impl VirtualFileSystem {
             .ok_or_else(|| VmError::Path("path has no filename".into()))?
             .to_string();
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive_mut(path.drive)?;
         let dir = Self::resolve_dir_mut(drive, &parent_components)?;
@@ -391,10 +365,7 @@ impl VirtualFileSystem {
             .ok_or_else(|| VmError::Path("path has no name".into()))?
             .to_string();
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive_mut(path.drive)?;
         let parent = Self::resolve_dir_mut(drive, &parent_components)?;
@@ -454,10 +425,7 @@ impl VirtualFileSystem {
             .file_name()
             .ok_or_else(|| VmError::Path("path has no filename".into()))?;
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive(path.drive)?;
         let dir = Self::resolve_dir(drive, &parent_components)?;
@@ -487,10 +455,7 @@ impl VirtualFileSystem {
             .file_name()
             .ok_or_else(|| VmError::Path("path has no filename".into()))?;
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive(path.drive)?;
         let dir = Self::resolve_dir(drive, &parent_components)?;
@@ -510,10 +475,7 @@ impl VirtualFileSystem {
             .ok_or_else(|| VmError::Path("path has no name".into()))?
             .to_string();
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive_mut(path.drive)?;
         let parent = Self::resolve_dir_mut(drive, &parent_components)?;
@@ -536,10 +498,7 @@ impl VirtualFileSystem {
             .ok_or_else(|| VmError::Path("path has no name".into()))?
             .to_string();
 
-        let parent_components = path
-            .parent()
-            .map(|p| p.components)
-            .unwrap_or_default();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
 
         let drive = self.get_drive_mut(path.drive)?;
         let parent = Self::resolve_dir_mut(drive, &parent_components)?;
@@ -609,11 +568,15 @@ mod tests {
     fn bootstrap_creates_guest_profile_folders() {
         let fs = VirtualFileSystem::new();
         for folder in ["Desktop", "Documents", "Pictures", "Music", "Videos"] {
-            let entries = fs.list_dir(&format!("C:\\Users\\guest\\{folder}\\")).unwrap();
+            let entries = fs
+                .list_dir(&format!("C:\\Users\\guest\\{folder}\\"))
+                .unwrap();
             assert!(entries.is_empty());
         }
         let start_menu = fs
-            .list_dir("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\")
+            .list_dir(
+                "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\",
+            )
             .unwrap();
         assert!(start_menu.iter().any(|e| e.name == "File Explorer.lnk"));
         let places = fs
@@ -643,7 +606,9 @@ mod tests {
         let mut fs = VirtualFileSystem::new();
         fs.mount_file("C:\\Users\\guest\\Desktop\\hello.txt", b"hi".to_vec())
             .unwrap();
-        let bytes = fs.read_file("C:\\Users\\guest\\Desktop\\hello.txt").unwrap();
+        let bytes = fs
+            .read_file("C:\\Users\\guest\\Desktop\\hello.txt")
+            .unwrap();
         assert_eq!(bytes, b"hi");
     }
 

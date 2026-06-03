@@ -1,11 +1,10 @@
-import "./GuestWindowApp.css";
 import { useEffect, useRef } from "react";
-import { useWindowStore } from "../../stores/useWindowStore.js";
-import { useThemeStore } from "../../stores/useThemeStore.js";
-import { showMessageBox } from "../message-box/MessageBoxApp.js";
-import { beep } from "../../lib/beep.js";
-import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
-import type { UiEvent } from "../../lib/worker.js";
+import { useWindowStore } from "../../state/windowStore";
+
+import { showMessageBox } from "../message-box/MessageBoxApp";
+import { beep } from "../../shared/lib/beep";
+import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
+import type { UiEvent } from "../../core/wasm/worker";
 
 const WM_CLOSE = 0x0010;
 
@@ -168,10 +167,10 @@ function createGuestWindow(
   const k = key(pid, ev.hwnd);
   if (guestWindows.has(k)) return;
 
-  const theme = useThemeStore.getState().theme;
+  
   const winId = useWindowStore.getState().openWindow({
     title: ev.title || "Window",
-    icon: `/themes/${theme}/icons/shell/default_executable.webp`,
+    icon: `/theme/icons/shell/default_executable.webp`,
     variant: "window",
     width: Math.max(ev.width, 200),
     height: Math.max(ev.height, 120) + 30,
@@ -228,7 +227,7 @@ function GuestWindowApp({
   return (
     <canvas
       ref={canvasRef}
-      className="guestwin-canvas"
+      className="w-full h-full block bg-[var(--window-bg,#fff)]"
       width={ev.width}
       height={ev.height}
     />

@@ -1,13 +1,11 @@
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.js";
-import "./styles/main.css";
+
+import { App } from "./App";
+import "@/shared/styles/main.css";
 
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
+    <App />,
   );
 }

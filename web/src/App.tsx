@@ -1,12 +1,8 @@
 import { useEffect, useRef } from "react";
-import { useRuntimeStore } from "./stores/useRuntimeStore.js";
-import { initTheme } from "./stores/useThemeStore.js";
-import { useLogStore } from "./stores/useLogStore.js";
-import { Desktop } from "./components/shell/Desktop.js";
-import { Taskbar } from "./components/shell/Taskbar.js";
-
-// Initialize theme early (reads from localStorage and sets the DOM).
-initTheme();
+import { useRuntimeStore } from "./state/runtimeStore";
+import { useLogStore } from "./state/logStore";
+import { Desktop } from "./modules/desktop/Desktop";
+import { Taskbar } from "./modules/taskbar/Taskbar";
 
 export function App() {
   const { ready, init } = useRuntimeStore();

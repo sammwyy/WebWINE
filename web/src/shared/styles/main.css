@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@import "./variables.css";
+
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--system-font);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--desktop-wallpaper) var(--desktop-bg-fallback) center/cover no-repeat;
+}
+
+pre.raw-viewer-content {
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 12px;
+    color: var(--text);
+    padding: 12px;
+    white-space: pre;
+    overflow: auto;
+    height: 100%;
+}
+
+.process-notice {
+    background: rgba(74, 144, 217, 0.1);
+    border: 1px solid rgba(74, 144, 217, 0.3);
+    border-radius: var(--notice-radius);
+    padding: 12px;
+    margin: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.process-path {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 0 12px;
+}
+
+#log-panel {
+    position: fixed;
+    bottom: 40px;
+    right: 0;
+    width: 380px;
+    height: 200px;
+    background: var(--log-bg);
+    border: 1px solid var(--log-border);
+    border-bottom: none;
+    border-right: none;
+    display: flex;
+    flex-direction: column;
+    z-index: 8000;
+    font-family: monospace;
+}
+
+#log-panel-header {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    height: 24px;
+    border-bottom: 1px solid var(--log-border);
+    font-size: 11px;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+#log-clear-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 0;
+}
+
+#log-clear-btn:hover {
+    color: var(--text);
+}
+
+#log-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2px 0;
+    font-size: 11px;
+}
+
+.log-line {
+    padding: 1px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.log-target {
+    color: var(--accent);
+    margin-right: 4px;
+}
+
+.log-message {
+    color: var(--text);
+}
+
+.log-line.log-warn .log-target {
+    color: #f9e2af;
+}
+
+.log-line.log-error .log-target {
+    color: #f38ba8;
+}
+
+.log-line.log-error .log-message {
+    color: #f38ba8;
+}
+
+.log-line.log-debug .log-target {
+    color: #89b4fa;
+}
+
+.log-line.log-trace .log-target {
+    color: var(--text-muted);
+}
+
+.log-line.log-trace .log-message {
+    color: var(--text-muted);
+}

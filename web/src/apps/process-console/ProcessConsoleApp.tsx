@@ -1,12 +1,11 @@
-import "./ProcessConsoleApp.css";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useWindowStore } from "../../stores/useWindowStore.js";
-import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
-import type { LogEvent, UiEvent } from "../../lib/worker.js";
-import { handleUiEvents } from "../guest-window/GuestWindowApp.js";
-import { basename } from "../../lib/utils.js";
-import { useThemeStore } from "../../stores/useThemeStore.js";
-import { resolveIcon } from "../../lib/icon-resolver.js";
+import { useWindowStore } from "../../state/windowStore";
+import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
+import type { LogEvent, UiEvent } from "../../core/wasm/worker";
+import { handleUiEvents } from "../guest-window/GuestWindowApp";
+import { basename } from "../../shared/lib/utils";
+
+import { resolveIcon } from "../../shared/lib/icon-resolver";
 
 interface ConsoleOptions {
   debug?: boolean;
@@ -19,14 +18,14 @@ export async function openProcessConsole(
   opts: ConsoleOptions = {},
 ) {
   const name = basename(path);
-  const theme = useThemeStore.getState().theme;
+  
   
   // Try to extract icon from PE, fallback to default_executable
   const resolved = await resolveIcon(
     { name, path, kind: "file", size: 0 },
     runtime
   );
-  const icon = resolved?.src || `/themes/${theme}/icons/shell/default_executable.webp`;
+  const icon = resolved?.src || `/theme/icons/shell/default_executable.webp`;
 
   let winId = "";
   winId = useWindowStore.getState().openWindow({
@@ -112,10 +111,11 @@ function ProcessConsoleApp({
   }, []);
 
   const writeLog = useCallback((ev: LogEvent) => {
+    const levelCls = ev.level === "error" ? "text-[#c50f1f]" : ev.level === "warn" ? "text-[#f9f1a5]" : "text-[#3b78ff]";
     setSpans((s) => [
       ...s,
-      { text: `[${ev.target}] `, cls: `term-log term-log-${ev.level} term-log-target` },
-      { text: `${ev.message}\n`, cls: `term-log term-log-${ev.level}` },
+      { text: `[${ev.target}] `, cls: `${levelCls} font-bold` },
+      { text: `${ev.message}\n`, cls: levelCls },
     ]);
   }, []);
 
@@ -156,12 +156,12 @@ function ProcessConsoleApp({
                 if (line.content) {
                   newSpans.push({
                     text: "[stdout] ",
-                    cls: "term-log term-log-info term-log-target",
+                    cls: "text-[#3b78ff] font-bold",
                   });
                 }
                 newSpans.push({
                   text: line.content + (line.nl ? "\n" : ""),
-                  cls: "term-stdout-dbg",
+                  cls: "text-[#cccccc]",
                 });
               }
               setSpans((s) => [...s, ...newSpans]);
@@ -170,7 +170,7 @@ function ProcessConsoleApp({
             }
           },
           stderr: (text) => {
-            if (active) write(text, debug ? "term-stderr-dbg" : "term-stderr");
+            if (active) write(text, "text-[#c50f1f]");
           },
           ui: (events: UiEvent[]) => {
             if (active) handleUiEvents(newPid, events, runtime);
@@ -186,7 +186,7 @@ function ProcessConsoleApp({
             setRunning(false);
             setExited(true);
             setStateText(`exited (${code})`);
-            write(`\n[process exited with code ${code}]\n`, "term-exit");
+            write(`\n[process exited with code ${code}]\n`, "text-[#89b4fa]");
             window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
           },
           crashed: (reason) => {
@@ -194,7 +194,7 @@ function ProcessConsoleApp({
             setRunning(false);
             setExited(true);
             setStateText("crashed");
-            write(`\n[process crashed: ${reason}]\n`, "term-crash");
+            write(`\n[process crashed: ${reason}]\n`, "text-[#c50f1f]");
             window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
           },
         });
@@ -204,7 +204,7 @@ function ProcessConsoleApp({
       .catch((err) => {
         if (!active) return;
         setStateText("error");
-        write(`\n[failed to launch: ${err}]\n`, "term-crash");
+        write(`\n[failed to launch: ${err}]\n`, "text-[#c50f1f]");
       });
 
     return () => {
@@ -219,7 +219,7 @@ function ProcessConsoleApp({
       if (e.key === "Enter") {
         e.preventDefault();
         const line = inputLine + "\n";
-        write(line, debug ? "term-stdin" : undefined);
+        write(line, debug ? "text-[#a6e3a1]" : undefined);
         setInputLine("");
         runtime.writeStdin(pid, line);
       } else if (e.key === "Backspace") {
@@ -234,23 +234,23 @@ function ProcessConsoleApp({
   );
 
   return (
-    <div className="term-body" style={{ height: "100%" }}>
+    <div className="bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] p-2 overflow-auto flex flex-col h-full">
       <div
-        className="term"
+        className="flex-1 flex flex-col whitespace-pre-wrap break-all outline-none"
         tabIndex={0}
         ref={termRef}
         onKeyDown={onKeyDown}
         onMouseDown={() => termRef.current?.focus()}
       >
-        <span className="term-output">
+        <span>
           {spans.map((s, i) => (
             <span key={i} className={s.cls}>
               {s.text}
             </span>
           ))}
         </span>
-        <span className="term-input">{inputLine}</span>
-        {!exited && <span className="term-cursor">█</span>}
+        <span>{inputLine}</span>
+        {!exited && <span className="animate-[blink_1s_step-end_infinite]">█</span>}
       </div>
     </div>
   );

@@ -1,11 +1,10 @@
-import "./ExplorerApp.css";
 import { useEffect, useMemo, useState } from "react";
-import { useWindowStore } from "../../stores/useWindowStore.js";
-import type { RuntimeBridge } from "../../lib/runtime-bridge.js";
-import type { DirectoryEntry } from "../../lib/worker.js";
-import { formatSize } from "../../lib/utils.js";
-import { useThemeStore } from "../../stores/useThemeStore.js";
-import { launchGuestPath } from "../../lib/guest-launch.js";
+import { useWindowStore } from "../../state/windowStore";
+import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
+import type { DirectoryEntry } from "../../core/wasm/worker";
+import { formatSize } from "../../shared/lib/utils";
+
+import { launchGuestPath } from "../../shared/lib/guest-launch";
 
 const ROOT_PATH = "";
 const DRIVE_PATH = "C:\\";
@@ -35,13 +34,13 @@ type SidebarSection = {
 };
 
 export function openExplorer(initialPath = ROOT_PATH, runtime: RuntimeBridge) {
-  const theme = useThemeStore.getState().theme;
+
   const title = initialPath ? `File Explorer - ${initialPath}` : "File Explorer - Your PC";
   const id = useWindowStore.getState().openWindow({
     title,
-    icon: `/themes/${theme}/icons/apps/explorer.webp`,
-    width: 780,
-    height: 500,
+    icon: `/theme/icons/apps/explorer.webp`,
+    width: 920,
+    height: 560,
     content: <div />,
   });
 
@@ -60,7 +59,7 @@ function ExplorerApp({
   runtime: RuntimeBridge;
   windowId: string;
 }) {
-  const { theme } = useThemeStore();
+
   const { setTitle } = useWindowStore();
   const [nav, setNav] = useState<{ history: string[]; index: number }>(() => {
     const root = normalizePath(initialPath);
@@ -76,22 +75,22 @@ function ExplorerApp({
       {
         section: "Quick access",
         items: [
-          { label: "Your PC", path: ROOT_PATH, icon: `/themes/${theme}/icons/places/thispc.webp` },
+          { label: "Your PC", path: ROOT_PATH, icon: `/theme/icons/places/thispc.webp` },
           ...USER_FOLDERS.map((f) => ({
             label: f.label,
             path: f.path,
-            icon: `/themes/${theme}/icons/places/${f.place}.webp`,
+            icon: `/theme/icons/places/${f.place}.webp`,
           })),
         ],
       },
       {
         section: "Drives",
         items: [
-          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `/themes/${theme}/icons/places/thispc.webp` },
+          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `/theme/icons/places/thispc.webp` },
         ],
       },
     ],
-    [theme],
+    [],
   );
 
   useEffect(() => {
@@ -147,63 +146,82 @@ function ExplorerApp({
   const parent = parentPath(path);
 
   return (
-    <div className="explorer-shell">
-      <aside className="explorer-sidebar" aria-label="Explorer shortcuts">
+    <div className="grid grid-cols-[188px_minmax(0,1fr)] max-[560px]:grid-cols-1 h-full min-h-0 text-[#f2f2f2] bg-[#111111]">
+      <aside
+        className="min-w-0 py-2 px-0 overflow-y-auto border-r border-[#2b2b2b] bg-[#191919] max-[560px]:hidden"
+        aria-label="Explorer shortcuts">
         {sections.map((section) => (
-          <div key={section.section} className="explorer-sidebar-section">
-            <div className="explorer-sidebar-title">{section.section}</div>
-            {section.items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className={`explorer-shortcut ${normalizePath(item.path) === path ? "active" : ""}`}
-                onClick={() => navigate(item.path)}
-              >
-                <img src={item.icon} alt="" className="explorer-shortcut-icon" draggable={false} />
-                <span>{item.label}</span>
-              </button>
-            ))}
+          <div key={section.section} className="mt-3 first:mt-0">
+            <div className="px-3 pb-1.5 text-[#a6a6a6] text-[11px] font-normal">
+              {section.section}
+            </div>
+            {section.items.map((item) => {
+              const isActive = normalizePath(item.path) === path;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={[
+                    "w-full min-h-[32px] flex items-center gap-[9px]",
+                    "py-[5px] px-3 rounded-none cursor-default",
+                    "text-[12px] text-left text-[#f2f2f2]",
+                    "border border-transparent",
+                    "hover:bg-[rgba(255,255,255,0.09)]",
+                    isActive
+                      ? "bg-[rgba(255,255,255,0.13)] border-[rgba(255,255,255,0.08)]"
+                      : "bg-transparent",
+                  ].join(" ")}
+                  onClick={() => navigate(item.path)}>
+                  <img src={item.icon} alt="" className="w-5 h-5 object-contain flex-none" draggable={false} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         ))}
       </aside>
 
-      <section className="explorer-main">
-        <div className="explorer-toolbar">
+      <section className="min-w-0 min-h-0 flex flex-col bg-[var(--window-bg)]">
+        <div className="flex items-center gap-1 px-2 py-[6px] border-b border-[var(--window-border)] bg-[#191919]">
           <button
             type="button"
-            className="explorer-nav-btn"
+            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
             disabled={!canGoBack}
             title="Back"
             onClick={goBack}
           >
-            Back
+            ‹
           </button>
+
           <button
             type="button"
-            className="explorer-nav-btn"
+            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
             disabled={!canGoForward}
             title="Forward"
             onClick={goForward}
           >
-            Forward
+            ›
           </button>
+
           <button
             type="button"
-            className="explorer-nav-btn"
+            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[15px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
             disabled={!parent}
             title="Up"
             onClick={() => parent && navigate(parent)}
           >
-            Up
+            ↑
           </button>
+
           <form
-            className="explorer-address"
+            className="flex-1 min-w-0 ml-1"
             onSubmit={(e) => {
               e.preventDefault();
               navigate(address);
             }}
           >
             <input
+              className="w-full h-[30px] px-[9px] border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               aria-label="Path"
@@ -212,25 +230,26 @@ function ExplorerApp({
           </form>
         </div>
 
-        <div className="explorer-breadcrumb">{displayPath(path)}</div>
-
-        <div className="explorer-list" role="table" aria-label="Folder contents">
-          <div className="explorer-header-row" role="row">
+        <div className="flex-1 min-h-0 overflow-auto pb-2" role="table" aria-label="Folder contents">
+          <div
+            className="sticky top-0 z-10 h-[28px] px-3 text-[#a6a6a6] border-b border-[#2b2b2b] bg-[#111111] text-[11px] grid grid-cols-[minmax(180px,1fr)_140px_90px] items-center gap-x-3 max-[560px]:grid-cols-[minmax(150px,1fr)_82px]"
+            role="row"
+          >
             <span>Name</span>
             <span>Type</span>
-            <span>Size</span>
+            <span className="max-[560px]:hidden text-right">Size</span>
           </div>
 
-          {error && <div className="explorer-error">Error: {error}</div>}
+          {error && <div className="text-[#d13438] py-[18px] px-[14px] text-[12px]">Error: {error}</div>}
           {!error && entries.length === 0 && (
-            <div className="explorer-empty">This folder is empty.</div>
+            <div className="text-[var(--shell-muted)] py-[18px] px-[14px] text-[12px]">This folder is empty.</div>
           )}
           {!error &&
             entries.map((entry) => (
               <ExplorerRow
                 key={entry.path}
                 entry={entry}
-                theme={theme}
+
                 onNavigate={navigate}
                 runtime={runtime}
               />
@@ -241,14 +260,15 @@ function ExplorerApp({
   );
 }
 
+
+
 function ExplorerRow({
   entry,
-  theme,
   onNavigate,
   runtime,
 }: {
   entry: DirectoryEntry;
-  theme: string;
+
   onNavigate: (path: string) => void;
   runtime: RuntimeBridge;
 }) {
@@ -259,18 +279,20 @@ function ExplorerRow({
       ? "Drive"
       : lowerName.endsWith(".lnk")
         ? "Shortcut"
-      : "File folder"
+        : "File folder"
     : lowerName.endsWith(".exe")
       ? "Application"
       : lowerName.endsWith(".lnk")
         ? "Shortcut"
-      : lowerName.endsWith(".txt") || lowerName.endsWith(".log")
-        ? "Text document"
-        : "File";
+        : lowerName.endsWith(".txt") || lowerName.endsWith(".log")
+          ? "Text document"
+          : "File";
+
+
 
   return (
     <button
-      className="explorer-row"
+      className={`w-[calc(100%-8px)] min-h-[34px] mx-1 my-px px-2 border border-transparent rounded-[var(--row-radius)] bg-transparent text-inherit cursor-default text-[12px] text-left grid grid-cols-[minmax(180px,1fr)_126px_86px] items-center gap-x-3 max-[560px]:grid-cols-[minmax(150px,1fr)_82px] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] focus:bg-[var(--icon-selected-bg)] focus:border-[var(--icon-selected-border)] outline-none`}
       type="button"
       onDoubleClick={() => {
         if (isDir) {
@@ -280,12 +302,12 @@ function ExplorerRow({
         }
       }}
     >
-      <span className="explorer-name-cell">
-        <img src={iconForEntry(entry, theme)} alt="" className="explorer-icon" draggable={false} />
-        <span className="explorer-name">{entry.name}</span>
+      <span className="min-w-0 flex items-center gap-[9px]">
+        <img src={iconForEntry(entry)} alt="" className="w-[22px] h-[22px] object-contain flex-none" draggable={false} />
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{entry.name}</span>
       </span>
-      <span className="explorer-type">{type}</span>
-      <span className="explorer-size">{isDir ? "" : formatSize(entry.size)}</span>
+      <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
+      <span className="text-[var(--shell-muted)] text-[11px] text-right min-w-0 overflow-hidden text-ellipsis whitespace-nowrap max-[560px]:hidden">{isDir ? "" : formatSize(entry.size)}</span>
     </button>
   );
 }
@@ -322,17 +344,17 @@ function sortEntries(entries: DirectoryEntry[]): DirectoryEntry[] {
   });
 }
 
-function iconForEntry(entry: DirectoryEntry, theme: string): string {
-  if (entry.path === DRIVE_PATH) return `/themes/${theme}/icons/places/thispc.webp`;
+function iconForEntry(entry: DirectoryEntry): string {
+  if (entry.path === DRIVE_PATH) return `/theme/icons/places/thispc.webp`;
 
   const place = USER_FOLDERS.find((f) => f.path === entry.path);
-  if (place) return `/themes/${theme}/icons/places/${place.place}.webp`;
+  if (place) return `/theme/icons/places/${place.place}.webp`;
 
-  if (entry.kind === "directory") return `/themes/${theme}/icons/shell/folder.webp`;
+  if (entry.kind === "directory") return `/theme/icons/shell/folder.webp`;
   const lowerName = entry.name.toLowerCase();
   if (lowerName.endsWith(".exe") || lowerName.endsWith(".dll")) {
-    return `/themes/${theme}/icons/shell/default_executable.webp`;
+    return `/theme/icons/shell/default_executable.webp`;
   }
-  if (lowerName.endsWith(".txt")) return `/themes/${theme}/icons/exts/txt.webp`;
-  return `/themes/${theme}/icons/exts/default.webp`;
+  if (lowerName.endsWith(".txt")) return `/theme/icons/exts/txt.webp`;
+  return `/theme/icons/exts/default.webp`;
 }

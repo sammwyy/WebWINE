@@ -1,0 +1,115 @@
+:root {
+  /* Windows 10 Dark */
+  --bg: #000000;
+  --desktop-bg: #0f1014;
+  --desktop-wallpaper: url('/theme/wallpaper.webp');
+  --desktop-bg-fallback: #0f1014;
+
+  --system-font: "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
+
+  /* Taskbar */
+  --taskbar-height: 40px;
+  --taskbar-bg: rgba(16, 16, 16, 0.92);
+  --taskbar-border: rgba(255, 255, 255, 0.075);
+  --taskbar-button: transparent;
+  --taskbar-button-hover: rgba(255, 255, 255, 0.095);
+  --taskbar-button-active: rgba(255, 255, 255, 0.16);
+  --taskbar-text: #ffffff;
+
+  /* Shell / text */
+  --text: #f2f2f2;
+  --text-muted: #a6a6a6;
+  --shell-text: #f2f2f2;
+  --shell-muted: #b8b8b8;
+  --menu-text: #f2f2f2;
+
+  /* Start menu */
+  --menu-bg: rgba(31, 31, 31, 0.96);
+  --menu-border: rgba(255, 255, 255, 0.10);
+  --shell-menu-hover: rgba(255, 255, 255, 0.10);
+  --shell-menu-active: rgba(255, 255, 255, 0.16);
+
+  /* Accent Win10 */
+  --accent: #0078d7;
+  --accent-hover: #1683dc;
+  --accent-active: #005a9e;
+
+  /* Desktop icons */
+  --icon-hover-bg: rgba(255, 255, 255, 0.11);
+  --icon-hover-border: rgba(255, 255, 255, 0.18);
+  --icon-selected-bg: rgba(0, 120, 215, 0.34);
+  --icon-selected-border: rgba(0, 120, 215, 0.95);
+
+  /* Windows dark */
+  --window-frame-bg: #1f1f1f;
+  --window-frame-border: #383838;
+  --window-focus-border: #0078d7;
+  --window-bg: #111111;
+  --window-content-bg: #111111;
+  --window-content-text: #f2f2f2;
+
+  --window-titlebar-bg: #202020;
+  --window-titlebar-border: #2d2d2d;
+  --window-titlebar-text: #ffffff;
+
+  --window-control-text: #ffffff;
+  --window-control-hover: rgba(255, 255, 255, 0.105);
+  --window-control-active: rgba(255, 255, 255, 0.16);
+  --window-close-hover: #e81123;
+  --window-close-hover-text: #ffffff;
+
+  /* Win10 = square */
+  --window-frame-radius: 0;
+  --icon-radius: 0;
+  --start-button-radius: 0;
+  --start-mark-radius: 0;
+  --taskbar-button-radius: 0;
+  --tray-button-radius: 0;
+  --menu-radius: 0;
+  --menu-item-radius: 0;
+  --start-menu-mark-radius: 0;
+  --theme-option-radius: 0;
+  --theme-preview-radius: 0;
+  --context-menu-radius: 0;
+  --context-item-radius: 0;
+  --dialog-control-radius: 0;
+  --row-radius: 0;
+  --notice-radius: 0;
+
+  --dialog-bg: #202020;
+  --dialog-footer-bg: #1b1b1b;
+  --dialog-border: #2d2d2d;
+  --dialog-button-bg: #333333;
+  --dialog-button-border: #555555;
+  --dialog-button-hover-bg: #3f3f3f;
+  --dialog-button-hover-border: #6b6b6b;
+  --dialog-button-active-bg: #2b2b2b;
+
+  --icon-size: 72px;
+  --log-bg: #131313;
+  --log-border: #2b2b2b;
+}
+
+::selection {
+  color: #ffffff;
+  background: #0078d7;
+}
+
+/* Windows 10 dark-ish scrollbars */
+::-webkit-scrollbar {
+  width: 17px;
+  height: 17px;
+}
+
+::-webkit-scrollbar-track {
+  background: #171717;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555555;
+  border: 4px solid #171717;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b6b6b;
+}
