@@ -145,3 +145,37 @@ DirectX/OpenGL/3D is out of scope; 2D GDI is the graphics path.
 - Auto-save on file mount and on process exit
 - Auto-restore on page load
 - Export-to-file and import-from-file buttons in UI
+
+## Milestone 10 — CLI Metadata Reader
+**Goal:** Parse a managed assembly's structure instead of rejecting it.
+
+- Parse the COR20 (CLI) header from data directory 14
+- Parse the metadata root (`BSJB`), version string, and stream headers
+- Decode the `#~` tables stream header: heap-size flags, valid/sorted bitmasks, row counts
+- Heaps: `#Strings`, `#US` (user strings), `#Blob`, `#GUID`
+- Decode the metadata tables needed for execution: Module, TypeRef, TypeDef,
+  Field, MethodDef, Param, MemberRef, MemberRef parent coded indices, AssemblyRef
+- Resolve the managed entry-point token to a MethodDef row + IL RVA
+- `ClrImage` inspector exposed through the existing Inspect UI for `.NET` exes
+- Tests against a real `csc`-built .NET 2.0 assembly
+
+## Milestone 11 — CIL Interpreter Core
+**Goal:** Execute the IL of a method body on a managed evaluation stack.
+
+- Parse method headers (tiny/fat), code size, local var sig token, max stack
+- Evaluation stack + local/argument slots with a minimal managed value model
+- Core opcodes: `nop`, `ldc.i4*`, `ldstr`, `ldloc*`/`stloc*`, `ldarg*`/`starg*`,
+  `add`/`sub`/`mul`/`div`, comparison + `br*`/`brtrue`/`brfalse`, `call`, `ret`,
+  `dup`, `pop`, `ldnull`, `box`/`unbox` (minimal)
+- Managed call frames; `call` dispatch into other MethodDefs
+- `callvirt`/`call` to BCL methods routed to internal-call intrinsics
+
+## Milestone 12 — Minimal BCL (mscorlib intrinsics)
+**Goal:** A managed "Hello, World" and basic console apps run end to end.
+
+- Internal-call table keyed by `Namespace.Type::Method` (mirrors the Win32 registry)
+- `System.Console.WriteLine`/`Write` (string, int, object) → process console
+- `System.String` essentials: concat, length, `ToString`
+- `System.Int32`/`System.Object.ToString`, `System.Environment.Exit`
+- Managed process integrated into the scheduler + console window (PID/title)
+- Loader dispatches managed images to the CLR path instead of rejecting them
