@@ -89,6 +89,14 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
+        // shell32 — return > 32 (success) with correct stdcall arg counts.
+        ("shell32.dll", "ShellExecuteA",   |c| { c.ret_stdcall(42, 6); Handled::Ok }),
+        ("shell32.dll", "ShellExecuteW",   |c| { c.ret_stdcall(42, 6); Handled::Ok }),
+        ("shell32.dll", "ShellExecuteExA", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("shell32.dll", "ShellExecuteExW", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("shell32.dll", "SHGetFolderPathA",|c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("shell32.dll", "SHGetFolderPathW",|c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("shell32.dll", "CommandLineToArgvW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
         // gdi32 drawing
         ("gdi32.dll", "TextOutA", text_out_a),
         ("gdi32.dll", "TextOutW", text_out_w),

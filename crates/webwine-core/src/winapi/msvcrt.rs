@@ -43,6 +43,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "_initterm_e", initterm_e),
         ("msvcrt.dll", "__p___argc", p_argc),
         ("msvcrt.dll", "__p___argv", p_argv),
+        ("msvcrt.dll", "__getmainargs", getmainargs),
+        ("msvcrt.dll", "__wgetmainargs", wgetmainargs),
         ("msvcrt.dll", "__p__environ", |c| {
             let v = 0x7FFD_F300u32;
             c.ret_cdecl(v);
@@ -453,6 +455,51 @@ fn p_argv(ctx: &mut ApiContext) -> Handled {
     let _ = ctx.memory.write_u32(va, 0x7FFD_F520);
     let _ = ctx.memory.write_bytes(0x7FFD_F520, b"program.exe\0");
     ctx.ret_cdecl(va);
+    Handled::Ok
+}
+
+// __getmainargs(int* argc, char*** argv, char*** env, int wild, _startupinfo*)
+// Fills argc/argv/env so the CRT can call main(argc, argv, env). cdecl.
+fn getmainargs(ctx: &mut ApiContext) -> Handled {
+    let argc_p = ctx.arg(0);
+    let argv_p = ctx.arg(1);
+    let env_p  = ctx.arg(2);
+
+    // argv[0] = "program.exe", argv[1] = NULL
+    let name = ctx.heap_alloc(16);
+    let _ = ctx.memory.write_bytes(name, b"program.exe\0");
+    let argv = ctx.heap_alloc(8);
+    let _ = ctx.memory.write_u32(argv, name);
+    let _ = ctx.memory.write_u32(argv + 4, 0);
+    let env = ctx.heap_alloc(4);
+    let _ = ctx.memory.write_u32(env, 0);
+
+    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, 1); }
+    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
+    if env_p  != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    ctx.ret_cdecl(0);
+    Handled::Ok
+}
+
+// Wide variant: argv/env are wchar_t**.
+fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
+    let argc_p = ctx.arg(0);
+    let argv_p = ctx.arg(1);
+    let env_p  = ctx.arg(2);
+
+    let name = ctx.heap_alloc(32);
+    let wide: Vec<u8> = "program.exe\0".encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let _ = ctx.memory.write_bytes(name, &wide);
+    let argv = ctx.heap_alloc(8);
+    let _ = ctx.memory.write_u32(argv, name);
+    let _ = ctx.memory.write_u32(argv + 4, 0);
+    let env = ctx.heap_alloc(4);
+    let _ = ctx.memory.write_u32(env, 0);
+
+    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, 1); }
+    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
+    if env_p  != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    ctx.ret_cdecl(0);
     Handled::Ok
 }
 
