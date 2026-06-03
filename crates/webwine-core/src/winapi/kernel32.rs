@@ -149,8 +149,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetFilePointer", r0_4),
         ("kernel32.dll", "SetUnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
-        ("kernel32.dll", "GetEnvironmentVariableW", r0_3),
-        ("kernel32.dll", "GetEnvironmentVariableA", r0_3),
+        ("kernel32.dll", "GetEnvironmentVariableW", get_env_var_w),
+        ("kernel32.dll", "GetEnvironmentVariableA", get_env_var_a),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
         (
@@ -161,11 +161,18 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetFullPathNameW", get_full_path_name_w),
         ("kernel32.dll", "GetFullPathNameA", get_full_path_name_a),
         ("kernel32.dll", "GetFileAttributesW", get_file_attributes_w),
+        ("kernel32.dll", "GetFileAttributesA", get_file_attributes_a),
+        ("kernel32.dll", "FindFirstFileW", find_first_file_w),
+        ("kernel32.dll", "FindFirstFileA", find_first_file_a),
+        ("kernel32.dll", "FindNextFileW", find_next_file_w),
+        ("kernel32.dll", "FindNextFileA", find_next_file_a),
+        ("kernel32.dll", "FindClose", find_close),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteConsoleW", write_console_w),
-        ("kernel32.dll", "GetEnvironmentStringsW", r0_0),
+        ("kernel32.dll", "GetEnvironmentStringsW", |c| { let p = env_block(c, true); c.ret_stdcall(p, 0); Handled::Ok }),
+        ("kernel32.dll", "GetEnvironmentStrings", |c| { let p = env_block(c, false); c.ret_stdcall(p, 0); Handled::Ok }),
         ("kernel32.dll", "FreeEnvironmentStringsW", r1_1),
-        ("kernel32.dll", "GetEnvironmentStringsA", r0_0),
+        ("kernel32.dll", "GetEnvironmentStringsA", |c| { let p = env_block(c, false); c.ret_stdcall(p, 0); Handled::Ok }),
         ("kernel32.dll", "FreeEnvironmentStringsA", r1_1),
         ("kernel32.dll", "InitializeCriticalSection", r0_1),
         (
@@ -206,8 +213,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetConsoleWindowInfo", r1_3),
         ("kernel32.dll", "GetConsoleCursorInfo", r1_2),
         ("kernel32.dll", "SetConsoleCursorInfo", r1_2),
-        ("kernel32.dll", "ReadConsoleA", read_file),
-        ("kernel32.dll", "ReadConsoleW", read_file),
+        ("kernel32.dll", "ReadConsoleA", read_console_a),
+        ("kernel32.dll", "ReadConsoleW", read_console_w),
         ("kernel32.dll", "SetConsoleInputExeNameW", r1_1),
         ("kernel32.dll", "SetConsoleInputExeNameA", r1_1),
         ("kernel32.dll", "GetConsoleInputExeNameW", r1_2),
@@ -423,7 +430,10 @@ fn read_file(ctx: &mut ApiContext) -> Handled {
         }
         n
     } else {
-        // console stdin
+        // console stdin: block until input is available (interactive prompt).
+        if ctx.console.stdin.is_empty() {
+            return Handled::Block;
+        }
         let n = max.min(ctx.console.stdin.len() as u32) as usize;
         let data: Vec<u8> = ctx.console.stdin.drain(..n).collect();
         if !data.is_empty() {
@@ -443,6 +453,61 @@ fn close_handle(ctx: &mut ApiContext) -> Handled {
     let h = ctx.arg(0);
     ctx.handles.remove(h);
     ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+// Read one line of console input (up to a newline or the char limit) from the
+// process stdin buffer. Blocks (WaitingForInput) when no input is available, so
+// the frontend can supply typed text. Returns the raw bytes consumed.
+fn read_console_line(ctx: &mut ApiContext, limit: usize) -> Option<Vec<u8>> {
+    if ctx.console.stdin.is_empty() {
+        return None; // caller turns this into Handled::Block
+    }
+    let mut line = Vec::new();
+    while line.len() < limit {
+        match ctx.console.stdin.pop_front() {
+            Some(b) => {
+                line.push(b);
+                if b == b'\n' {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    Some(line)
+}
+
+// ReadConsoleW(hInput, lpBuffer, nChars, lpNumRead, pInputControl) — wide.
+fn read_console_w(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(1);
+    let n_chars = ctx.arg(2) as usize;
+    let out = ctx.arg(3);
+    let Some(line) = read_console_line(ctx, n_chars) else {
+        return Handled::Block;
+    };
+    let wide: Vec<u8> = line.iter().flat_map(|&b| (b as u16).to_le_bytes()).collect();
+    let _ = ctx.memory.write_bytes(buf, &wide);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, line.len() as u32);
+    }
+    ctx.ret_stdcall(1, 5);
+    Handled::Ok
+}
+
+// ReadConsoleA(hInput, lpBuffer, nChars, lpNumRead, pInputControl) — narrow.
+fn read_console_a(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(1);
+    let n_chars = ctx.arg(2) as usize;
+    let out = ctx.arg(3);
+    let Some(line) = read_console_line(ctx, n_chars) else {
+        return Handled::Block;
+    };
+    let _ = ctx.memory.write_bytes(buf, &line);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, line.len() as u32);
+    }
+    ctx.ret_stdcall(1, 5);
     Handled::Ok
 }
 
@@ -606,6 +671,149 @@ fn get_file_attributes_a(ctx: &mut ApiContext) -> Handled {
 fn get_file_attributes_w(ctx: &mut ApiContext) -> Handled {
     let name = ctx.wstr(ctx.arg(0));
     get_file_attributes(ctx, name)
+}
+
+// Match a filename against a DOS wildcard pattern (* and ?), case-insensitive.
+fn wildcard_match(pattern: &str, name: &str) -> bool {
+    fn m(p: &[u8], n: &[u8]) -> bool {
+        match (p.first(), n.first()) {
+            (None, None) => true,
+            (Some(b'*'), _) => m(&p[1..], n) || (!n.is_empty() && m(p, &n[1..])),
+            (Some(b'?'), Some(_)) => m(&p[1..], &n[1..]),
+            (Some(a), Some(b)) if a.eq_ignore_ascii_case(b) => m(&p[1..], &n[1..]),
+            _ => false,
+        }
+    }
+    m(pattern.as_bytes(), name.as_bytes())
+}
+
+// Split a search path "C:\dir\pattern" into (dir, pattern). A bare "*.*" or "*"
+// matches everything.
+fn split_search(path: &str) -> (String, String) {
+    let p = path.replace('/', "\\");
+    match p.rfind('\\') {
+        Some(i) => (p[..i].to_string(), p[i + 1..].to_string()),
+        None => (String::new(), p),
+    }
+}
+
+// Build the match list for a FindFirstFile pattern against the VFS.
+fn find_matches(ctx: &ApiContext, raw: &str) -> Vec<(String, bool, u64)> {
+    let resolved = ctx.resolve_path(raw);
+    let (dir, pat) = split_search(&resolved);
+    let pat = if pat.is_empty() { "*".to_string() } else { pat };
+    let mut out = Vec::new();
+    if let Ok(entries) = ctx.fs.list_dir(&dir) {
+        for e in entries {
+            if wildcard_match(&pat, &e.name) {
+                let is_dir = matches!(e.kind, crate::fs::vfs::EntryKind::Directory);
+                out.push((e.name, is_dir, e.size));
+            }
+        }
+    }
+    out
+}
+
+// Fill a WIN32_FIND_DATAW at `p` for one entry (wide cFileName at +44).
+fn fill_find_data_w(ctx: &mut ApiContext, p: u32, name: &str, is_dir: bool, size: u64) {
+    let attrs = if is_dir { FILE_ATTRIBUTE_DIRECTORY } else { FILE_ATTRIBUTE_NORMAL };
+    let _ = ctx.memory.write_bytes(p, &[0u8; 44]); // attrs + 3 FILETIMEs + sizes + reserved
+    let _ = ctx.memory.write_u32(p, attrs);
+    let _ = ctx.memory.write_u32(p + 28, (size >> 32) as u32);
+    let _ = ctx.memory.write_u32(p + 32, size as u32);
+    let mut wide: Vec<u8> = name.encode_utf16().take(259).flat_map(|c| c.to_le_bytes()).collect();
+    wide.extend_from_slice(&[0, 0]);
+    let _ = ctx.memory.write_bytes(p + 44, &wide);
+}
+
+// Same, ANSI cFileName for WIN32_FIND_DATAA (cFileName at +44, bytes).
+fn fill_find_data_a(ctx: &mut ApiContext, p: u32, name: &str, is_dir: bool, size: u64) {
+    let attrs = if is_dir { FILE_ATTRIBUTE_DIRECTORY } else { FILE_ATTRIBUTE_NORMAL };
+    let _ = ctx.memory.write_bytes(p, &[0u8; 44]);
+    let _ = ctx.memory.write_u32(p, attrs);
+    let _ = ctx.memory.write_u32(p + 28, (size >> 32) as u32);
+    let _ = ctx.memory.write_u32(p + 32, size as u32);
+    let mut bytes = name.as_bytes().to_vec();
+    bytes.truncate(259);
+    bytes.push(0);
+    let _ = ctx.memory.write_bytes(p + 44, &bytes);
+}
+
+const INVALID_HANDLE_VALUE: u32 = 0xFFFF_FFFF;
+const ERROR_NO_MORE_FILES: u32 = 18;
+
+fn find_first_common(ctx: &mut ApiContext, raw: &str, data: u32, wide: bool) -> u32 {
+    let matches = find_matches(ctx, raw);
+    if matches.is_empty() {
+        ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
+        return INVALID_HANDLE_VALUE;
+    }
+    let (name, is_dir, size) = matches[0].clone();
+    if wide { fill_find_data_w(ctx, data, &name, is_dir, size); }
+    else { fill_find_data_a(ctx, data, &name, is_dir, size); }
+    ctx.handles.insert(KernelObject::FindHandle { matches, cursor: 1 })
+}
+
+fn find_first_file_w(ctx: &mut ApiContext) -> Handled {
+    let raw = ctx.wstr(ctx.arg(0));
+    let data = ctx.arg(1);
+    let h = find_first_common(ctx, &raw, data, true);
+    ctx.ret_stdcall(h, 2);
+    Handled::Ok
+}
+
+fn find_first_file_a(ctx: &mut ApiContext) -> Handled {
+    let raw = ctx.cstr(ctx.arg(0));
+    let data = ctx.arg(1);
+    let h = find_first_common(ctx, &raw, data, false);
+    ctx.ret_stdcall(h, 2);
+    Handled::Ok
+}
+
+fn find_next_common(ctx: &mut ApiContext, handle: u32, data: u32, wide: bool) -> u32 {
+    let next = match ctx.handles.get(handle) {
+        Some(KernelObject::FindHandle { matches, cursor }) if *cursor < matches.len() => {
+            Some(matches[*cursor].clone())
+        }
+        _ => None,
+    };
+    match next {
+        Some((name, is_dir, size)) => {
+            if wide { fill_find_data_w(ctx, data, &name, is_dir, size); }
+            else { fill_find_data_a(ctx, data, &name, is_dir, size); }
+            if let Some(KernelObject::FindHandle { cursor, .. }) = ctx.handles.get_mut(handle) {
+                *cursor += 1;
+            }
+            1
+        }
+        None => {
+            ctx.cpu.last_error = ERROR_NO_MORE_FILES;
+            0
+        }
+    }
+}
+
+fn find_next_file_w(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let data = ctx.arg(1);
+    let r = find_next_common(ctx, handle, data, true);
+    ctx.ret_stdcall(r, 2);
+    Handled::Ok
+}
+
+fn find_next_file_a(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let data = ctx.arg(1);
+    let r = find_next_common(ctx, handle, data, false);
+    ctx.ret_stdcall(r, 2);
+    Handled::Ok
+}
+
+fn find_close(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    ctx.handles.remove(handle);
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
 }
 
 // CreateProcessA(appName, cmdLine, procAttr, threadAttr, inherit, flags, env,
@@ -975,6 +1183,110 @@ fn get_module_filename_w(ctx: &mut ApiContext) -> Handled {
     let _ = ctx.memory.write_u16(buf + (n as u32) * 2, 0);
     ctx.ret_stdcall(n as u32, 3);
     Handled::Ok
+}
+
+// Default process environment. cmd.exe aborts with "Null environment" if this
+// is empty, and apps expect the usual variables. Block format: consecutive
+// "NAME=VALUE\0" entries terminated by a final empty string (extra \0).
+const ENV_VARS: &[&str] = &[
+    "ALLUSERSPROFILE=C:\\Users\\guest",
+    "APPDATA=C:\\Users\\guest\\AppData\\Roaming",
+    "ComSpec=C:\\Windows\\System32\\cmd.exe",
+    "COMPUTERNAME=WEBWINE",
+    "HOMEDRIVE=C:",
+    "HOMEPATH=\\Users\\guest",
+    "NUMBER_OF_PROCESSORS=1",
+    "OS=Windows_NT",
+    "Path=C:\\Windows\\System32;C:\\Windows",
+    "PATHEXT=.COM;.EXE;.BAT;.CMD",
+    "PROMPT=$P$G",
+    "SystemDrive=C:",
+    "SystemRoot=C:\\Windows",
+    "TEMP=C:\\Users\\guest\\AppData\\Local\\Temp",
+    "TMP=C:\\Users\\guest\\AppData\\Local\\Temp",
+    "USERNAME=guest",
+    "USERPROFILE=C:\\Users\\guest",
+    "windir=C:\\Windows",
+];
+
+// Look up an environment variable's value by name (case-insensitive).
+fn env_lookup(name: &str) -> Option<&'static str> {
+    ENV_VARS.iter().find_map(|v| {
+        let (k, val) = v.split_once('=')?;
+        if k.eq_ignore_ascii_case(name) { Some(val) } else { None }
+    })
+}
+
+// ERROR_ENVVAR_NOT_FOUND
+const ERROR_ENVVAR_NOT_FOUND: u32 = 203;
+
+fn get_env_var_a(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.cstr(ctx.arg(0));
+    let buf = ctx.arg(1);
+    let size = ctx.arg(2);
+    match env_lookup(&name) {
+        Some(val) => {
+            let mut bytes = val.as_bytes().to_vec();
+            let needed = bytes.len() as u32 + 1;
+            if buf != 0 && size >= needed {
+                bytes.push(0);
+                let _ = ctx.memory.write_bytes(buf, &bytes);
+                ctx.ret_stdcall(needed - 1, 3);
+            } else {
+                ctx.ret_stdcall(needed, 3); // required size incl. NUL
+            }
+        }
+        None => { ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND; ctx.ret_stdcall(0, 3); }
+    }
+    Handled::Ok
+}
+
+fn get_env_var_w(ctx: &mut ApiContext) -> Handled {
+    let name = ctx.wstr(ctx.arg(0));
+    let buf = ctx.arg(1);
+    let size = ctx.arg(2); // in WCHARs
+    match env_lookup(&name) {
+        Some(val) => {
+            let units: Vec<u16> = val.encode_utf16().collect();
+            let needed = units.len() as u32 + 1;
+            if buf != 0 && size >= needed {
+                let mut bytes: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
+                bytes.extend_from_slice(&[0, 0]);
+                let _ = ctx.memory.write_bytes(buf, &bytes);
+                ctx.ret_stdcall(needed - 1, 3);
+            } else {
+                ctx.ret_stdcall(needed, 3);
+            }
+        }
+        None => { ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND; ctx.ret_stdcall(0, 3); }
+    }
+    Handled::Ok
+}
+
+// Build the environment block in guest memory and return its pointer.
+fn env_block(ctx: &mut ApiContext, wide: bool) -> u32 {
+    if wide {
+        let mut units: Vec<u16> = Vec::new();
+        for v in ENV_VARS {
+            units.extend(v.encode_utf16());
+            units.push(0);
+        }
+        units.push(0); // final terminator
+        let bytes: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
+        let p = ctx.heap_alloc(bytes.len() as u32);
+        let _ = ctx.memory.write_bytes(p, &bytes);
+        p
+    } else {
+        let mut bytes: Vec<u8> = Vec::new();
+        for v in ENV_VARS {
+            bytes.extend_from_slice(v.as_bytes());
+            bytes.push(0);
+        }
+        bytes.push(0);
+        let p = ctx.heap_alloc(bytes.len() as u32);
+        let _ = ctx.memory.write_bytes(p, &bytes);
+        p
+    }
 }
 
 fn get_command_line_a(ctx: &mut ApiContext) -> Handled {

@@ -218,19 +218,47 @@ function ProcessConsoleApp({
 
       if (e.key === "Enter") {
         e.preventDefault();
-        const line = inputLine + "\n";
-        write(line, debug ? "text-[#a6e3a1]" : undefined);
-        setInputLine("");
-        runtime.writeStdin(pid, line);
+        write("\n", debug ? "text-[#a6e3a1]" : undefined);
+        runtime.writeStdin(pid, "\n");
       } else if (e.key === "Backspace") {
         e.preventDefault();
-        setInputLine((prev) => prev.slice(0, -1));
+        runtime.writeStdin(pid, "\x08");
+        setSpans((prev) => {
+          const newSpans = [...prev];
+          for (let i = newSpans.length - 1; i >= 0; i--) {
+             if (newSpans[i].text.length > 0) {
+                 newSpans[i] = { ...newSpans[i], text: newSpans[i].text.slice(0, -1) };
+                 break;
+             }
+          }
+          return newSpans;
+        });
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        write("\t", debug ? "text-[#a6e3a1]" : undefined);
+        runtime.writeStdin(pid, "\t");
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        runtime.writeStdin(pid, "\x1b[A");
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        runtime.writeStdin(pid, "\x1b[B");
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        runtime.writeStdin(pid, "\x1b[C");
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        runtime.writeStdin(pid, "\x1b[D");
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        runtime.writeStdin(pid, "\x1b");
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        setInputLine((prev) => prev + e.key);
+        write(e.key, debug ? "text-[#a6e3a1]" : undefined);
+        runtime.writeStdin(pid, e.key);
       }
     },
-    [running, pid, inputLine, write, debug, runtime],
+    [running, pid, write, debug, runtime],
   );
 
   return (
@@ -248,9 +276,8 @@ function ProcessConsoleApp({
               {s.text}
             </span>
           ))}
+          {!exited && <span className="animate-[blink_1s_step-end_infinite]">█</span>}
         </span>
-        <span>{inputLine}</span>
-        {!exited && <span className="animate-[blink_1s_step-end_infinite]">█</span>}
       </div>
     </div>
   );

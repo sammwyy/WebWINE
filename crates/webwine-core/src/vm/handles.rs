@@ -13,6 +13,9 @@ pub enum KernelObject {
     ConsoleOutput(u32),
     ConsoleError(u32),
     VfsFile { path: String, cursor: u64, writable: bool },
+    /// FindFirstFile/FindNextFile enumeration state: matched (name, is_dir, size)
+    /// and a cursor into them.
+    FindHandle { matches: Vec<(String, bool, u64)>, cursor: usize },
 }
 
 pub struct HandleTable {

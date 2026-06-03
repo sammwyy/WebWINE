@@ -75,6 +75,10 @@ fn main() {
         Ok(args) => vm.launch_process_with_args("C:\\Users\\guest\\Desktop\\sample.exe", &args).unwrap(),
         Err(_) => vm.launch_process("C:\\Users\\guest\\Desktop\\sample.exe").unwrap(),
     };
+    // Optional stdin via the STDIN env var (use \n for newlines).
+    if let Ok(s) = std::env::var("STDIN") {
+        let _ = vm.write_stdin(pid, &s.replace("\\n", "\n"));
+    }
     let mut history: Vec<String> = Vec::new();
     let mut stdout = String::new();
 

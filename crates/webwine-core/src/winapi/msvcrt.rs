@@ -36,6 +36,7 @@ pub fn register(r: &mut WinApiRegistry) {
         // wide-string helpers
         ("msvcrt.dll", "wcscpy", wcscpy_fn),
         ("msvcrt.dll", "wcscat", wcscat_fn),
+        ("msvcrt.dll", "wcsncpy", wcsncpy_fn),
         ("msvcrt.dll", "wcscmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
         ("msvcrt.dll", "_wcsicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
         ("msvcrt.dll", "wcschr", wcschr_fn),
@@ -70,6 +71,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "vsprintf", vsprintf_fn),
         ("msvcrt.dll", "_vsnprintf", vsnprintf_fn),
         ("msvcrt.dll", "vsnprintf", vsnprintf_fn),
+        ("msvcrt.dll", "_snwprintf", snwprintf_fn),
+        ("msvcrt.dll", "swprintf", snwprintf_no_count_fn),
+        ("msvcrt.dll", "_vsnwprintf", vsnwprintf_fn),
+        ("msvcrt.dll", "vswprintf", vsnwprintf_no_count_fn),
         ("msvcrt.dll", "_strdup", strdup_fn),
         ("msvcrt.dll", "strdup", strdup_fn),
         ("msvcrt.dll", "signal", |c| {
@@ -442,18 +447,36 @@ fn strcat(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// setjmp/_setjmp3: returns 0 (the initial-call return). NOTE: a faithful
-// longjmp needs MSVC's SEH-aware _setjmp3 semantics (registration/cookie fields
-// + stack unwinding); a naive register save/restore corrupts cmd.exe's control
-// flow, so for now these are no-ops. Full setjmp/longjmp is future work.
+// setjmp/_setjmp3(jmp_buf, ...): save callee-saved regs, esp and the return
+// address into the buffer (MSVC _JUMP_BUFFER: Ebp, Ebx, Edi, Esi, Esp, Eip),
+// then return 0. longjmp restores them to resume here. We don't model SEH
+// unwinding (Registration/Cookie), which is fine for plain error-recovery jumps.
 fn setjmp_fn(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
+    let ret_addr = ctx.memory.read_u32(ctx.cpu.esp).unwrap_or(0);
+    let esp_after = ctx.cpu.esp.wrapping_add(4); // esp once the return address is popped
+    let _ = ctx.memory.write_u32(buf, ctx.cpu.ebp);
+    let _ = ctx.memory.write_u32(buf + 4, ctx.cpu.ebx);
+    let _ = ctx.memory.write_u32(buf + 8, ctx.cpu.edi);
+    let _ = ctx.memory.write_u32(buf + 12, ctx.cpu.esi);
+    let _ = ctx.memory.write_u32(buf + 16, esp_after);
+    let _ = ctx.memory.write_u32(buf + 20, ret_addr);
     ctx.ret_cdecl(0);
     Handled::Ok
 }
 
+// longjmp(jmp_buf, val): restore the saved state and resume at the setjmp site,
+// returning `val` (or 1 if val == 0).
 fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
     let val = ctx.arg(1);
-    ctx.ret_cdecl(if val == 0 { 1 } else { val });
+    ctx.cpu.ebp = ctx.memory.read_u32(buf).unwrap_or(0);
+    ctx.cpu.ebx = ctx.memory.read_u32(buf + 4).unwrap_or(0);
+    ctx.cpu.edi = ctx.memory.read_u32(buf + 8).unwrap_or(0);
+    ctx.cpu.esi = ctx.memory.read_u32(buf + 12).unwrap_or(0);
+    ctx.cpu.esp = ctx.memory.read_u32(buf + 16).unwrap_or(0);
+    ctx.cpu.eip = ctx.memory.read_u32(buf + 20).unwrap_or(0);
+    ctx.cpu.eax = if val == 0 { 1 } else { val };
     Handled::Ok
 }
 
@@ -462,6 +485,21 @@ fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
     let s = ctx.wstr(ctx.arg(1));
     let mut bytes: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
     bytes.extend_from_slice(&[0, 0]);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    ctx.ret_cdecl(dst);
+    Handled::Ok
+}
+
+fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let n = ctx.arg(2) as usize;
+    let s = ctx.wstr(ctx.arg(1));
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut bytes: Vec<u8> = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let c = units.get(i).copied().unwrap_or(0); // NUL-pad if src shorter
+        bytes.extend_from_slice(&c.to_le_bytes());
+    }
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
     Handled::Ok
@@ -711,6 +749,93 @@ fn strdup_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.heap_alloc(bytes.len() as u32);
     let _ = ctx.memory.write_bytes(p, &bytes);
     ctx.ret_cdecl(p);
+    Handled::Ok
+}
+
+// Wide formatting shared core. Reads a wide format string and produces wide
+// output. %s is a wide string arg (wprintf convention); %d/%u/%x/%c handled.
+fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u16> {
+    let mut out: Vec<u16> = Vec::new();
+    let chars: Vec<char> = fmt.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '%' {
+            let mut b = [0u16; 2];
+            for u in chars[i].encode_utf16(&mut b) { out.push(*u); }
+            i += 1;
+            continue;
+        }
+        i += 1;
+        while i < chars.len() && "0123456789-+ #.*lh".contains(chars[i]) { i += 1; }
+        if i >= chars.len() { break; }
+        let spec = chars[i];
+        i += 1;
+        let push_str = |out: &mut Vec<u16>, s: &str| out.extend(s.encode_utf16());
+        match spec {
+            'd' | 'i' => push_str(&mut out, &(src.next(&ctx.memory) as i32).to_string()),
+            'u' => push_str(&mut out, &src.next(&ctx.memory).to_string()),
+            'x' => push_str(&mut out, &format!("{:x}", src.next(&ctx.memory))),
+            'X' => push_str(&mut out, &format!("{:X}", src.next(&ctx.memory))),
+            'p' => push_str(&mut out, &format!("{:08X}", src.next(&ctx.memory))),
+            'c' => out.push(src.next(&ctx.memory) as u16),
+            's' => { let ptr = src.next(&ctx.memory); out.extend(ctx.memory.read_wstr(ptr).encode_utf16()); }
+            'S' => { let ptr = src.next(&ctx.memory); push_str(&mut out, &ctx.memory.read_cstr(ptr)); }
+            '%' => out.push(b'%' as u16),
+            _ => { out.push(b'%' as u16); out.push(spec as u16); }
+        }
+    }
+    out
+}
+
+fn write_wide(ctx: &mut ApiContext, dst: u32, cap: usize, units: &[u16]) -> u32 {
+    let n = if cap > 0 { units.len().min(cap - 1) } else { units.len() };
+    let mut bytes: Vec<u8> = units[..n].iter().flat_map(|u| u.to_le_bytes()).collect();
+    bytes.extend_from_slice(&[0, 0]);
+    let _ = ctx.memory.write_bytes(dst, &bytes);
+    n as u32
+}
+
+// _snwprintf(buf, count, fmt, ...)
+fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let cap = ctx.arg(1) as usize;
+    let fmt = ctx.wstr(ctx.arg(2));
+    let units = format_wide(ctx, &fmt, ArgSrc::Stack { esp: ctx.cpu.esp, idx: 3 });
+    let n = write_wide(ctx, dst, cap, &units);
+    ctx.ret_cdecl(n);
+    Handled::Ok
+}
+
+// swprintf(buf, fmt, ...) — no count argument.
+fn snwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let fmt = ctx.wstr(ctx.arg(1));
+    let units = format_wide(ctx, &fmt, ArgSrc::Stack { esp: ctx.cpu.esp, idx: 2 });
+    let n = write_wide(ctx, dst, 0, &units);
+    ctx.ret_cdecl(n);
+    Handled::Ok
+}
+
+// _vsnwprintf(buf, count, fmt, va_list)
+fn vsnwprintf_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let cap = ctx.arg(1) as usize;
+    let fmt = ctx.wstr(ctx.arg(2));
+    let va = ctx.arg(3);
+    let units = format_wide(ctx, &fmt, ArgSrc::Va { ptr: va, idx: 0 });
+    let n = write_wide(ctx, dst, cap, &units);
+    ctx.ret_cdecl(n);
+    Handled::Ok
+}
+
+// vswprintf(buf, fmt, va_list) — no count argument.
+fn vsnwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
+    let dst = ctx.arg(0);
+    let fmt = ctx.wstr(ctx.arg(1));
+    let va = ctx.arg(2);
+    let units = format_wide(ctx, &fmt, ArgSrc::Va { ptr: va, idx: 0 });
+    let n = write_wide(ctx, dst, 0, &units);
+    ctx.ret_cdecl(n);
     Handled::Ok
 }
 
