@@ -29,6 +29,27 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "RegisterClassExW", register_class_ex_a),
         ("user32.dll", "CreateWindowExA", create_window_ex_a),
         ("user32.dll", "CreateWindowExW", create_window_ex_w),
+        // Dialogs: create a real guest window with the dialog proc as its WndProc.
+        // Controls aren't laid out from the template yet, but the window + message
+        // loop run (WM_INITDIALOG is queued).
+        ("user32.dll", "CreateDialogParamA", create_dialog),
+        ("user32.dll", "CreateDialogParamW", create_dialog),
+        ("user32.dll", "CreateDialogIndirectParamA", create_dialog),
+        ("user32.dll", "CreateDialogIndirectParamW", create_dialog),
+        ("user32.dll", "DialogBoxParamA", create_dialog),
+        ("user32.dll", "DialogBoxParamW", create_dialog),
+        ("user32.dll", "DialogBoxIndirectParamA", create_dialog),
+        ("user32.dll", "DialogBoxIndirectParamW", create_dialog),
+        ("user32.dll", "EndDialog", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "IsDialogMessageW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "IsDialogMessageA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "GetDlgItem", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "SendDlgItemMessageW", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("user32.dll", "SendDlgItemMessageA", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("user32.dll", "SetDlgItemTextW", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
+        ("user32.dll", "GetDlgItemTextW", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("user32.dll", "CheckDlgButton", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
+        ("user32.dll", "IsDlgButtonChecked", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
         ("user32.dll", "ShowWindow", show_window),
         ("user32.dll", "UpdateWindow", update_window),
         ("user32.dll", "DestroyWindow", destroy_window),
@@ -168,6 +189,13 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 2);
             Handled::Ok
         }),
+        ("shell32.dll", "SetCurrentProcessExplicitAppUserModelID", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shell32.dll", "SHGetPropertyStoreForWindow", |c| { c.ret_stdcall(0x8000_4001u32, 3); Handled::Ok }),
+        ("shell32.dll", "SHAddToRecentDocs", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("shell32.dll", "DragAcceptFiles", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("shell32.dll", "ExtractIconW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("shell32.dll", "Shell_NotifyIconW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("shell32.dll", "Shell_NotifyIconA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
         // gdi32 drawing
         ("gdi32.dll", "TextOutA", text_out_a),
         ("gdi32.dll", "TextOutW", text_out_w),
@@ -346,6 +374,43 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
         height: h,
     });
     ctx.ret_stdcall(hwnd, 12);
+    Handled::Ok
+}
+
+// CreateDialogParam/DialogBoxParam(hInst, lpTemplate, hWndParent, lpDialogFunc,
+// dwInitParam) — 5 args. Create a guest window whose WndProc is the dialog proc,
+// then queue WM_INITDIALOG so the proc initializes. Returns the HWND.
+const WM_INITDIALOG: u32 = 0x0110;
+fn create_dialog(ctx: &mut ApiContext) -> Handled {
+    let dlgproc = ctx.arg(3);
+    let init_param = ctx.arg(4);
+    let (w, h) = (600, 460);
+    let hwnd = ctx.gui.next_hwnd;
+    ctx.gui.next_hwnd += 4;
+    ctx.gui.windows.insert(
+        hwnd,
+        WindowEntry {
+            wndproc: dlgproc,
+            needs_paint: true,
+            width: w,
+            height: h,
+            pen_color: 0x00_0000,
+            brush_color: 0xFF_FFFF,
+            cur_x: 0,
+            cur_y: 0,
+        },
+    );
+    ctx.ui_events.push(UiEvent::CreateWindow {
+        hwnd,
+        title: "Dialog".to_string(),
+        x: 120,
+        y: 70,
+        width: w,
+        height: h,
+    });
+    // The dialog manager sends WM_INITDIALOG before the dialog becomes visible.
+    ctx.gui.queue.push_back(GuestMsg { hwnd, message: WM_INITDIALOG, wparam: 0, lparam: init_param });
+    ctx.ret_stdcall(hwnd, 5);
     Handled::Ok
 }
 

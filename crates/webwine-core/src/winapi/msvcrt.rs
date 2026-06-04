@@ -120,6 +120,20 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "__acrt_iob_func", acrt_iob),
         ("msvcrt.dll", "__stdio_common_vfprintf", stdio_vfprintf),
         ("msvcrt.dll", "__stdio_common_vfprintf_s", stdio_vfprintf),
+        // Wide buffer formatting: __stdio_common_vswprintf(opts, buf, count, fmt, locale, va)
+        ("msvcrt.dll", "__stdio_common_vswprintf", stdio_vswprintf),
+        ("msvcrt.dll", "__stdio_common_vswprintf_s", stdio_vswprintf),
+        ("msvcrt.dll", "__stdio_common_vsnwprintf_s", stdio_vswprintf),
+        ("msvcrt.dll", "__stdio_common_vsprintf", stdio_vsprintf),
+        ("msvcrt.dll", "__stdio_common_vsprintf_s", stdio_vsprintf),
+        // C++ runtime mutex primitives (msvcp_win). Correct arg counts; no-op.
+        ("msvcp_win.dll", "_Mtx_init_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Mtx_destroy_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Mtx_lock", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Mtx_unlock", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Mtx_trylock", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Cnd_init_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcp_win.dll", "_Cnd_destroy_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
         ("msvcrt.dll", "__stdio_common_vsprintf", stub_zero_cdecl_1),
         ("msvcrt.dll", "fwrite", fwrite),
         ("msvcrt.dll", "fputc", fputc),
@@ -940,6 +954,35 @@ fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
     let result = format_string(ctx, &fmt, 4);
     ctx.console.stdout.extend_from_slice(result.as_bytes());
     ctx.ret_cdecl(result.len() as u32);
+    Handled::Ok
+}
+
+// __stdio_common_vswprintf(opts(u64), buffer, count, format(wide), locale, va_list)
+// -> wide buffer formatting. opts occupies two arg slots (it is __int64).
+fn stdio_vswprintf(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(2);
+    let count = ctx.arg(3) as usize;
+    let fmt = ctx.wstr(ctx.arg(4));
+    let va = ctx.arg(6);
+    let units = format_wide(ctx, &fmt, ArgSrc::Va { ptr: va, idx: 0 });
+    let n = write_wide(ctx, buf, count, &units);
+    ctx.ret_cdecl(n);
+    Handled::Ok
+}
+
+// __stdio_common_vsprintf(opts(u64), buffer, count, format, locale, va_list)
+fn stdio_vsprintf(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(2);
+    let count = ctx.arg(3) as usize;
+    let fmt = ctx.cstr(ctx.arg(4));
+    let va = ctx.arg(6);
+    let result = format_va(ctx, &fmt, va);
+    let n = if count > 0 { result.len().min(count - 1) } else { result.len() };
+    let mut bytes = result.into_bytes();
+    bytes.truncate(n);
+    bytes.push(0);
+    let _ = ctx.memory.write_bytes(buf, &bytes);
+    ctx.ret_cdecl(n as u32);
     Handled::Ok
 }
 

@@ -191,6 +191,84 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "GetEnvironmentVariableW", get_env_var_w),
         ("kernel32.dll", "GetEnvironmentVariableA", get_env_var_a),
+        ("kernel32.dll", "AreFileApisANSI", |c| { c.ret_stdcall(1, 0); Handled::Ok }),
+        // Secure DLL search-path APIs (putty et al. resolve these dynamically).
+        ("kernel32.dll", "SetDefaultDllDirectories", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "AddDllDirectory", |c| { c.ret_stdcall(0x44_0001, 1); Handled::Ok }),
+        ("kernel32.dll", "RemoveDllDirectory", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "SetDllDirectoryW", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "SetDllDirectoryA", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "SetSearchPathMode", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        // Winsock (ws2_32): present so apps like putty init networking and reach
+        // their UI. Socket ops fail (no real network); init + byte-swap work.
+        ("ws2_32.dll", "WSAStartup", |c| { let d = c.arg(1); if d != 0 { let _ = c.memory.write_u16(d, 0x0202); let _ = c.memory.write_u16(d + 2, 0x0202); } c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "WSACleanup", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ws2_32.dll", "WSAGetLastError", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ws2_32.dll", "WSASetLastError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ws2_32.dll", "WSACreateEvent", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ws2_32.dll", "WSACloseEvent", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("ws2_32.dll", "WSAAsyncSelect", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("ws2_32.dll", "WSAEventSelect", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("ws2_32.dll", "WSAIoctl", |c| { c.ret_stdcall(0xFFFF_FFFF, 9); Handled::Ok }),
+        ("ws2_32.dll", "WSAAddressToStringA", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
+        ("ws2_32.dll", "WSAStringToAddressA", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
+        ("ws2_32.dll", "socket", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),       // INVALID_SOCKET
+        ("ws2_32.dll", "WSASocketA", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
+        ("ws2_32.dll", "closesocket", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ws2_32.dll", "connect", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
+        ("ws2_32.dll", "bind", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
+        ("ws2_32.dll", "listen", |c| { c.ret_stdcall(0xFFFF_FFFF, 2); Handled::Ok }),
+        ("ws2_32.dll", "accept", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
+        ("ws2_32.dll", "send", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
+        ("ws2_32.dll", "recv", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
+        ("ws2_32.dll", "sendto", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
+        ("ws2_32.dll", "recvfrom", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
+        ("ws2_32.dll", "shutdown", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "select", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("ws2_32.dll", "ioctlsocket", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("ws2_32.dll", "getsockname", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
+        ("ws2_32.dll", "getpeername", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
+        ("ws2_32.dll", "getsockopt", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("ws2_32.dll", "setsockopt", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("ws2_32.dll", "gethostname", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "gethostbyname", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ws2_32.dll", "getaddrinfo", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
+        ("ws2_32.dll", "freeaddrinfo", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ws2_32.dll", "getnameinfo", |c| { c.ret_stdcall(0xFFFF_FFFF, 7); Handled::Ok }),
+        ("ws2_32.dll", "inet_addr", |c| { c.ret_stdcall(0xFFFF_FFFF, 1); Handled::Ok }),
+        ("ws2_32.dll", "inet_ntoa", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ws2_32.dll", "htons", |c| { let v = c.arg(0) as u16; c.ret_stdcall(v.swap_bytes() as u32, 1); Handled::Ok }),
+        ("ws2_32.dll", "ntohs", |c| { let v = c.arg(0) as u16; c.ret_stdcall(v.swap_bytes() as u32, 1); Handled::Ok }),
+        ("ws2_32.dll", "htonl", |c| { let v = c.arg(0); c.ret_stdcall(v.swap_bytes(), 1); Handled::Ok }),
+        ("ws2_32.dll", "ntohl", |c| { let v = c.arg(0); c.ret_stdcall(v.swap_bytes(), 1); Handled::Ok }),
+        ("ws2_32.dll", "__WSAFDIsSet", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "WSAWaitForMultipleEvents", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
+        ("ws2_32.dll", "WSAEnumNetworkEvents", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("ws2_32.dll", "WSAGetOverlappedResult", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
+        ("ws2_32.dll", "getservbyname", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "getservbyport", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ws2_32.dll", "inet_ntop", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("ws2_32.dll", "inet_pton", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        // comctl32 — common controls (putty's config dialog uses drag lists etc.)
+        ("comctl32.dll", "InitCommonControls", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("comctl32.dll", "InitCommonControlsEx", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("comctl32.dll", "DrawInsert", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("comctl32.dll", "LBItemFromPt", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
+        ("comctl32.dll", "MakeDragList", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("comctl32.dll", "ImageList_Create", |c| { c.ret_stdcall(0x494C_0001, 5); Handled::Ok }),
+        ("comctl32.dll", "ImageList_Destroy", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("comctl32.dll", "ImageList_AddMasked", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("comctl32.dll", "ImageList_ReplaceIcon", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("comctl32.dll", "_TrackMouseEvent", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("comctl32.dll", "CreateUpDownControl", |c| { c.ret_stdcall(0, 12); Handled::Ok }),
+        ("comctl32.dll", "PropertySheetW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("comctl32.dll", "PropertySheetA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        // GetSystemDirectory/GetWindowsDirectory(lpBuffer, uSize) — 2 args.
+        ("kernel32.dll", "GetSystemDirectoryA", |c| sysdir(c, false, "C:\\Windows\\System32")),
+        ("kernel32.dll", "GetSystemDirectoryW", |c| sysdir(c, true,  "C:\\Windows\\System32")),
+        ("kernel32.dll", "GetWindowsDirectoryA", |c| sysdir(c, false, "C:\\Windows")),
+        ("kernel32.dll", "GetWindowsDirectoryW", |c| sysdir(c, true,  "C:\\Windows")),
+        ("kernel32.dll", "GetSystemWindowsDirectoryW", |c| sysdir(c, true, "C:\\Windows")),
         ("kernel32.dll", "ExpandEnvironmentStringsW", expand_env_strings_w),
         ("kernel32.dll", "ExpandEnvironmentStringsA", expand_env_strings_a),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
@@ -350,6 +428,11 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "Sleep", r0_1),
         ("kernel32.dll", "WaitForSingleObject", r0_2), // WAIT_OBJECT_0
+        ("kernel32.dll", "WaitForSingleObjectEx", r0_3),   // (handle, ms, alertable)
+        ("kernel32.dll", "WaitForMultipleObjects", r0_4),  // (n, handles, all, ms)
+        ("kernel32.dll", "WaitForMultipleObjectsEx", r0_5),
+        ("kernel32.dll", "SignalObjectAndWait", r0_4),
+        ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("kernel32.dll", "CreateEventA", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
         ("kernel32.dll", "CreateEventW", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
         ("kernel32.dll", "CreateMutexA", |c| { c.ret_stdcall(0xE700_0002, 3); Handled::Ok }),
@@ -385,6 +468,40 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll",                         "LocalReAlloc", |c| { let p = c.arg(0); let n = c.arg(1); let r = c.heap_realloc(p, n); c.ret_stdcall(r, 3); Handled::Ok }),
         ("kernel32.dll",                         "LocalSize",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
         ("kernel32.dll",                         "SetPriorityClass", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        // Registry value query (W10 explorer). 7 args; report not-found.
+        ("kernel32.dll", "RegGetValueW", |c| { if c.arg(6) != 0 { let _ = c.memory.write_u32(c.arg(6), 0); } c.ret_stdcall(2, 7); Handled::Ok }),
+        ("kernel32.dll", "RegGetValueA", |c| { if c.arg(6) != 0 { let _ = c.memory.write_u32(c.arg(6), 0); } c.ret_stdcall(2, 7); Handled::Ok }),
+        // Named mutexes / events with the extended (4-arg) variants -> fake handle.
+        ("kernel32.dll", "CreateMutexW",   |c| { c.ret_stdcall(0x4D54_0002, 3); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexA",   |c| { c.ret_stdcall(0x4D54_0002, 3); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexExW", |c| { c.ret_stdcall(0x4D54_0001, 4); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexExA", |c| { c.ret_stdcall(0x4D54_0001, 4); Handled::Ok }),
+        ("kernel32.dll", "CreateEventExW", |c| { c.ret_stdcall(0x4576_0001, 4); Handled::Ok }),
+        ("kernel32.dll", "CreateSemaphoreExW", |c| { c.ret_stdcall(0x5365_0001, 6); Handled::Ok }),
+        ("kernel32.dll", "ReleaseMutex", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        // Condition variables (explorer's CRT/threadpool resolve these dynamically).
+        ("kernel32.dll", "InitializeConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "WakeConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "WakeAllConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "SleepConditionVariableCS", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
+        ("kernel32.dll", "SleepConditionVariableSRW", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        // Threadpool timers/work -> fake handles, no-op (we have no real threads).
+        ("kernel32.dll", "CreateThreadpoolTimer", |c| { c.ret_stdcall(0x5450_0001, 3); Handled::Ok }),
+        ("kernel32.dll", "SetThreadpoolTimer", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("kernel32.dll", "CloseThreadpoolTimer", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "WaitForThreadpoolTimerCallbacks", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("kernel32.dll", "CreateThreadpoolWork", |c| { c.ret_stdcall(0x5450_0002, 3); Handled::Ok }),
+        ("kernel32.dll", "SubmitThreadpoolWork", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "CloseThreadpoolWork", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "WaitForThreadpoolWorkCallbacks", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("kernel32.dll", "RegisterTraceGuidsW", |c| { c.ret_stdcall(0, 8); Handled::Ok }),
+        ("kernel32.dll", "RegisterTraceGuidsA", |c| { c.ret_stdcall(0, 8); Handled::Ok }),
+        ("kernel32.dll", "UnregisterTraceGuids", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "GetTraceLoggerHandle", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "TraceMessage", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("kernel32.dll", "CreateThreadpoolWait", |c| { c.ret_stdcall(0x5450_0003, 3); Handled::Ok }),
+        // ntdll bits explorer resolves dynamically; safe no-ops.
+        ("ntdll.dll", "RtlDllShutdownInProgress", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("kernel32.dll",                         "GetPriorityClass", |c| { c.ret_stdcall(0x20, 1); Handled::Ok }),
         // Activation contexts (theming/manifests): no-op stubs so explorer's
         // dynamic resolve + calls succeed instead of returning NULL.
@@ -434,6 +551,15 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("ole32.dll", "OleUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("ole32.dll", "CoUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        // COM task allocator — must return real memory or C++ code throws bad_alloc.
+        ("ole32.dll", "CoTaskMemAlloc",   |c| { let n = c.arg(0); let p = c.heap_alloc(n); c.ret_stdcall(p, 1); Handled::Ok }),
+        ("ole32.dll", "CoTaskMemFree",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ole32.dll", "CoTaskMemRealloc", |c| { let p = c.arg(0); let n = c.arg(1); let r = c.heap_realloc(p, n); c.ret_stdcall(r, 2); Handled::Ok }),
+        ("ole32.dll", "CoInitialize",     |c| { c.ret_stdcall(0, 1); Handled::Ok }),       // S_OK
+        ("ole32.dll", "CoInitializeEx",   |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ole32.dll", "OleInitialize",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ole32.dll", "CoCreateGuid",     |c| { let p = c.arg(0); if p != 0 { let _ = c.memory.write_bytes(p, &[0u8; 16]); } c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ole32.dll", "CoGetMalloc",      |c| { let o = c.arg(1); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(0x8000_4001u32, 2); Handled::Ok }),
         ("mfc42u.dll", "#1165", |c| {
             let ptr = c.heap_alloc(256); // give it a nice 256 byte chunk to write to
             c.ret_stdcall(ptr, 1);       // guess: 1 arg? The log said "cleaned 1 args"
@@ -1691,6 +1817,32 @@ fn expand_env_strings_w(ctx: &mut ApiContext) -> Handled {
 
 // ERROR_ENVVAR_NOT_FOUND
 const ERROR_ENVVAR_NOT_FOUND: u32 = 203;
+
+// GetSystemDirectory/GetWindowsDirectory(lpBuffer, uSize) -> length written.
+fn sysdir(ctx: &mut ApiContext, wide: bool, path: &str) -> Handled {
+    let buf = ctx.arg(0);
+    let size = ctx.arg(1);
+    let n = if wide {
+        let units: Vec<u16> = path.encode_utf16().collect();
+        let len = units.len() as u32;
+        if buf != 0 && size > len {
+            let mut b: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
+            b.extend_from_slice(&[0, 0]);
+            let _ = ctx.memory.write_bytes(buf, &b);
+            len
+        } else { len + 1 }
+    } else {
+        let bytes = path.as_bytes();
+        let len = bytes.len() as u32;
+        if buf != 0 && size > len {
+            let _ = ctx.memory.write_bytes(buf, bytes);
+            let _ = ctx.memory.write_u8(buf + len, 0);
+            len
+        } else { len + 1 }
+    };
+    ctx.ret_stdcall(n, 2);
+    Handled::Ok
+}
 
 fn get_env_var_a(ctx: &mut ApiContext) -> Handled {
     let name = ctx.cstr(ctx.arg(0));

@@ -34,6 +34,11 @@ pub fn run_slice(
 
     let mut executed = 0u32;
     let mut prev_eip = proc.cpu.eip; // last instruction address, for crash reports
+    // Consecutive faults absorbed by SEH without a clean instruction in between.
+    // A garbage pointer makes every access fault and SEH resume forever; cap it
+    // so the process crashes cleanly instead of hanging.
+    let mut seh_fault_streak = 0u32;
+    const SEH_FAULT_LIMIT: u32 = 512;
 
     loop {
         if executed >= budget {
@@ -66,6 +71,7 @@ pub fn run_slice(
             StepResult::Continue => {
                 executed += 1;
                 prev_eip = cur_eip;
+                seh_fault_streak = 0; // a clean step breaks the fault streak
             }
             StepResult::ApiTrap(va) => {
                 proc.cpu.eip = va; /* handled next iteration */
@@ -94,6 +100,18 @@ pub fn run_slice(
                     // longjmp inside _except_handler4_common). Continue executing
                     // from wherever EIP now points — don't break the slice.
                     executed += 1;
+                    seh_fault_streak += 1;
+                    if seh_fault_streak >= SEH_FAULT_LIMIT {
+                        // SEH keeps resuming into faulting code (garbage pointer /
+                        // unhandled AV loop). Bail with a clear reason.
+                        proc.state = ProcessState::Crashed {
+                            reason: format!(
+                                "SEH fault loop: {SEH_FAULT_LIMIT} consecutive faults absorbed near EIP=0x{:08X} ({r})",
+                                proc.cpu.eip
+                            ),
+                        };
+                        break;
+                    }
                     continue;
                 }
                 proc.state = ProcessState::Crashed { reason: r };

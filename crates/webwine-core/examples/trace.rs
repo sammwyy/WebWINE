@@ -109,8 +109,21 @@ fn main() {
         ));
         if history.len() > 80 { history.remove(0); }
 
-        let r = vm.run_process_slice(pid, 1).unwrap();
+        // SLICE>1 runs faster for long GUI apps; SLICE=1 (default) gives
+        // per-instruction history for precise crash diagnosis.
+        let slice = std::env::var("SLICE").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+        let r = vm.run_process_slice(pid, slice).unwrap();
         stdout.push_str(&r.stdout);
+        for e in &r.ui_events {
+            let d = format!("{e:?}");
+            // Keep it short for blits (the pixel vec is huge).
+            println!("  [ui] {}", &d[..d.len().min(120)]);
+        }
+        if matches!(r.state, ProcessState::WaitingForInput) {
+            println!("WAITING FOR INPUT after ~{} slices (window is up, message loop blocked in GetMessage)", i);
+            println!("stdout: {stdout:?}");
+            return;
+        }
         match r.state {
             ProcessState::Exited { exit_code } => {
                 println!("EXITED code={exit_code} after {i} steps");
