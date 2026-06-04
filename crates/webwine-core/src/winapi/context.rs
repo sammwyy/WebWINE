@@ -16,6 +16,9 @@ pub enum Handled {
     /// CRT's C++ initializer tables, which our synchronous handlers can't call
     /// directly.
     CallChain(Vec<u32>),
+    /// Same as CallChain, but aborts and returns the error code if any function
+    /// returns non-zero. Used by `_initterm_e`.
+    CallChainE(Vec<u32>),
     /// The call blocks (e.g. GetMessage with an empty queue). The executor
     /// suspends the process (WaitingForInput) WITHOUT advancing past the call,
     /// so it re-dispatches when the process is resumed.

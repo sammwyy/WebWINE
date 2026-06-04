@@ -15,7 +15,9 @@ type InMsg =
   | { type: "run_process"; pid: number }
   | { type: "write_stdin"; pid: number; text: string }
   | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
-  | { type: "kill_process"; pid: number };
+  | { type: "kill_process"; pid: number }
+  | { type: "export_vfs"; requestId: string }
+  | { type: "import_vfs"; bytes: ArrayBuffer };
 
 type OutMsg =
   | { type: "ready" }
@@ -31,7 +33,9 @@ type OutMsg =
   | { type: "process_spawned"; parent: number; pid: number; path: string }
   | { type: "process_exited"; pid: number; exit_code: number }
   | { type: "process_crashed"; pid: number; reason: string }
-  | { type: "logs"; events: LogEvent[] };
+  | { type: "logs"; events: LogEvent[] }
+  | { type: "vfs_exported"; requestId: string; bytes: ArrayBuffer }
+  | { type: "vfs_changed" };
 
 export interface DirectoryEntry {
   name: string;
@@ -155,10 +159,12 @@ async function runProcessLoop(pid: number) {
       const s = result.state.state;
       if (s === "exited") {
         send({ type: "process_exited", pid, exit_code: (result.state as { state: "exited"; exit_code: number }).exit_code });
+        send({ type: "vfs_changed" });
         break;
       }
       if (s === "crashed") {
         send({ type: "process_crashed", pid, reason: (result.state as { state: "crashed"; reason: string }).reason });
+        send({ type: "vfs_changed" });
         break;
       }
       if (s !== "running" && s !== "created") break;
@@ -191,9 +197,11 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
     if (msg.type === "mount_file") {
       runtime.mountFile(msg.path, new Uint8Array(msg.bytes));
       flushLogs();
+      send({ type: "vfs_changed" });
     } else if (msg.type === "create_dir") {
       runtime.createDirectory(msg.path);
       flushLogs();
+      send({ type: "vfs_changed" });
     } else if (msg.type === "list_dir") {
       const entries = runtime.listDirectory(msg.path) as DirectoryEntry[];
       flushLogs();
@@ -246,8 +254,21 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
     } else if (msg.type === "delete_node") {
       runtime.deleteNode(msg.path);
       flushLogs();
+      send({ type: "vfs_changed" });
     } else if (msg.type === "rename_node") {
       runtime.renameNode(msg.path, msg.new_name);
+      flushLogs();
+      send({ type: "vfs_changed" });
+    } else if (msg.type === "export_vfs") {
+      const bytes = runtime.exportVfs() as Uint8Array;
+      flushLogs();
+      send({
+        type: "vfs_exported",
+        requestId: msg.requestId,
+        bytes: bytes.buffer as ArrayBuffer,
+      });
+    } else if (msg.type === "import_vfs") {
+      runtime.importVfs(new Uint8Array(msg.bytes));
       flushLogs();
     }
   } catch (err) {

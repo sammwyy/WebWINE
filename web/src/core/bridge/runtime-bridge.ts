@@ -35,6 +35,7 @@ export class RuntimeBridge {
 
   /** Called when a guest process spawns a child via CreateProcess. */
   private spawnListener: ((pid: number, path: string) => void) | null = null;
+  private vfsListeners: Set<() => void> = new Set();
 
   /** Per-PID output callbacks, set by process console windows. */
   private pidHandlers = new Map<number, ProcessHandlers>();
@@ -63,6 +64,11 @@ export class RuntimeBridge {
 
   onProcessSpawned(cb: (pid: number, path: string) => void): void {
     this.spawnListener = cb;
+  }
+
+  onVfsChanged(cb: () => void): () => void {
+    this.vfsListeners.add(cb);
+    return () => this.vfsListeners.delete(cb);
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
@@ -108,6 +114,12 @@ export class RuntimeBridge {
     if (msg.type === "process_crashed") {
       this.pidHandlers.get(msg.pid as number)?.crashed?.(msg.reason as string);
       this.pidHandlers.delete(msg.pid as number);
+      return;
+    }
+    if (msg.type === "vfs_changed") {
+      for (const listener of this.vfsListeners) {
+        listener();
+      }
       return;
     }
 
@@ -266,5 +278,21 @@ export class RuntimeBridge {
       });
       this.send({ type: "inspect_pe", requestId, path });
     });
+  }
+
+  async exportVfs(): Promise<Uint8Array> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) =>
+          resolve(new Uint8Array((r as { bytes: ArrayBuffer }).bytes)),
+        reject,
+      });
+      this.send({ type: "export_vfs", requestId });
+    });
+  }
+
+  async importVfs(bytes: Uint8Array): Promise<void> {
+    this.send({ type: "import_vfs", bytes: bytes.buffer });
   }
 }

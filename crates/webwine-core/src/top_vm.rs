@@ -3,7 +3,7 @@ use crate::fs::vfs::{DirEntry, VirtualFileSystem};
 use crate::logs::{LogBuffer, LogEvent, LogLevel};
 use crate::pe::inspector::{inspect_bytes, PeInfo};
 use crate::pe::loader::load_pe;
-use crate::vm::executor::{run_slice, SliceResult};
+use crate::vm::executor::SliceResult;
 use crate::vm::process::{GuestProcess, ProcessInfo, ProcessState, ProcessTable};
 use crate::clr::{is_managed, ClrImage, ClrRuntime};
 use crate::winapi::{register_all, WinApiRegistry};
@@ -128,6 +128,15 @@ impl WebWineVm {
         Ok(pid)
     }
 
+    pub fn export_vfs(&self) -> Result<Vec<u8>> {
+        self.fs.export_snapshot()
+    }
+
+    pub fn import_vfs(&mut self, bytes: &[u8]) -> Result<()> {
+        self.fs = VirtualFileSystem::import_snapshot(bytes)?;
+        Ok(())
+    }
+
     /// Run a managed process's entry point to completion via the CLR interpreter,
     /// buffering its output into the process console.
     fn run_managed(&mut self, pid: u32) {
@@ -166,7 +175,11 @@ impl WebWineVm {
             let proc = self.processes.get_mut(pid)
                 .ok_or(VmError::ProcessNotFound(pid))?;
             proc.next_child_pid = next_pid;
-            let r = run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)?;
+            let r = if proc.cpu.eip == 0 {
+                crate::vm::executor::SliceResult::done(proc, 0)
+            } else {
+                crate::vm::executor::run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)?
+            };
             let spawns = std::mem::take(&mut proc.spawns);
             (r, spawns)
         };

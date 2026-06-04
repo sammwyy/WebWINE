@@ -1683,7 +1683,8 @@ fn get_module_handle_a(ctx: &mut ApiContext) -> Handled {
     ctx.ret_stdcall(
         ctx.memory
             .regions
-            .first()
+            .values()
+            .next()
             .map(|r| r.base)
             .unwrap_or(0x0040_0000),
         1,
@@ -1701,7 +1702,8 @@ fn get_module_handle_ex(ctx: &mut ApiContext) -> Handled {
     let base = ctx
         .memory
         .regions
-        .first()
+        .values()
+        .next()
         .map(|r| r.base)
         .unwrap_or(0x0040_0000);
     if out != 0 {

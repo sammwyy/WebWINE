@@ -23,15 +23,7 @@ impl GuestPath {
                 return Err(VmError::Path(format!("invalid drive letter in '{raw}'")));
             }
 
-            let rest = if s.len() > 3 {
-                &s[3..]
-            } else if s.len() == 3 {
-                ""
-            } else if s.len() == 2 {
-                ""
-            } else {
-                ""
-            };
+            let rest = s.get(3..).unwrap_or("");
 
             let components = Self::split_components(rest);
             return Ok(GuestPath { drive, components });

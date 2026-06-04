@@ -9,6 +9,9 @@ use crate::error::{Result, VmError};
 
 use super::bcl;
 
+use std::rc::Rc;
+use std::cell::RefCell;
+
 /// A value on the managed evaluation stack. Intentionally minimal — enough for
 /// integer/string console programs. Wider type fidelity comes later.
 #[derive(Clone, Debug)]
@@ -17,7 +20,7 @@ pub enum Value {
     I8(i64),
     R8(f64),
     Str(String),
-    Array(Vec<Value>),
+    Array(Rc<RefCell<Vec<Value>>>),
     Null,
 }
 
@@ -38,7 +41,7 @@ impl Value {
             Value::I8(v) => v.to_string(),
             Value::R8(v) => v.to_string(),
             Value::Str(s) => s.clone(),
-            Value::Array(a) => format!("System.Object[{}]", a.len()),
+            Value::Array(a) => format!("System.Object[{}]", a.borrow().len()),
             Value::Null => String::new(),
         }
     }
@@ -57,6 +60,7 @@ pub struct ClrRuntime<'a> {
     halted: bool,
     steps: u64,
     step_limit: u64,
+    call_depth: usize,
 }
 
 impl<'a> ClrRuntime<'a> {
@@ -67,7 +71,8 @@ impl<'a> ClrRuntime<'a> {
             exit_code: 0,
             halted: false,
             steps: 0,
-            step_limit: 5_000_000,
+            step_limit: 1_000_000,
+            call_depth: 0,
         }
     }
 
@@ -77,16 +82,22 @@ impl<'a> ClrRuntime<'a> {
             .img
             .entry_method_row()
             .ok_or_else(|| VmError::Unsupported("managed entry point is not a MethodDef".into()))?;
-        self.run_method(row, vec![Value::Array(Vec::new())])?;
+        self.run_method(row, vec![Value::Array(Rc::new(RefCell::new(Vec::new())))])?;
         Ok(self.exit_code)
     }
 
     /// Execute a MethodDef body with the given arguments. Returns the value left
     /// on the stack at `ret`, if the method is non-void.
     pub fn run_method(&mut self, method_row: u32, args: Vec<Value>) -> Result<Option<Value>> {
+        if self.call_depth > 200 {
+            return Err(VmError::Unsupported("CLR call stack overflow (depth > 200)".into()));
+        }
+        self.call_depth += 1;
+
         let m = &self.img.meta;
         let rva = m.col(T_METHODDEF, method_row, 0);
         if rva == 0 {
+            self.call_depth -= 1;
             return Err(VmError::Unsupported(format!(
                 "MethodDef {method_row} has no IL body (extern/abstract)"
             )));
@@ -193,6 +204,7 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x2A => {
                     // ret
+                    self.call_depth -= 1;
                     return Ok(stack.pop());
                 }
                 0x72 => {
@@ -207,13 +219,13 @@ impl<'a> ClrRuntime<'a> {
                     let _tok = u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     let size = stack.pop().unwrap_or(Value::I4(0)).as_i4();
-                    stack.push(Value::Array(vec![Value::Null; size.max(0) as usize]));
+                    stack.push(Value::Array(Rc::new(RefCell::new(vec![Value::Null; size.max(0) as usize]))));
                 }
                 0x8E => {
                     // ldlen
                     let arr = stack.pop().unwrap_or(Value::Null);
                     let len = match arr {
-                        Value::Array(a) => a.len() as i32,
+                        Value::Array(a) => a.borrow().len() as i32,
                         _ => 0,
                     };
                     stack.push(Value::I4(len));
@@ -223,7 +235,7 @@ impl<'a> ClrRuntime<'a> {
                     let idx = stack.pop().unwrap_or(Value::I4(0)).as_i4();
                     let arr = stack.pop().unwrap_or(Value::Null);
                     let val = match arr {
-                        Value::Array(a) => a.get(idx as usize).cloned().unwrap_or(Value::Null),
+                        Value::Array(a) => a.borrow().get(idx as usize).cloned().unwrap_or(Value::Null),
                         _ => Value::Null,
                     };
                     stack.push(val);
@@ -232,11 +244,13 @@ impl<'a> ClrRuntime<'a> {
                     // stelem.ref
                     let val = stack.pop().unwrap_or(Value::Null);
                     let idx = stack.pop().unwrap_or(Value::I4(0)).as_i4();
-                    // We must pop the array, modify it, and... wait, arrays are by-ref in .NET!
-                    // If we pop the array, modify it, we only modify a clone!
-                    // For now, Value::Array is just cloned by value. This is a severe limitation,
-                    // but enough to bypass simple `newarr` / `stelem` sequences in `Main`.
-                    let _arr = stack.pop().unwrap_or(Value::Null);
+                    // We must pop the array, modify it. Since it's Rc<RefCell>, this works!
+                    let arr = stack.pop().unwrap_or(Value::Null);
+                    if let Value::Array(a) = arr {
+                        if let Some(slot) = a.borrow_mut().get_mut(idx as usize) {
+                            *slot = val;
+                        }
+                    }
                 }
                 // arithmetic
                 0x58 => bin_i4(&mut stack, |a, b| a.wrapping_add(b)), // add
@@ -295,12 +309,18 @@ impl<'a> ClrRuntime<'a> {
                 0x30 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a > b),  // bgt.s
                 0x31 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a <= b), // ble.s
                 0x32 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a < b),  // blt.s
+                0x33 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a != b), // bne.un.s
+                0x34 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) >= (b as u32)), // bge.un.s
+                0x35 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) > (b as u32)),  // bgt.un.s
+                0x36 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) <= (b as u32)), // ble.un.s
+                0x37 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) < (b as u32)),  // blt.un.s
                 0x38 => ip = branch_long(&code, ip, true),                  // br
                 0x39 => ip = branch_long(&code, ip, !pop_bool(&mut stack)),   // brfalse
                 0x3A => ip = branch_long(&code, ip, pop_bool(&mut stack)),  // brtrue
                 _ => return Err(VmError::Unsupported(format!("unimplemented CIL opcode 0x{op:02X}"))),
             }
         }
+        self.call_depth -= 1;
         Ok(None)
     }
 

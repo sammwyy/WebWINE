@@ -4,6 +4,7 @@ use crate::error::Result;
 use crate::fs::vfs::VirtualFileSystem;
 use crate::logs::{LogBuffer, LogLevel};
 use crate::vm::cpu::*;
+
 use crate::vm::memory::GuestMemory;
 use crate::vm::process::{GuestProcess, ProcessState};
 use crate::winapi::{ApiContext, Handled, WinApiRegistry};
@@ -26,7 +27,7 @@ pub fn run_slice(
 ) -> Result<SliceResult> {
     match &proc.state {
         ProcessState::Exited { .. } | ProcessState::Crashed { .. } => {
-            return Ok(SliceResult::done(proc));
+            return Ok(SliceResult::done(proc, 0));
         }
         _ => {}
     }
@@ -47,7 +48,7 @@ pub fn run_slice(
         let cur_eip = proc.cpu.eip;
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {
-            match handle_trampoline(proc, api, fs, logs, 0) {
+            match handle_trampoline(proc, api, fs, logs, 0, &mut executed) {
                 Flow::Continue => {}
                 Flow::Block => {
                     // Suspend at the call site; resumed when a message arrives.
@@ -94,7 +95,7 @@ pub fn run_slice(
                 // We call handler(exceptionRecord, establisherFrame, context, dispatcher)
                 // with a stub EXCEPTION_RECORD and CONTEXT.  If the handler returns
                 // EXCEPTION_CONTINUE_EXECUTION (0) we resume; any other value crashes.
-                let handled_by_seh = try_seh(proc, api, fs, logs, &r);
+                let handled_by_seh = try_seh(proc, api, fs, logs, &r, &mut executed);
                 if handled_by_seh {
                     // Handler absorbed the exception. EIP was updated (possibly via
                     // longjmp inside _except_handler4_common). Continue executing
@@ -120,12 +121,12 @@ pub fn run_slice(
         }
     }
 
-    Ok(SliceResult::done(proc))
+    Ok(SliceResult::done(proc, executed))
 }
 
 /// Sentinel return address pushed before a nested guest call. Recognised by
 /// `call_guest_fn` to detect when the called function returns.
-const CALL_SENTINEL: u32 = 0xFFFF_FF00;
+const CALL_SENTINEL: u32 = 0x7FFF_FFFC;
 
 enum Flow {
     Continue,
@@ -143,6 +144,7 @@ fn handle_trampoline(
     fs: &mut VirtualFileSystem,
     logs: &mut LogBuffer,
     depth: u32,
+    executed: &mut u32,
 ) -> Flow {
     let va = proc.cpu.eip;
     // Trace every API call (shown in "Run as debug" and useful for diagnosis).
@@ -179,11 +181,21 @@ fn handle_trampoline(
     match result {
         Some(Handled::Ok) => Flow::Continue,
         Some(Handled::ExitProcess(code)) => Flow::Exit(code),
-        Some(Handled::CallChain(funcs)) => {
+        Some(Handled::CallChain(ref funcs)) | Some(Handled::CallChainE(ref funcs)) => {
+            let is_e = matches!(result, Some(Handled::CallChainE(_)));
             if depth < 8 {
-                for pfn in funcs {
-                    match call_guest_fn(proc, api, fs, logs, pfn, depth + 1) {
-                        Flow::Continue => {}
+                for &pfn in funcs {
+                    match call_guest_fn(proc, api, fs, logs, pfn, depth + 1, executed) {
+                        Flow::Continue => {
+                            if is_e && proc.cpu.eax != 0 {
+                                // For _initterm_e, a non-zero return aborts the chain.
+                                // The EAX value becomes the return value of _initterm_e.
+                                let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
+                                proc.cpu.esp = proc.cpu.esp.wrapping_add(4);
+                                proc.cpu.eip = ret;
+                                return Flow::Continue;
+                            }
+                        }
                         other => return other,
                     }
                 }
@@ -201,7 +213,7 @@ fn handle_trampoline(
         }
         Some(Handled::Invoke { func, args, ret_args }) => {
             // Call the guest function (stdcall: callee cleans its own args).
-            match call_guest_fn_args(proc, api, fs, logs, func, &args, depth + 1) {
+            match call_guest_fn_args(proc, api, fs, logs, func, &args, depth + 1, executed) {
                 Flow::Continue => {}
                 other => return other,
             }
@@ -244,8 +256,9 @@ fn call_guest_fn(
     logs: &mut LogBuffer,
     target: u32,
     depth: u32,
+    executed: &mut u32,
 ) -> Flow {
-    call_guest_fn_args(proc, api, fs, logs, target, &[], depth)
+    call_guest_fn_args(proc, api, fs, logs, target, &[], depth, executed)
 }
 
 /// Call a guest function `target(args...)` and run until it returns.
@@ -260,6 +273,7 @@ fn call_guest_fn_args(
     target: u32,
     args: &[u32],
     depth: u32,
+    executed: &mut u32,
 ) -> Flow {
     for &arg in args.iter().rev() {
         proc.cpu.esp = proc.cpu.esp.wrapping_sub(4);
@@ -273,26 +287,31 @@ fn call_guest_fn_args(
     }
     proc.cpu.eip = target;
 
-    let mut budget = 20_000_000u32;
+    let mut internal = 0u32;
     loop {
         if proc.cpu.eip == CALL_SENTINEL {
             return Flow::Continue;
         }
-        budget -= 1;
-        if budget == 0 {
-            return Flow::Fault(format!("guest function 0x{target:08X} did not return"));
+        if internal >= 20_000_000 {
+            return Flow::Fault("slice budget exceeded during synchronous guest call".into());
         }
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {
-            match handle_trampoline(proc, api, fs, logs, depth) {
-                Flow::Continue => {}
+            match handle_trampoline(proc, api, fs, logs, depth, executed) {
+                Flow::Continue => {
+                    internal += 1;
+                    *executed += 1;
+                    continue;
+                }
                 other => return other,
             }
-            continue;
         }
 
         match step(proc) {
-            StepResult::Continue => {}
+            StepResult::Continue => {
+                internal += 1;
+                *executed += 1;
+            }
             StepResult::ApiTrap(va) => proc.cpu.eip = va,
             StepResult::Exit(code) => return Flow::Exit(code),
             StepResult::Fault(r) => {
@@ -328,6 +347,7 @@ fn try_seh(
     fs: &mut VirtualFileSystem,
     logs: &mut LogBuffer,
     reason: &str,
+    executed: &mut u32,
 ) -> bool {
     use crate::pe::loader::TEB_VA;
     // Exception disposition values (for handlers that return normally).
@@ -392,7 +412,7 @@ fn try_seh(
                         let saved_esp = proc.cpu.esp;
                         
                         proc.cpu.ebp = _ebp; // MSVC filters expect EBP = _ebp
-                        let flow = call_guest_fn_args(proc, api, fs, logs, filter, &[], depth + 1);
+                        let flow = call_guest_fn_args(proc, api, fs, logs, filter, &[], depth + 1, executed);
                         
                         // We must restore CPU registers that shouldn't be clobbered
                         let action = proc.cpu.eax as i32;
@@ -472,7 +492,7 @@ fn try_seh(
         proc.cpu.eip = fault_eip; // in case handler reads it (shouldn't matter)
         proc.cpu.esp = esp_for_handler;
 
-        let flow = call_guest_fn_args(proc, api, fs, logs, handler, &args, 1);
+        let flow = call_guest_fn_args(proc, api, fs, logs, handler, &args, 1, executed);
 
         // ── Check if longjmp fired ──────────────────────────────────────────
         // If _except_handler4_common called longjmp, our longjmp_fn already
@@ -1397,13 +1417,36 @@ fn exec_imul(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> St
 }
 
 fn exec_mul(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> StepResult {
+    let w = op_size(instr, 0);
     let src = match read_op(instr, 0, cpu, mem) {
         Err(e) => return fault(e),
         Ok(v) => v,
     };
-    let r = (cpu.eax as u64) * (src as u64);
-    cpu.eax = r as u32;
-    cpu.edx = (r >> 32) as u32;
+    match w {
+        1 => {
+            let r = (cpu.eax & 0xFF) * src;
+            cpu.eax = (cpu.eax & 0xFFFF_0000) | (r & 0xFFFF);
+            let overflow = (r >> 8) != 0;
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::CF, overflow);
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::OF, overflow);
+        }
+        2 => {
+            let r = (cpu.eax & 0xFFFF) * src;
+            cpu.eax = (cpu.eax & 0xFFFF_0000) | (r & 0xFFFF);
+            cpu.edx = (cpu.edx & 0xFFFF_0000) | ((r >> 16) & 0xFFFF);
+            let overflow = (r >> 16) != 0;
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::CF, overflow);
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::OF, overflow);
+        }
+        _ => {
+            let r = (cpu.eax as u64) * (src as u64);
+            cpu.eax = r as u32;
+            cpu.edx = (r >> 32) as u32;
+            let overflow = (r >> 32) != 0;
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::CF, overflow);
+            crate::vm::cpu::set(&mut cpu.eflags, crate::vm::cpu::OF, overflow);
+        }
+    }
     StepResult::Continue
 }
 
@@ -1449,9 +1492,12 @@ fn exec_shift(
     mem: &mut GuestMemory,
     op: ShiftOp,
 ) -> StepResult {
+    let w = op_size(instr, 0) as u32;
+    let bits = w * 8;
+    let mask = if bits == 32 { 0xFFFFFFFF } else { (1 << bits) - 1 };
     let dst = match read_op(instr, 0, cpu, mem) {
         Err(e) => return fault(e),
-        Ok(v) => v,
+        Ok(v) => v & mask,
     };
     let cnt = (match read_op(instr, 1, cpu, mem) {
         Err(e) => return fault(e),
@@ -1463,25 +1509,45 @@ fn exec_shift(
     let result = match op {
         ShiftOp::Shl => {
             cpu.eflags = if cnt == 1 {
-                let overflow = (dst >> 31) ^ (dst >> 30) & 1;
-                (cpu.eflags & !(CF | OF)) | ((dst >> (32 - cnt)) & 1) | (overflow << 11)
+                let overflow = ((dst >> (bits - 1)) ^ (dst >> (bits - 2))) & 1;
+                (cpu.eflags & !(CF | OF)) | ((dst >> (bits - cnt)) & 1) | (overflow << 11)
             } else {
-                (cpu.eflags & !CF) | ((dst >> (32 - cnt)) & 1)
+                (cpu.eflags & !CF) | ((dst >> (bits - cnt)) & 1)
             };
-            dst << cnt
+            (dst << cnt) & mask
         }
         ShiftOp::Shr => {
             cpu.eflags = (cpu.eflags & !CF) | ((dst >> (cnt - 1)) & 1);
-            dst >> cnt
+            match w {
+                1 => ((dst as u8) >> cnt) as u32,
+                2 => ((dst as u16) >> cnt) as u32,
+                _ => dst >> cnt,
+            }
         }
         ShiftOp::Sar => {
             cpu.eflags = (cpu.eflags & !CF) | ((dst >> (cnt - 1)) & 1);
-            ((dst as i32) >> cnt) as u32
+            match w {
+                1 => ((dst as i8) >> cnt) as u32 & mask,
+                2 => ((dst as i16) >> cnt) as u32 & mask,
+                _ => ((dst as i32) >> cnt) as u32,
+            }
         }
-        ShiftOp::Rol => dst.rotate_left(cnt),
-        ShiftOp::Ror => dst.rotate_right(cnt),
+        ShiftOp::Rol => {
+            match w {
+                1 => (dst as u8).rotate_left(cnt) as u32,
+                2 => (dst as u16).rotate_left(cnt) as u32,
+                _ => dst.rotate_left(cnt),
+            }
+        }
+        ShiftOp::Ror => {
+            match w {
+                1 => (dst as u8).rotate_right(cnt) as u32,
+                2 => (dst as u16).rotate_right(cnt) as u32,
+                _ => dst.rotate_right(cnt),
+            }
+        }
     };
-    set_szp(&mut cpu.eflags, result);
+    crate::vm::cpu::set_szp_w(&mut cpu.eflags, result, w);
     match write_op(instr, 0, result, cpu, mem) {
         Err(e) => fault(e),
         Ok(()) => StepResult::Continue,
@@ -1674,14 +1740,14 @@ fn exec_scas(
         }
         let v = match sz {
             1 => mem.read_u8(cpu.edi).map(|v| v as u32),
+            2 => mem.read_u16(cpu.edi).map(|v| v as u32),
             _ => mem.read_u32(cpu.edi),
         };
         let v = match v {
             Err(e) => return fault(e),
             Ok(v) => v,
         };
-        let r = cpu.eax.wrapping_sub(v);
-        set_sub32(&mut cpu.eflags, cpu.eax, v, r);
+        crate::vm::cpu::flags_sub(&mut cpu.eflags, cpu.eax, v, 0, sz as u32);
         cpu.edi = cpu.edi.wrapping_add(step);
         if repe {
             cpu.ecx -= 1;
@@ -1987,13 +2053,13 @@ pub struct SliceResult {
 }
 
 impl SliceResult {
-    fn done(proc: &mut GuestProcess) -> Self {
+    pub fn done(proc: &mut GuestProcess, executed: u32) -> Self {
         SliceResult {
             pid: proc.pid,
             stdout: String::from_utf8_lossy(&proc.console.drain_stdout()).into_owned(),
             stderr: String::from_utf8_lossy(&proc.console.drain_stderr()).into_owned(),
             state: proc.state.clone(),
-            instructions: 0,
+            instructions: executed,
             ui_events: std::mem::take(&mut proc.ui_events),
             spawned: Vec::new(),
         }

@@ -15,6 +15,8 @@ interface RuntimeStore {
   init: () => Promise<void>;
 }
 
+import { loadVfsSnapshot } from "../shared/lib/vfs-storage";
+
 export const useRuntimeStore = create<RuntimeStore>((set) => ({
   runtime: null,
   ready: false,
@@ -28,6 +30,12 @@ export const useRuntimeStore = create<RuntimeStore>((set) => ({
     });
 
     await rt.ready();
+    await loadVfsSnapshot(rt);
+
+    rt.onVfsChanged(() => {
+      saveVfsSnapshot(rt);
+    });
+
     set({ runtime: rt, ready: true });
   },
 }));

@@ -18,6 +18,8 @@ pub enum VmError {
     ProcessNotFound(u32),
     #[error("memory error: {0}")]
     Memory(String),
+    #[error("internal error: {0}")]
+    Internal(String),
     #[error("load error: {0}")]
     LoadError(String),
     #[error("pe parse error: {0}")]

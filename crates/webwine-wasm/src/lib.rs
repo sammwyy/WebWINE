@@ -159,4 +159,14 @@ impl Runtime {
         let events: Vec<LogEvent> = self.vm.drain_logs();
         serde_wasm_bindgen::to_value(&events).map_err(|e| JsValue::from_str(&e.to_string()))
     }
+
+    #[wasm_bindgen(js_name = exportVfs)]
+    pub fn export_vfs(&self) -> Result<Vec<u8>, JsValue> {
+        self.vm.export_vfs().map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = importVfs)]
+    pub fn import_vfs(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+        self.vm.import_vfs(bytes).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
 }

@@ -54,6 +54,7 @@ pub enum EntryKind {
     Directory,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VirtualFileSystem {
     root: IndexMap<char, VfsDirectory>,
 }
@@ -264,6 +265,7 @@ impl VirtualFileSystem {
             })
         });
         if let VfsNode::Directory(child) = entry {
+            child.name = parts[0].to_string();
             Self::ensure_dir_chain(child, &parts[1..]);
         }
     }
@@ -292,6 +294,7 @@ impl VirtualFileSystem {
             })
         });
         if let VfsNode::Directory(child) = entry {
+            child.name = parts[0].to_string();
             Self::ensure_file(child, &parts[1..], bytes);
         }
     }
@@ -420,6 +423,14 @@ impl VirtualFileSystem {
     }
 
     pub fn read_file(&self, guest_path: &str) -> Result<Vec<u8>> {
+        self.read_file_internal(guest_path, 0)
+    }
+
+    fn read_file_internal(&self, guest_path: &str, depth: usize) -> Result<Vec<u8>> {
+        if depth > 10 {
+            return Err(VmError::Path("symlink loop detected".into()));
+        }
+
         let path = GuestPath::parse(guest_path)?;
         let file_name = path
             .file_name()
@@ -438,7 +449,7 @@ impl VirtualFileSystem {
                         return Ok(f.bytes.clone());
                     }
                     if self.node_exists(&target) {
-                        return self.read_file(&target);
+                        return self.read_file_internal(&target, depth + 1);
                     }
                 }
                 Ok(f.bytes.clone())
@@ -573,6 +584,8 @@ impl VirtualFileSystem {
         dir.children.contains_key(&key)
     }
 
+    /// Parses a custom text-based `.lnk` format used internally by WebWINE.
+    /// This only reads the first line of the file and does NOT parse real Windows Shell Link binaries.
     fn shortcut_target(bytes: &[u8]) -> Option<String> {
         let text = String::from_utf8_lossy(bytes);
         let raw = text.lines().next()?.trim();
@@ -581,6 +594,14 @@ impl VirtualFileSystem {
         } else {
             Some(raw.to_string())
         }
+    }
+
+    pub fn export_snapshot(&self) -> Result<Vec<u8>> {
+        bincode::serialize(self).map_err(|e| VmError::Internal(format!("VFS serialize failed: {e}")))
+    }
+
+    pub fn import_snapshot(bytes: &[u8]) -> Result<Self> {
+        bincode::deserialize(bytes).map_err(|e| VmError::Internal(format!("VFS deserialize failed: {e}")))
     }
 }
 

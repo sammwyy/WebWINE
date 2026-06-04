@@ -107,7 +107,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_cdecl(0);
             Handled::Ok
         }),
-        ("msvcrt.dll", "abort", |c| Handled::ExitProcess(3)),
+        ("msvcrt.dll", "abort", |_c| Handled::ExitProcess(3)),
         ("msvcrt.dll", "_initterm", initterm),
         ("msvcrt.dll", "_initterm_e", initterm_e),
         ("msvcrt.dll", "__p___argc", p_argc),
@@ -1328,7 +1328,7 @@ fn initterm(ctx: &mut ApiContext) -> Handled {
 fn initterm_e(ctx: &mut ApiContext) -> Handled {
     let first = ctx.arg(0);
     let last = ctx.arg(1);
-    Handled::CallChain(collect_init_table(ctx, first, last))
+    Handled::CallChainE(collect_init_table(ctx, first, last))
 }
 
 fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec<u32> {

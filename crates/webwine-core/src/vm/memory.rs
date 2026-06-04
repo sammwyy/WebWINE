@@ -21,23 +21,30 @@ pub struct MemoryRegion {
 }
 
 pub struct GuestMemory {
-    pub regions: Vec<MemoryRegion>,
+    pub regions: std::collections::BTreeMap<u32, MemoryRegion>,
 }
 
 impl GuestMemory {
-    pub fn new() -> Self { GuestMemory { regions: Vec::new() } }
+    pub fn new() -> Self { GuestMemory { regions: std::collections::BTreeMap::new() } }
 
     pub fn allocate(&mut self, base: u32, size: u32, prot: PageProt) -> Result<()> {
-        for r in &self.regions {
+        let new_end = base.wrapping_add(size);
+        if let Some((_, r)) = self.regions.range(..=base).next_back() {
             let end = r.base.wrapping_add(r.size);
-            let new_end = base.wrapping_add(size);
-            if base < end && new_end > r.base {
+            if base < end {
                 return Err(VmError::Memory(format!(
                     "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}", r.base, r.size
                 )));
             }
         }
-        self.regions.push(MemoryRegion { base, size, prot, bytes: vec![0u8; size as usize] });
+        if let Some((_, r)) = self.regions.range(base..).next() {
+            if new_end > r.base {
+                return Err(VmError::Memory(format!(
+                    "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}", r.base, r.size
+                )));
+            }
+        }
+        self.regions.insert(base, MemoryRegion { base, size, prot, bytes: vec![0u8; size as usize] });
         Ok(())
     }
 
@@ -46,13 +53,17 @@ impl GuestMemory {
     /// large `malloc`s (e.g. a 16 MB game zone) are actually backed by memory
     /// instead of faulting past a fixed initial heap size.
     pub fn ensure_mapped(&mut self, ptr: u32, end_va: u32) {
-        let Some(base) = self.regions.iter().map(|r| r.base).filter(|&b| b <= ptr).max() else {
-            return;
+        let base = match self.regions.range(..=ptr).next_back() {
+            Some((&b, _)) => b,
+            None => return,
         };
-        // Nearest region above caps how far we may grow.
-        let cap = self.regions.iter().map(|r| r.base).filter(|&b| b > base).min().unwrap_or(u32::MAX);
+        let cap = self.regions
+            .range((std::ops::Bound::Excluded(base), std::ops::Bound::Unbounded))
+            .next()
+            .map(|(&b, _)| b)
+            .unwrap_or(u32::MAX);
         let want_end = end_va.min(cap);
-        let Some(r) = self.regions.iter_mut().find(|r| r.base == base) else { return };
+        let Some(r) = self.regions.get_mut(&base) else { return };
         if want_end <= r.base {
             return;
         }
@@ -69,7 +80,7 @@ impl GuestMemory {
     }
 
     fn region_mut(&mut self, va: u32) -> Option<(&mut MemoryRegion, usize)> {
-        for r in &mut self.regions {
+        if let Some((_, r)) = self.regions.range_mut(..=va).next_back() {
             let base = r.base;
             let size = r.size;
             if va >= base && va < base.wrapping_add(size) {
@@ -81,7 +92,7 @@ impl GuestMemory {
     }
 
     fn region(&self, va: u32) -> Option<(&MemoryRegion, usize)> {
-        for r in &self.regions {
+        if let Some((_, r)) = self.regions.range(..=va).next_back() {
             if va >= r.base && va < r.base.wrapping_add(r.size) {
                 return Some((r, (va - r.base) as usize));
             }
@@ -153,13 +164,13 @@ impl GuestMemory {
             match self.read_u16(addr) {
                 Ok(0) | Err(_) => break,
                 Ok(c) => {
-                    s.push(char::from_u32(c as u32).unwrap_or('?'));
+                    s.push(c);
                     addr = addr.wrapping_add(2);
                 }
             }
             if s.len() > 4096 { break; }
         }
-        s.into_iter().collect()
+        String::from_utf16_lossy(&s)
     }
 }
 

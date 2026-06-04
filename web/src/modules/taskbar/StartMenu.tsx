@@ -5,6 +5,7 @@ import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { DirectoryEntry } from "@/core/wasm/worker";
 import { ICON_PLACEHOLDER, resolveIcon } from "@/shared/lib/icons/icon-resolver";
 import { launchGuestPath } from "@/shared/lib/guest-launch";
+import { exportVfsToFile, importVfsFromFile } from "@/shared/lib/vfs-storage";
 
 const START_MENU_PROGRAMS_ROOT =
   "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";
@@ -168,7 +169,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
       onClick={(e) => e.stopPropagation()}
     >
       <div className="grid grid-cols-[48px_minmax(220px,252px)_minmax(268px,1fr)] max-[560px]:grid-cols-[48px_1fr] h-full">
-        <StartRail />
+        <StartRail runtime={runtime} />
 
         <div className="relative min-w-0 pt-3 pr-1.5 pb-2.5 pl-2 overflow-hidden">
           <div className="mb-1.5 px-2 text-[var(--shell-muted)] text-[12px] font-normal">
@@ -243,7 +244,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
   );
 }
 
-function StartRail() {
+function StartRail({ runtime }: { runtime: RuntimeBridge | null }) {
   return (
     <div className="flex flex-col justify-between items-stretch py-1">
       <div className="flex flex-col items-stretch gap-0.5">
@@ -261,6 +262,40 @@ function StartRail() {
       </div>
 
       <div className="flex flex-col items-stretch gap-0.5">
+        <button
+          className="w-12 h-12 grid place-items-center bg-transparent border-none text-[var(--menu-text)] cursor-pointer rounded-none hover:bg-[rgba(255,255,255,0.11)] active:bg-[rgba(255,255,255,0.16)]"
+          type="button"
+          title="Import VFS"
+          aria-label="Import VFS"
+          onClick={() => {
+            if (runtime) importVfsFromFile(runtime);
+          }}
+        >
+          {/* Simple upload icon */}
+          <div className="relative w-[18px] h-[18px]">
+            <div className="absolute top-[2px] left-[8px] w-[2px] h-[10px] bg-current" />
+            <div className="absolute top-[2px] left-[5px] w-[8px] h-[8px] border-t-2 border-l-2 border-current rotate-45" />
+            <div className="absolute bottom-[2px] left-[2px] right-[2px] h-[2px] bg-current" />
+          </div>
+        </button>
+
+        <button
+          className="w-12 h-12 grid place-items-center bg-transparent border-none text-[var(--menu-text)] cursor-pointer rounded-none hover:bg-[rgba(255,255,255,0.11)] active:bg-[rgba(255,255,255,0.16)]"
+          type="button"
+          title="Export VFS"
+          aria-label="Export VFS"
+          onClick={() => {
+            if (runtime) exportVfsToFile(runtime);
+          }}
+        >
+          {/* Simple download icon */}
+          <div className="relative w-[18px] h-[18px]">
+            <div className="absolute top-[2px] left-[8px] w-[2px] h-[10px] bg-current" />
+            <div className="absolute top-[7px] left-[5px] w-[8px] h-[8px] border-b-2 border-r-2 border-current rotate-45" />
+            <div className="absolute bottom-[2px] left-[2px] right-[2px] h-[2px] bg-current" />
+          </div>
+        </button>
+
         <button
           className="w-12 h-12 grid place-items-center bg-transparent border-none text-[var(--menu-text)] cursor-pointer rounded-none hover:bg-[rgba(255,255,255,0.11)] active:bg-[rgba(255,255,255,0.16)]"
           type="button"

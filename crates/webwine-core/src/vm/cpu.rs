@@ -70,7 +70,7 @@ pub fn get_of(f: u32) -> bool {
     f & OF != 0
 }
 
-fn set(f: &mut u32, bit: u32, v: bool) {
+pub fn set(f: &mut u32, bit: u32, v: bool) {
     if v {
         *f |= bit
     } else {
@@ -125,7 +125,7 @@ fn mask_for(w: u32) -> u64 {
     }
 }
 
-fn set_szp_w(f: &mut u32, r: u32, w: u32) {
+pub fn set_szp_w(f: &mut u32, r: u32, w: u32) {
     let sign = 1u64 << (w * 8 - 1);
     set(f, SF, (r as u64 & sign) != 0);
     set(f, ZF, r == 0);

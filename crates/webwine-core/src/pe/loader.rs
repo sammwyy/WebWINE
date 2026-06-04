@@ -163,8 +163,8 @@ pub fn load_pe(
     if let Some(clr) = oh.data_directories.get_clr_runtime_header() {
         if clr.virtual_address != 0 {
             return Err(VmError::Unsupported(
-                ".NET (managed/CLR) executable — needs the .NET runtime, which \
-                 WebWINE does not provide. Only native Win32 PE32 images run."
+                ".NET (managed/CLR) executable — This function only loads native Win32 PE32 images. \
+                 Callers should route this to the CLR engine (run_managed) instead."
                     .into(),
             ));
         }
@@ -309,6 +309,28 @@ pub fn load_pe(
     let mut cpu = X86Cpu::new();
     cpu.eip = entry_point;
     cpu.esp = STACK_TOP - 16;
+
+    // Some CRTs expect argc, argv, envp on the stack
+    // char* envp[] = { NULL }
+    cpu.esp -= 4;
+    mem.write_u32(cpu.esp, 0)?;
+    let envp = cpu.esp;
+
+    // char* argv[] = { "program.exe", NULL }
+    cpu.esp -= 16;
+    let argv_str = cpu.esp;
+    mem.write_bytes(argv_str, b"program.exe\0")?;
+    cpu.esp -= 8;
+    mem.write_u32(cpu.esp + 4, 0)?; // NULL
+    mem.write_u32(cpu.esp, argv_str)?;
+    let argv = cpu.esp;
+
+    // push envp, argv, argc
+    cpu.esp -= 12;
+    mem.write_u32(cpu.esp + 8, envp)?;
+    mem.write_u32(cpu.esp + 4, argv)?;
+    mem.write_u32(cpu.esp, 1)?; // argc = 1
+
     // push zero return address
     cpu.esp -= 4;
     mem.write_u32(cpu.esp, 0)?;
@@ -368,8 +390,12 @@ fn patch_imports(
     const DESC_SIZE: u32 = 20; // IMAGE_IMPORT_DESCRIPTOR
     let mut count = 0usize;
     let mut desc_va = image_base + import_dir.virtual_address;
+    let desc_end = desc_va + import_dir.size;
 
     loop {
+        if desc_va + DESC_SIZE > desc_end {
+            break;
+        }
         let oft  = mem.read_u32(desc_va).unwrap_or(0);          // OriginalFirstThunk (ILT)
         let name = mem.read_u32(desc_va + 12).unwrap_or(0);     // DLL name RVA
         let ft   = mem.read_u32(desc_va + 16).unwrap_or(0);     // FirstThunk (IAT)
