@@ -55,6 +55,20 @@ pub fn register(r: &mut WinApiRegistry) {
         ("winmm.dll", "PlaySoundA", ok_3),
         ("winmm.dll", "PlaySoundW", ok_3),
         ("winmm.dll", "sndPlaySoundA", ok_2),
+
+        // Joystick: report "no joystick connected". Correct stdcall arg counts
+        // matter here -- the default fallback guessed 1 arg for joyGetPosEx (2)
+        // and joyGetDevCapsA (3), under-popping the stack and corrupting the
+        // return address (Touhou 6 crashed with a null deref right after).
+        ("winmm.dll", "joyGetNumDevs", zero_0),       // 0 args -> 0 devices
+        ("winmm.dll", "joyGetPos", joy_unplugged_2),  // (uJoyID, LPJOYINFO)
+        ("winmm.dll", "joyGetPosEx", joy_unplugged_2), // (uJoyID, LPJOYINFOEX)
+        ("winmm.dll", "joyGetDevCapsA", joy_nodriver_3), // (uJoyID, LPJOYCAPS, cb)
+        ("winmm.dll", "joyGetDevCapsW", joy_nodriver_3),
+        ("winmm.dll", "joyGetThreshold", ok_2),       // (uJoyID, LPDWORD)
+        ("winmm.dll", "joySetThreshold", ok_2),
+        ("winmm.dll", "joySetCapture", ok_4),
+        ("winmm.dll", "joyReleaseCapture", ok_1),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -90,6 +104,11 @@ fn time_get_system_time(ctx: &mut ApiContext) -> Handled {
 
 fn zero_0(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 0); Handled::Ok }
 fn ok_1(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 1); Handled::Ok }
+fn ok_4(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 4); Handled::Ok }
+// JOYERR_UNPLUGGED (167): no joystick at this id.
+fn joy_unplugged_2(c: &mut ApiContext) -> Handled { c.ret_stdcall(167, 2); Handled::Ok }
+// MMSYSERR_NODRIVER (6): no joystick driver.
+fn joy_nodriver_3(c: &mut ApiContext) -> Handled { c.ret_stdcall(6, 3); Handled::Ok }
 fn ok_2(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 2); Handled::Ok }
 fn ok_3(c: &mut ApiContext) -> Handled { c.ret_stdcall(0, 3); Handled::Ok }
 fn ok_5(c: &mut ApiContext) -> Handled { c.ret_stdcall(1, 5); Handled::Ok }

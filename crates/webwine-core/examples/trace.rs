@@ -69,11 +69,46 @@ fn main() {
 
     let bytes = std::fs::read(&path).expect("read exe");
     let mut vm = WebWineVm::new();
-    vm.mount_file("C:\\Users\\guest\\Desktop\\sample.exe", bytes).unwrap();
+    // GAMEDIR=<host dir> mounts the whole directory tree under C:\game\ and
+    // launches C:\game\<exe-basename>, so the guest sees the exe next to its
+    // data files/archives (replicates how the frontend mounts a game folder).
+    let exe_guest = if let Ok(dir) = std::env::var("GAMEDIR") {
+        let base = std::path::Path::new(&dir);
+        let mut count = 0usize;
+        let mut stack = vec![base.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).unwrap() {
+                let p = entry.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if let Ok(data) = std::fs::read(&p) {
+                    let rel = p.strip_prefix(base).unwrap().to_string_lossy().replace('/', "\\");
+                    let guest = format!("C:\\game\\{rel}");
+                    // Create parent dirs (mount_file does not auto-create them).
+                    let parts: Vec<&str> = guest.trim_start_matches("C:\\").split('\\').collect();
+                    let mut acc = String::from("C:");
+                    for seg in &parts[..parts.len() - 1] {
+                        acc.push('\\');
+                        acc.push_str(seg);
+                        let _ = vm.create_dir(&acc); // ignore AlreadyExists
+                    }
+                    vm.mount_file(&guest, data).unwrap();
+                    count += 1;
+                }
+            }
+        }
+        let exe_base = std::path::Path::new(&path).file_name().unwrap().to_string_lossy();
+        let exe_guest = format!("C:\\game\\{exe_base}");
+        println!("[trace] mounted {count} files from {dir} -> launching {exe_guest}");
+        exe_guest
+    } else {
+        vm.mount_file("C:\\Users\\guest\\Desktop\\sample.exe", bytes).unwrap();
+        "C:\\Users\\guest\\Desktop\\sample.exe".to_string()
+    };
     // Optional args via the ARGS env var (e.g. ARGS="-iwad doom1.wad").
     let pid = match std::env::var("ARGS") {
-        Ok(args) => vm.launch_process_with_args("C:\\Users\\guest\\Desktop\\sample.exe", &args).unwrap(),
-        Err(_) => vm.launch_process("C:\\Users\\guest\\Desktop\\sample.exe").unwrap(),
+        Ok(args) => vm.launch_process_with_args(&exe_guest, &args).unwrap(),
+        Err(_) => vm.launch_process(&exe_guest).unwrap(),
     };
     // Optional stdin via the STDIN env var (use \n for newlines).
     if let Ok(s) = std::env::var("STDIN") {
@@ -117,7 +152,8 @@ fn main() {
         for e in &r.ui_events {
             let d = format!("{e:?}");
             // Keep it short for blits (the pixel vec is huge).
-            println!("  [ui] {}", &d[..d.len().min(120)]);
+            let d_short: String = d.chars().take(120).collect();
+            println!("  [ui] {}", d_short);
         }
         if matches!(r.state, ProcessState::WaitingForInput) {
             println!("WAITING FOR INPUT after ~{} slices (window is up, message loop blocked in GetMessage)", i);

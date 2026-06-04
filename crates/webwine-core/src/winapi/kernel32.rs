@@ -19,58 +19,216 @@ pub fn register(r: &mut WinApiRegistry) {
         // ERROR_FILE_NOT_FOUND (2) makes apps fall back to defaults.
         ("advapi32.dll", "RegOpenKeyExA", reg_open_key),
         ("advapi32.dll", "RegOpenKeyExW", reg_open_key),
-        ("advapi32.dll", "RegOpenKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
+        ("advapi32.dll", "RegOpenKeyA", |c| {
+            let o = c.arg(2);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 3);
+            Handled::Ok
+        }),
         ("advapi32.dll", "RegQueryValueExA", reg_query_value),
-        ("advapi32.dll", "RegQueryValueExW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
-        ("advapi32.dll", "RegCreateKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
-        ("advapi32.dll", "RegCreateKeyW", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
-        ("advapi32.dll", "RegCreateKeyExA", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
-        ("advapi32.dll", "RegSetValueExA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
-        ("advapi32.dll", "RegSetValueExW", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
-        ("advapi32.dll", "RegCloseKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("advapi32.dll", "RegOpenKeyW", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
-        ("advapi32.dll", "RegCreateKeyExW", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
-        ("advapi32.dll", "RegDeleteValueW", |c| { c.ret_stdcall(2, 2); Handled::Ok }),
-        ("advapi32.dll", "RegDeleteKeyW", |c| { c.ret_stdcall(2, 2); Handled::Ok }),
-        ("advapi32.dll", "RegEnumValueW", |c| { c.ret_stdcall(0x103, 8); Handled::Ok }),  // ERROR_NO_MORE_ITEMS
-        ("advapi32.dll", "RegEnumKeyExW", |c| { c.ret_stdcall(0x103, 8); Handled::Ok }),
-        ("advapi32.dll", "RegQueryInfoKeyW", |c| { c.ret_stdcall(0, 12); Handled::Ok }),
-        ("advapi32.dll", "RegQueryValueW", |c| { c.ret_stdcall(2, 4); Handled::Ok }),
-        ("advapi32.dll", "RegNotifyChangeKeyValue", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("advapi32.dll", "RegFlushKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "SHGetValueA", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
-        ("shlwapi.dll", "SHGetValueW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
-        ("shlwapi.dll", "SHSetValueA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
-        ("shlwapi.dll", "SHSetValueW", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
-        ("shlwapi.dll", "SHRegGetBoolUSValueA", sh_reg_get_bool_us_value),
-        ("shlwapi.dll", "SHRegGetBoolUSValueW", sh_reg_get_bool_us_value),
-        ("shlwapi.dll", "SHRegGetUSValueA", |c| { c.ret_stdcall(2, 8); Handled::Ok }),
-        ("shlwapi.dll", "SHRegGetUSValueW", |c| { c.ret_stdcall(2, 8); Handled::Ok }),
+        ("advapi32.dll", "RegQueryValueExW", |c| {
+            c.ret_stdcall(2, 6);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegCreateKeyA", |c| {
+            let o = c.arg(2);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegCreateKeyW", |c| {
+            let o = c.arg(2);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegCreateKeyExA", |c| {
+            let o = c.arg(7);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 9);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegSetValueExA", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegSetValueExW", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegCloseKey", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegOpenKeyW", |c| {
+            let o = c.arg(2);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegCreateKeyExW", |c| {
+            let o = c.arg(7);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(2, 9);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegDeleteValueW", |c| {
+            c.ret_stdcall(2, 2);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegDeleteKeyW", |c| {
+            c.ret_stdcall(2, 2);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegEnumValueW", |c| {
+            c.ret_stdcall(0x103, 8);
+            Handled::Ok
+        }), // ERROR_NO_MORE_ITEMS
+        ("advapi32.dll", "RegEnumKeyExW", |c| {
+            c.ret_stdcall(0x103, 8);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegQueryInfoKeyW", |c| {
+            c.ret_stdcall(0, 12);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegQueryValueW", |c| {
+            c.ret_stdcall(2, 4);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegNotifyChangeKeyValue", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegFlushKey", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHGetValueA", |c| {
+            c.ret_stdcall(2, 6);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHGetValueW", |c| {
+            c.ret_stdcall(2, 6);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHSetValueA", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHSetValueW", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }),
+        (
+            "shlwapi.dll",
+            "SHRegGetBoolUSValueA",
+            sh_reg_get_bool_us_value,
+        ),
+        (
+            "shlwapi.dll",
+            "SHRegGetBoolUSValueW",
+            sh_reg_get_bool_us_value,
+        ),
+        ("shlwapi.dll", "SHRegGetUSValueA", |c| {
+            c.ret_stdcall(2, 8);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHRegGetUSValueW", |c| {
+            c.ret_stdcall(2, 8);
+            Handled::Ok
+        }),
         ("shlwapi.dll", "SHRegCreateUSKeyA", sh_reg_create_us_key),
         ("shlwapi.dll", "SHRegCreateUSKeyW", sh_reg_create_us_key),
-        ("shlwapi.dll", "SHRegWriteUSValueA", |c| { c.ret_stdcall(0, 7); Handled::Ok }),
-        ("shlwapi.dll", "SHRegWriteUSValueW", |c| { c.ret_stdcall(0, 7); Handled::Ok }),
-        ("shlwapi.dll", "SHRegCloseUSKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "SHRegWriteUSValueA", |c| {
+            c.ret_stdcall(0, 7);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHRegWriteUSValueW", |c| {
+            c.ret_stdcall(0, 7);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHRegCloseUSKey", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
         ("shlwapi.dll", "PathFindFileNameA", path_find_file_name_a),
         ("shlwapi.dll", "PathFindFileNameW", path_find_file_name_w),
-        ("shlwapi.dll", "PathRemoveArgsA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "PathRemoveArgsW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "PathRemoveBlanksA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "PathRemoveBlanksW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "PathRemoveArgsA", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "PathRemoveArgsW", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "PathRemoveBlanksA", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "PathRemoveBlanksW", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
         ("shlwapi.dll", "StrCmpNIA", strcmp_ni_a),
         ("shlwapi.dll", "StrCmpNIW", strcmp_ni_w),
-        ("shlwapi.dll", "#241", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
-        ("shlwapi.dll", "#433", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("shlwapi.dll", "#437", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "#563", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("shlwapi.dll", "#618", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "#16", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("shlwapi.dll", "#241", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "#433", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "#437", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "#563", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "#618", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "#16", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
         ("shlwapi.dll", "SHCreateThreadRef", sh_create_thread_ref),
-        ("shlwapi.dll", "SHSetThreadRef", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shlwapi.dll", "SHGetThreadRef", |c| { let out = c.arg(0); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0x8000_4005, 1); Handled::Ok }),
-        ("shlwapi.dll", "SHReleaseThreadRef", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("comctl32.dll", "InitCommonControlsEx", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-
+        ("shlwapi.dll", "SHSetThreadRef", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHGetThreadRef", |c| {
+            let out = c.arg(0);
+            if out != 0 {
+                let _ = c.memory.write_u32(out, 0);
+            }
+            c.ret_stdcall(0x8000_4005, 1);
+            Handled::Ok
+        }),
+        ("shlwapi.dll", "SHReleaseThreadRef", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "InitCommonControlsEx", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         ("kernel32.dll", "ExitProcess", exit_process),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteFile", write_file),
@@ -95,36 +253,106 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
         ("kernel32.dll", "GetModuleFileNameW", get_module_filename_w),
-        ("kernel32.dll", "SetCurrentDirectoryA", set_current_directory_a),
-        ("kernel32.dll", "SetCurrentDirectoryW", set_current_directory_w),
+        (
+            "kernel32.dll",
+            "SetCurrentDirectoryA",
+            set_current_directory_a,
+        ),
+        (
+            "kernel32.dll",
+            "SetCurrentDirectoryW",
+            set_current_directory_w,
+        ),
         ("kernel32.dll", "GetProcAddress", get_proc_address),
-        ("kernel32.dll", "SetErrorMode", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "lstrlenA", |c| { let n = c.cstr(c.arg(0)).len() as u32; c.ret_stdcall(n, 1); Handled::Ok }),
-        ("kernel32.dll", "lstrlenW", |c| { let n = c.wstr(c.arg(0)).encode_utf16().count() as u32; c.ret_stdcall(n, 1); Handled::Ok }),
-        ("kernel32.dll", "GetPrivateProfileStringA", get_private_profile_string_a),
-        ("kernel32.dll", "GetPrivateProfileStringW", get_private_profile_string_w),
-        ("kernel32.dll", "SetProcessShutdownParameters", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("kernel32.dll", "SetErrorMode", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "lstrlenA", |c| {
+            let n = c.cstr(c.arg(0)).len() as u32;
+            c.ret_stdcall(n, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "lstrlenW", |c| {
+            let n = c.wstr(c.arg(0)).encode_utf16().count() as u32;
+            c.ret_stdcall(n, 1);
+            Handled::Ok
+        }),
+        (
+            "kernel32.dll",
+            "GetPrivateProfileStringA",
+            get_private_profile_string_a,
+        ),
+        (
+            "kernel32.dll",
+            "GetPrivateProfileStringW",
+            get_private_profile_string_w,
+        ),
+        ("kernel32.dll", "SetProcessShutdownParameters", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
         // UI language / locale (cmd.exe resolves these via GetProcAddress). 0x409 = en-US.
-        ("kernel32.dll", "SetThreadUILanguage", |c| { let l = c.arg(0); c.ret_stdcall(if l == 0 { 0x409 } else { l }, 1); Handled::Ok }),
-        ("kernel32.dll", "GetThreadUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetUserDefaultUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetSystemDefaultUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetUserDefaultLangID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetSystemDefaultLangID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetUserDefaultLCID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "GetSystemDefaultLCID", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
+        ("kernel32.dll", "SetThreadUILanguage", |c| {
+            let l = c.arg(0);
+            c.ret_stdcall(if l == 0 { 0x409 } else { l }, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetThreadUILanguage", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetUserDefaultUILanguage", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetSystemDefaultUILanguage", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetUserDefaultLangID", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetSystemDefaultLangID", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetUserDefaultLCID", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetSystemDefaultLCID", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
         ("kernel32.dll", "GetLocaleInfoA", r0_4),
         ("kernel32.dll", "GetLocaleInfoW", r0_4),
-        ("kernel32.dll", "GetThreadLocale", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
-        ("kernel32.dll", "SetThreadLocale", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "GetThreadLocale", |c| {
+            c.ret_stdcall(0x409, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetThreadLocale", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         // Report Windows XP (5.1 build 2600). GetVersion: (build<<16)|(minor<<8)|major.
-        ("kernel32.dll", "GetVersion", |c| { c.ret_stdcall(0x0A28_0105, 0); Handled::Ok }),
+        ("kernel32.dll", "GetVersion", |c| {
+            c.ret_stdcall(0x0A28_0105, 0);
+            Handled::Ok
+        }),
         ("kernel32.dll", "GetVersionExA", get_version_ex),
         ("kernel32.dll", "GetVersionExW", get_version_ex),
         ("kernel32.dll", "LoadLibraryA", load_library_a),
         ("kernel32.dll", "LoadLibraryW", load_library_w),
-        ("kernel32.dll", "LoadLibraryExA", |c| { c.ret_stdcall(FAKE_MODULE, 3); Handled::Ok }),
-        ("kernel32.dll", "LoadLibraryExW", |c| { c.ret_stdcall(FAKE_MODULE, 3); Handled::Ok }),
+        ("kernel32.dll", "LoadLibraryExA", |c| {
+            c.ret_stdcall(FAKE_MODULE, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "LoadLibraryExW", |c| {
+            c.ret_stdcall(FAKE_MODULE, 3);
+            Handled::Ok
+        }),
         ("kernel32.dll", "FreeLibrary", r1_1),
         ("kernel32.dll", "IsDebuggerPresent", r0_0),
         ("kernel32.dll", "IsProcessorFeaturePresent", r1_1),
@@ -191,86 +419,313 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "GetEnvironmentVariableW", get_env_var_w),
         ("kernel32.dll", "GetEnvironmentVariableA", get_env_var_a),
-        ("kernel32.dll", "AreFileApisANSI", |c| { c.ret_stdcall(1, 0); Handled::Ok }),
+        ("kernel32.dll", "AreFileApisANSI", |c| {
+            c.ret_stdcall(1, 0);
+            Handled::Ok
+        }),
         // Secure DLL search-path APIs (putty et al. resolve these dynamically).
-        ("kernel32.dll", "SetDefaultDllDirectories", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll", "AddDllDirectory", |c| { c.ret_stdcall(0x44_0001, 1); Handled::Ok }),
-        ("kernel32.dll", "RemoveDllDirectory", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll", "SetDllDirectoryW", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll", "SetDllDirectoryA", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll", "SetSearchPathMode", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "SetDefaultDllDirectories", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "AddDllDirectory", |c| {
+            c.ret_stdcall(0x44_0001, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "RemoveDllDirectory", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetDllDirectoryW", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetDllDirectoryA", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetSearchPathMode", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         // Winsock (ws2_32): present so apps like putty init networking and reach
         // their UI. Socket ops fail (no real network); init + byte-swap work.
-        ("ws2_32.dll", "WSAStartup", |c| { let d = c.arg(1); if d != 0 { let _ = c.memory.write_u16(d, 0x0202); let _ = c.memory.write_u16(d + 2, 0x0202); } c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "WSACleanup", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("ws2_32.dll", "WSAGetLastError", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("ws2_32.dll", "WSASetLastError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ws2_32.dll", "WSACreateEvent", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("ws2_32.dll", "WSACloseEvent", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("ws2_32.dll", "WSAAsyncSelect", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("ws2_32.dll", "WSAEventSelect", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("ws2_32.dll", "WSAIoctl", |c| { c.ret_stdcall(0xFFFF_FFFF, 9); Handled::Ok }),
-        ("ws2_32.dll", "WSAAddressToStringA", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
-        ("ws2_32.dll", "WSAStringToAddressA", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
-        ("ws2_32.dll", "socket", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),       // INVALID_SOCKET
-        ("ws2_32.dll", "WSASocketA", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
-        ("ws2_32.dll", "closesocket", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ws2_32.dll", "connect", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
-        ("ws2_32.dll", "bind", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
-        ("ws2_32.dll", "listen", |c| { c.ret_stdcall(0xFFFF_FFFF, 2); Handled::Ok }),
-        ("ws2_32.dll", "accept", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
-        ("ws2_32.dll", "send", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
-        ("ws2_32.dll", "recv", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
-        ("ws2_32.dll", "sendto", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
-        ("ws2_32.dll", "recvfrom", |c| { c.ret_stdcall(0xFFFF_FFFF, 6); Handled::Ok }),
-        ("ws2_32.dll", "shutdown", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "select", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("ws2_32.dll", "ioctlsocket", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("ws2_32.dll", "getsockname", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
-        ("ws2_32.dll", "getpeername", |c| { c.ret_stdcall(0xFFFF_FFFF, 3); Handled::Ok }),
-        ("ws2_32.dll", "getsockopt", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("ws2_32.dll", "setsockopt", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("ws2_32.dll", "gethostname", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "gethostbyname", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ws2_32.dll", "getaddrinfo", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
-        ("ws2_32.dll", "freeaddrinfo", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ws2_32.dll", "getnameinfo", |c| { c.ret_stdcall(0xFFFF_FFFF, 7); Handled::Ok }),
-        ("ws2_32.dll", "inet_addr", |c| { c.ret_stdcall(0xFFFF_FFFF, 1); Handled::Ok }),
-        ("ws2_32.dll", "inet_ntoa", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ws2_32.dll", "htons", |c| { let v = c.arg(0) as u16; c.ret_stdcall(v.swap_bytes() as u32, 1); Handled::Ok }),
-        ("ws2_32.dll", "ntohs", |c| { let v = c.arg(0) as u16; c.ret_stdcall(v.swap_bytes() as u32, 1); Handled::Ok }),
-        ("ws2_32.dll", "htonl", |c| { let v = c.arg(0); c.ret_stdcall(v.swap_bytes(), 1); Handled::Ok }),
-        ("ws2_32.dll", "ntohl", |c| { let v = c.arg(0); c.ret_stdcall(v.swap_bytes(), 1); Handled::Ok }),
-        ("ws2_32.dll", "__WSAFDIsSet", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "WSAWaitForMultipleEvents", |c| { c.ret_stdcall(0xFFFF_FFFF, 5); Handled::Ok }),
-        ("ws2_32.dll", "WSAEnumNetworkEvents", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("ws2_32.dll", "WSAGetOverlappedResult", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("ws2_32.dll", "getservbyname", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "getservbyport", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ws2_32.dll", "inet_ntop", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("ws2_32.dll", "inet_pton", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("ws2_32.dll", "WSAStartup", |c| {
+            let d = c.arg(1);
+            if d != 0 {
+                let _ = c.memory.write_u16(d, 0x0202);
+                let _ = c.memory.write_u16(d + 2, 0x0202);
+            }
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSACleanup", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAGetLastError", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSASetLastError", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSACreateEvent", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSACloseEvent", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAAsyncSelect", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAEventSelect", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAIoctl", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 9);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAAddressToStringA", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAStringToAddressA", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "socket", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }), // INVALID_SOCKET
+        ("ws2_32.dll", "WSASocketA", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 6);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "closesocket", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "connect", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "bind", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "listen", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "accept", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "send", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 4);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "recv", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 4);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "sendto", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 6);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "recvfrom", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 6);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "shutdown", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "select", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "ioctlsocket", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getsockname", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getpeername", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getsockopt", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "setsockopt", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "gethostname", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "gethostbyname", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getaddrinfo", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 4);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "freeaddrinfo", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getnameinfo", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 7);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "inet_addr", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "inet_ntoa", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "htons", |c| {
+            let v = c.arg(0) as u16;
+            c.ret_stdcall(v.swap_bytes() as u32, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "ntohs", |c| {
+            let v = c.arg(0) as u16;
+            c.ret_stdcall(v.swap_bytes() as u32, 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "htonl", |c| {
+            let v = c.arg(0);
+            c.ret_stdcall(v.swap_bytes(), 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "ntohl", |c| {
+            let v = c.arg(0);
+            c.ret_stdcall(v.swap_bytes(), 1);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "__WSAFDIsSet", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAWaitForMultipleEvents", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAEnumNetworkEvents", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "WSAGetOverlappedResult", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getservbyname", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "getservbyport", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "inet_ntop", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("ws2_32.dll", "inet_pton", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
         // comctl32 — common controls (putty's config dialog uses drag lists etc.)
-        ("comctl32.dll", "InitCommonControls", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-
-        ("comctl32.dll", "DrawInsert", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("comctl32.dll", "LBItemFromPt", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
-        ("comctl32.dll", "MakeDragList", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("comctl32.dll", "ImageList_Create", |c| { c.ret_stdcall(0x494C_0001, 5); Handled::Ok }),
-        ("comctl32.dll", "ImageList_Destroy", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("comctl32.dll", "ImageList_AddMasked", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("comctl32.dll", "ImageList_ReplaceIcon", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("comctl32.dll", "_TrackMouseEvent", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("comctl32.dll", "CreateUpDownControl", |c| { c.ret_stdcall(0, 12); Handled::Ok }),
-        ("comctl32.dll", "PropertySheetW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("comctl32.dll", "PropertySheetA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("comctl32.dll", "InitCommonControls", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "DrawInsert", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "LBItemFromPt", |c| {
+            c.ret_stdcall(0xFFFF_FFFF, 4);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "MakeDragList", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "ImageList_Create", |c| {
+            c.ret_stdcall(0x494C_0001, 5);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "ImageList_Destroy", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "ImageList_AddMasked", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "ImageList_ReplaceIcon", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "_TrackMouseEvent", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "CreateUpDownControl", |c| {
+            c.ret_stdcall(0, 12);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "PropertySheetW", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("comctl32.dll", "PropertySheetA", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
         // GetSystemDirectory/GetWindowsDirectory(lpBuffer, uSize) — 2 args.
-        ("kernel32.dll", "GetSystemDirectoryA", |c| sysdir(c, false, "C:\\Windows\\System32")),
-        ("kernel32.dll", "GetSystemDirectoryW", |c| sysdir(c, true,  "C:\\Windows\\System32")),
-        ("kernel32.dll", "GetWindowsDirectoryA", |c| sysdir(c, false, "C:\\Windows")),
-        ("kernel32.dll", "GetWindowsDirectoryW", |c| sysdir(c, true,  "C:\\Windows")),
-        ("kernel32.dll", "GetSystemWindowsDirectoryW", |c| sysdir(c, true, "C:\\Windows")),
-        ("kernel32.dll", "ExpandEnvironmentStringsW", expand_env_strings_w),
-        ("kernel32.dll", "ExpandEnvironmentStringsA", expand_env_strings_a),
+        ("kernel32.dll", "GetSystemDirectoryA", |c| {
+            sysdir(c, false, "C:\\Windows\\System32")
+        }),
+        ("kernel32.dll", "GetSystemDirectoryW", |c| {
+            sysdir(c, true, "C:\\Windows\\System32")
+        }),
+        ("kernel32.dll", "GetWindowsDirectoryA", |c| {
+            sysdir(c, false, "C:\\Windows")
+        }),
+        ("kernel32.dll", "GetWindowsDirectoryW", |c| {
+            sysdir(c, true, "C:\\Windows")
+        }),
+        ("kernel32.dll", "GetSystemWindowsDirectoryW", |c| {
+            sysdir(c, true, "C:\\Windows")
+        }),
+        (
+            "kernel32.dll",
+            "ExpandEnvironmentStringsW",
+            expand_env_strings_w,
+        ),
+        (
+            "kernel32.dll",
+            "ExpandEnvironmentStringsA",
+            expand_env_strings_a,
+        ),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
         (
@@ -287,38 +742,95 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "FindNextFileW", find_next_file_w),
         ("kernel32.dll", "FindNextFileA", find_next_file_a),
         ("kernel32.dll", "FindClose", find_close),
-        ("kernel32.dll", "GetVolumeInformationW", get_volume_information_w),
-        ("kernel32.dll", "GetVolumeInformationA", get_volume_information_a),
-        ("kernel32.dll", "FileTimeToSystemTime", file_time_to_system_time),
-        ("kernel32.dll", "FileTimeToLocalFileTime", file_time_to_local_file_time),
-        ("kernel32.dll", "SystemTimeToFileTime", system_time_to_file_time),
-        ("kernel32.dll", "LocalFileTimeToFileTime", file_time_to_local_file_time),
-        ("kernel32.dll", "GetDateFormatW", |c| date_time_format(c, true, true)),
-        ("kernel32.dll", "GetDateFormatA", |c| date_time_format(c, false, true)),
-        ("kernel32.dll", "GetTimeFormatW", |c| date_time_format(c, true, false)),
-        ("kernel32.dll", "GetTimeFormatA", |c| date_time_format(c, false, false)),
+        (
+            "kernel32.dll",
+            "GetVolumeInformationW",
+            get_volume_information_w,
+        ),
+        (
+            "kernel32.dll",
+            "GetVolumeInformationA",
+            get_volume_information_a,
+        ),
+        (
+            "kernel32.dll",
+            "FileTimeToSystemTime",
+            file_time_to_system_time,
+        ),
+        (
+            "kernel32.dll",
+            "FileTimeToLocalFileTime",
+            file_time_to_local_file_time,
+        ),
+        (
+            "kernel32.dll",
+            "SystemTimeToFileTime",
+            system_time_to_file_time,
+        ),
+        (
+            "kernel32.dll",
+            "LocalFileTimeToFileTime",
+            file_time_to_local_file_time,
+        ),
+        ("kernel32.dll", "GetDateFormatW", |c| {
+            date_time_format(c, true, true)
+        }),
+        ("kernel32.dll", "GetDateFormatA", |c| {
+            date_time_format(c, false, true)
+        }),
+        ("kernel32.dll", "GetTimeFormatW", |c| {
+            date_time_format(c, true, false)
+        }),
+        ("kernel32.dll", "GetTimeFormatA", |c| {
+            date_time_format(c, false, false)
+        }),
         ("kernel32.dll", "GetDiskFreeSpaceW", |c| {
             // (root, *sectorsPerCluster, *bytesPerSector, *freeClusters, *totalClusters)
-            if c.arg(1) != 0 { let _ = c.memory.write_u32(c.arg(1), 8); }
-            if c.arg(2) != 0 { let _ = c.memory.write_u32(c.arg(2), 512); }
-            if c.arg(3) != 0 { let _ = c.memory.write_u32(c.arg(3), 0x10000); }
-            if c.arg(4) != 0 { let _ = c.memory.write_u32(c.arg(4), 0x20000); }
-            c.ret_stdcall(1, 5); Handled::Ok
+            if c.arg(1) != 0 {
+                let _ = c.memory.write_u32(c.arg(1), 8);
+            }
+            if c.arg(2) != 0 {
+                let _ = c.memory.write_u32(c.arg(2), 512);
+            }
+            if c.arg(3) != 0 {
+                let _ = c.memory.write_u32(c.arg(3), 0x10000);
+            }
+            if c.arg(4) != 0 {
+                let _ = c.memory.write_u32(c.arg(4), 0x20000);
+            }
+            c.ret_stdcall(1, 5);
+            Handled::Ok
         }),
         ("kernel32.dll", "GetDiskFreeSpaceExW", |c| {
             // (dir, *freeAvail(u64), *total(u64), *totalFree(u64))
             for a in [1u32, 2, 3] {
                 let p = c.arg(a);
-                if p != 0 { let _ = c.memory.write_u32(p, 0x4000_0000); let _ = c.memory.write_u32(p + 4, 0); }
+                if p != 0 {
+                    let _ = c.memory.write_u32(p, 0x4000_0000);
+                    let _ = c.memory.write_u32(p + 4, 0);
+                }
             }
-            c.ret_stdcall(1, 4); Handled::Ok
+            c.ret_stdcall(1, 4);
+            Handled::Ok
         }),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteConsoleW", write_console_w),
-        ("kernel32.dll", "GetEnvironmentStringsW", |c| { let p = env_block(c, true); c.ret_stdcall(p, 0); Handled::Ok }),
-        ("kernel32.dll", "GetEnvironmentStrings", |c| { let p = env_block(c, false); c.ret_stdcall(p, 0); Handled::Ok }),
+        ("kernel32.dll", "GetEnvironmentStringsW", |c| {
+            let p = env_block(c, true);
+            c.ret_stdcall(p, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetEnvironmentStrings", |c| {
+            let p = env_block(c, false);
+            c.ret_stdcall(p, 0);
+            Handled::Ok
+        }),
         ("kernel32.dll", "FreeEnvironmentStringsW", r1_1),
-        ("kernel32.dll", "GetEnvironmentStringsA", |c| { let p = env_block(c, false); c.ret_stdcall(p, 0); Handled::Ok }),
+        ("kernel32.dll", "GetEnvironmentStringsA", |c| {
+            let p = env_block(c, false);
+            c.ret_stdcall(p, 0);
+            Handled::Ok
+        }),
         ("kernel32.dll", "FreeEnvironmentStringsA", r1_1),
         ("kernel32.dll", "InitializeCriticalSection", r0_1),
         (
@@ -345,7 +857,11 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "GetConsoleMode", get_console_mode),
         ("kernel32.dll", "SetConsoleMode", r1_2),
-        ("kernel32.dll", "GetConsoleScreenBufferInfo", get_console_screen_buffer_info),
+        (
+            "kernel32.dll",
+            "GetConsoleScreenBufferInfo",
+            get_console_screen_buffer_info,
+        ),
         ("kernel32.dll", "SetConsoleTextAttribute", r1_2),
         ("kernel32.dll", "SetConsoleCursorPosition", r1_2),
         ("kernel32.dll", "SetConsoleTitleA", r1_1),
@@ -420,13 +936,22 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "Sleep", r0_1),
         ("kernel32.dll", "WaitForSingleObject", r0_2), // WAIT_OBJECT_0
-        ("kernel32.dll", "WaitForSingleObjectEx", r0_3),   // (handle, ms, alertable)
-        ("kernel32.dll", "WaitForMultipleObjects", r0_4),  // (n, handles, all, ms)
+        ("kernel32.dll", "WaitForSingleObjectEx", r0_3), // (handle, ms, alertable)
+        ("kernel32.dll", "WaitForMultipleObjects", r0_4), // (n, handles, all, ms)
         ("kernel32.dll", "WaitForMultipleObjectsEx", r0_5),
         ("kernel32.dll", "SignalObjectAndWait", r0_4),
-        ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("kernel32.dll", "CreateEventA", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
-        ("kernel32.dll", "CreateEventW", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
+        ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateEventA", |c| {
+            c.ret_stdcall(0xE700_0001, 4);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateEventW", |c| {
+            c.ret_stdcall(0xE700_0001, 4);
+            Handled::Ok
+        }),
         ("kernel32.dll", "SetEvent", r1_1),
         ("kernel32.dll", "ResetEvent", r1_1),
         ("kernel32.dll", "CreateProcessA", create_process_a),
@@ -441,95 +966,330 @@ pub fn register(r: &mut WinApiRegistry) {
             "InterlockedCompareExchange",
             interlocked_cmpxchg,
         ),
-        // ── API-MS-WIN API set forwarders ──────────────────────────────────
+        // API-MS-WIN API set forwarders
         // ApiSetQueryApiSetPresence(ApiSetName, Present*) — checks if an API set
         // DLL is present.  We say "no" (FALSE) so callers skip optional features.
-        ("api-ms-win-core-apiquery-l1-1-0.dll", "ApiSetQueryApiSetPresence",
-            |c| { let p = c.arg(1); if p != 0 { let _ = c.memory.write_u32(p, 0); } c.ret_stdcall(0, 2); Handled::Ok }),
+        (
+            "api-ms-win-core-apiquery-l1-1-0.dll",
+            "ApiSetQueryApiSetPresence",
+            |c| {
+                let p = c.arg(1);
+                if p != 0 {
+                    let _ = c.memory.write_u32(p, 0);
+                }
+                c.ret_stdcall(0, 2);
+                Handled::Ok
+            },
+        ),
         // GlobalAlloc / GlobalFree / GlobalLock / GlobalUnlock — thin wrappers
         // around the process heap; we just forward to our heap routines.
-        ("kernel32.dll",                         "GlobalAlloc",  global_alloc),
+        ("kernel32.dll", "GlobalAlloc", global_alloc),
         // LocalAlloc(uFlags, uBytes) — same as GlobalAlloc in our model.
-        ("kernel32.dll",                         "LocalAlloc",   global_alloc),
-        ("kernel32.dll",                         "LocalFree",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll",                         "LocalLock",    |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
-        ("kernel32.dll",                         "LocalUnlock",  |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll",                         "LocalReAlloc", |c| { let p = c.arg(0); let n = c.arg(1); let r = c.heap_realloc(p, n); c.ret_stdcall(r, 3); Handled::Ok }),
-        ("kernel32.dll",                         "LocalSize",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll",                         "SetPriorityClass", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("kernel32.dll", "LocalAlloc", global_alloc),
+        ("kernel32.dll", "LocalFree", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "LocalLock", |c| {
+            let p = c.arg(0);
+            c.ret_stdcall(p, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "LocalUnlock", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "LocalReAlloc", |c| {
+            let p = c.arg(0);
+            let n = c.arg(1);
+            let r = c.heap_realloc(p, n);
+            c.ret_stdcall(r, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "LocalSize", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetPriorityClass", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
         // Registry value query (W10 explorer). 7 args; report not-found.
-        ("kernel32.dll", "RegGetValueW", |c| { if c.arg(6) != 0 { let _ = c.memory.write_u32(c.arg(6), 0); } c.ret_stdcall(2, 7); Handled::Ok }),
-        ("kernel32.dll", "RegGetValueA", |c| { if c.arg(6) != 0 { let _ = c.memory.write_u32(c.arg(6), 0); } c.ret_stdcall(2, 7); Handled::Ok }),
+        ("kernel32.dll", "RegGetValueW", |c| {
+            if c.arg(6) != 0 {
+                let _ = c.memory.write_u32(c.arg(6), 0);
+            }
+            c.ret_stdcall(2, 7);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "RegGetValueA", |c| {
+            if c.arg(6) != 0 {
+                let _ = c.memory.write_u32(c.arg(6), 0);
+            }
+            c.ret_stdcall(2, 7);
+            Handled::Ok
+        }),
         // Named mutexes / events with the extended (4-arg) variants -> fake handle.
-        ("kernel32.dll", "CreateMutexW",   |c| { c.ret_stdcall(0x4D54_0002, 3); Handled::Ok }),
-        ("kernel32.dll", "CreateMutexA",   |c| { c.ret_stdcall(0x4D54_0002, 3); Handled::Ok }),
-        ("kernel32.dll", "CreateMutexExW", |c| { c.ret_stdcall(0x4D54_0001, 4); Handled::Ok }),
-        ("kernel32.dll", "CreateMutexExA", |c| { c.ret_stdcall(0x4D54_0001, 4); Handled::Ok }),
-        ("kernel32.dll", "CreateEventExW", |c| { c.ret_stdcall(0x4576_0001, 4); Handled::Ok }),
-        ("kernel32.dll", "CreateSemaphoreExW", |c| { c.ret_stdcall(0x5365_0001, 6); Handled::Ok }),
-        ("kernel32.dll", "ReleaseMutex", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexW", |c| {
+            c.ret_stdcall(0x4D54_0002, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateMutexA", |c| {
+            c.ret_stdcall(0x4D54_0002, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateMutexExW", |c| {
+            c.ret_stdcall(0x4D54_0001, 4);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateMutexExA", |c| {
+            c.ret_stdcall(0x4D54_0001, 4);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateEventExW", |c| {
+            c.ret_stdcall(0x4576_0001, 4);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateSemaphoreExW", |c| {
+            c.ret_stdcall(0x5365_0001, 6);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "ReleaseMutex", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         // Condition variables (explorer's CRT/threadpool resolve these dynamically).
-        ("kernel32.dll", "InitializeConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "WakeConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "WakeAllConditionVariable", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "SleepConditionVariableCS", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
-        ("kernel32.dll", "SleepConditionVariableSRW", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("kernel32.dll", "InitializeConditionVariable", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "WakeConditionVariable", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "WakeAllConditionVariable", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SleepConditionVariableCS", |c| {
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SleepConditionVariableSRW", |c| {
+            c.ret_stdcall(1, 4);
+            Handled::Ok
+        }),
         // Threadpool timers/work -> fake handles, no-op (we have no real threads).
-        ("kernel32.dll", "CreateThreadpoolTimer", |c| { c.ret_stdcall(0x5450_0001, 3); Handled::Ok }),
-        ("kernel32.dll", "SetThreadpoolTimer", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("kernel32.dll", "CloseThreadpoolTimer", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "WaitForThreadpoolTimerCallbacks", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("kernel32.dll", "CreateThreadpoolWork", |c| { c.ret_stdcall(0x5450_0002, 3); Handled::Ok }),
-        ("kernel32.dll", "SubmitThreadpoolWork", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "CloseThreadpoolWork", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "WaitForThreadpoolWorkCallbacks", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("kernel32.dll", "RegisterTraceGuidsW", |c| { c.ret_stdcall(0, 8); Handled::Ok }),
-        ("kernel32.dll", "RegisterTraceGuidsA", |c| { c.ret_stdcall(0, 8); Handled::Ok }),
-        ("kernel32.dll", "UnregisterTraceGuids", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "GetTraceLoggerHandle", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "TraceMessage", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("kernel32.dll", "CreateThreadpoolWait", |c| { c.ret_stdcall(0x5450_0003, 3); Handled::Ok }),
+        ("kernel32.dll", "CreateThreadpoolTimer", |c| {
+            c.ret_stdcall(0x5450_0001, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SetThreadpoolTimer", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CloseThreadpoolTimer", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "WaitForThreadpoolTimerCallbacks", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateThreadpoolWork", |c| {
+            c.ret_stdcall(0x5450_0002, 3);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "SubmitThreadpoolWork", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CloseThreadpoolWork", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "WaitForThreadpoolWorkCallbacks", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "RegisterTraceGuidsW", |c| {
+            c.ret_stdcall(0, 8);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "RegisterTraceGuidsA", |c| {
+            c.ret_stdcall(0, 8);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "UnregisterTraceGuids", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetTraceLoggerHandle", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "TraceMessage", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateThreadpoolWait", |c| {
+            c.ret_stdcall(0x5450_0003, 3);
+            Handled::Ok
+        }),
         // ntdll bits explorer resolves dynamically; safe no-ops.
-        ("ntdll.dll", "RtlDllShutdownInProgress", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("kernel32.dll",                         "GetPriorityClass", |c| { c.ret_stdcall(0x20, 1); Handled::Ok }),
+        ("ntdll.dll", "RtlDllShutdownInProgress", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GetPriorityClass", |c| {
+            c.ret_stdcall(0x20, 1);
+            Handled::Ok
+        }),
         // Activation contexts (theming/manifests): no-op stubs so explorer's
         // dynamic resolve + calls succeed instead of returning NULL.
-        ("kernel32.dll", "CreateActCtxW", |c| { c.ret_stdcall(0xAC70_0001, 1); Handled::Ok }),
-        ("kernel32.dll", "CreateActCtxA", |c| { c.ret_stdcall(0xAC70_0001, 1); Handled::Ok }),
-        ("kernel32.dll", "ActivateActCtx", |c| { let o = c.arg(1); if o != 0 { let _ = c.memory.write_u32(o, 1); } c.ret_stdcall(1, 2); Handled::Ok }),
-        ("kernel32.dll", "DeactivateActCtx", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("kernel32.dll", "ReleaseActCtx", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll", "AddRefActCtx", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll",                         "GlobalFree",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("kernel32.dll",                         "GlobalLock",   |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
-        ("kernel32.dll",                         "GlobalUnlock", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll",                         "GlobalHandle", |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
-        ("kernel32.dll",                         "GlobalSize",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalAlloc",  global_alloc),
-        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalFree",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalLock",   |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
-        ("api-ms-win-core-heap-l2-1-0.dll",      "GlobalUnlock", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "CreateActCtxW", |c| {
+            c.ret_stdcall(0xAC70_0001, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "CreateActCtxA", |c| {
+            c.ret_stdcall(0xAC70_0001, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "ActivateActCtx", |c| {
+            let o = c.arg(1);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 1);
+            }
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "DeactivateActCtx", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "ReleaseActCtx", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "AddRefActCtx", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GlobalFree", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GlobalLock", |c| {
+            let p = c.arg(0);
+            c.ret_stdcall(p, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GlobalUnlock", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GlobalHandle", |c| {
+            let p = c.arg(0);
+            c.ret_stdcall(p, 1);
+            Handled::Ok
+        }),
+        ("kernel32.dll", "GlobalSize", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        (
+            "api-ms-win-core-heap-l2-1-0.dll",
+            "GlobalAlloc",
+            global_alloc,
+        ),
+        ("api-ms-win-core-heap-l2-1-0.dll", "GlobalFree", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("api-ms-win-core-heap-l2-1-0.dll", "GlobalLock", |c| {
+            let p = c.arg(0);
+            c.ret_stdcall(p, 1);
+            Handled::Ok
+        }),
+        ("api-ms-win-core-heap-l2-1-0.dll", "GlobalUnlock", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
         // FormatMessageW forwarded through the localization API set.
-        ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageW", format_message_w_fwd),
-        ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageA", format_message_a_fwd),
+        (
+            "api-ms-win-core-localization-l1-2-0.dll",
+            "FormatMessageW",
+            format_message_w_fwd,
+        ),
+        (
+            "api-ms-win-core-localization-l1-2-0.dll",
+            "FormatMessageA",
+            format_message_a_fwd,
+        ),
         // ── MFC42U.DLL Stubs ───────────────────────────────────────────────
         // Paint (mspaint.exe) imports ordinal 1165 from MFC42U.DLL.
         // It's likely AfxGetModuleState() or AfxGetApp() which returns a pointer
         // to a large CWinApp / AFX_MODULE_STATE structure.
         // Returning 0 crashes because it tries to write to [EAX+0x14].
         // We return a dummy heap pointer so the writes succeed.
-        ("shell32.dll", "#68", |c| { c.ret_stdcall(0, 6); Handled::Ok }),   // RunFileDlg (6 args)
-        ("shell32.dll", "#188", |c| { c.ret_stdcall(0, 3); Handled::Ok }), // SHGetSetSettings (3 args, void)
-        ("shell32.dll", "#100", |c| { let out = c.arg(2); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0x8000_4005, 3); Handled::Ok }), // SHCreateStdEnumFmtEtc (3 args)
-        ("shell32.dll", "#245", |c| { c.ret_stdcall(0, 2); Handled::Ok }), // SHTestTokenMembership (2 args)
-        ("shell32.dll", "#660", |c| { c.ret_stdcall(0, 3); Handled::Ok }), // SHWaitForFileToOpen (3 args)
-        ("shell32.dll", "#723", |c| { let out = c.arg(1); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0, 2); Handled::Ok }),
-        ("shell32.dll", "SHGetSpecialFolderPathW", sh_get_special_folder_path_w),
-        ("shell32.dll", "SHGetSpecialFolderPathA", sh_get_special_folder_path_a),
-        ("shdocvw.dll", "#110", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // WinList_Init — S_OK
-        ("shdocvw.dll", "#111", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // WinList_Terminate
-        ("shdocvw.dll", "#125", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // SHCreateFromDesktop
-        ("shdocvw.dll", "DllInstall", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("shell32.dll", "#68", |c| {
+            c.ret_stdcall(0, 6);
+            Handled::Ok
+        }), // RunFileDlg (6 args)
+        ("shell32.dll", "#188", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }), // SHGetSetSettings (3 args, void)
+        ("shell32.dll", "#100", |c| {
+            let out = c.arg(2);
+            if out != 0 {
+                let _ = c.memory.write_u32(out, 0);
+            }
+            c.ret_stdcall(0x8000_4005, 3);
+            Handled::Ok
+        }), // SHCreateStdEnumFmtEtc (3 args)
+        ("shell32.dll", "#245", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }), // SHTestTokenMembership (2 args)
+        ("shell32.dll", "#660", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }), // SHWaitForFileToOpen (3 args)
+        ("shell32.dll", "#723", |c| {
+            let out = c.arg(1);
+            if out != 0 {
+                let _ = c.memory.write_u32(out, 0);
+            }
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        (
+            "shell32.dll",
+            "SHGetSpecialFolderPathW",
+            sh_get_special_folder_path_w,
+        ),
+        (
+            "shell32.dll",
+            "SHGetSpecialFolderPathA",
+            sh_get_special_folder_path_a,
+        ),
+        ("shdocvw.dll", "#110", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }), // WinList_Init — S_OK
+        ("shdocvw.dll", "#111", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }), // WinList_Terminate
+        ("shdocvw.dll", "#125", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }), // SHCreateFromDesktop
+        ("shdocvw.dll", "DllInstall", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
         ("ole32.dll", "CoCreateInstance", |c| {
             let out = c.arg(4);
             if out != 0 {
@@ -538,20 +1298,63 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0x8004_0154, 5);
             Handled::Ok
         }),
-        ("ole32.dll", "OleUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("ole32.dll", "CoUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ole32.dll", "OleUninitialize", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoUninitialize", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
         // COM task allocator — must return real memory or C++ code throws bad_alloc.
-        ("ole32.dll", "CoTaskMemAlloc",   |c| { let n = c.arg(0); let p = c.heap_alloc(n); c.ret_stdcall(p, 1); Handled::Ok }),
-        ("ole32.dll", "CoTaskMemFree",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ole32.dll", "CoTaskMemRealloc", |c| { let p = c.arg(0); let n = c.arg(1); let r = c.heap_realloc(p, n); c.ret_stdcall(r, 2); Handled::Ok }),
-        ("ole32.dll", "CoInitialize",     |c| { c.ret_stdcall(0, 1); Handled::Ok }),       // S_OK
-        ("ole32.dll", "CoInitializeEx",   |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("ole32.dll", "OleInitialize",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ole32.dll", "CoCreateGuid",     |c| { let p = c.arg(0); if p != 0 { let _ = c.memory.write_bytes(p, &[0u8; 16]); } c.ret_stdcall(0, 1); Handled::Ok }),
-        ("ole32.dll", "CoGetMalloc",      |c| { let o = c.arg(1); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(0x8000_4001u32, 2); Handled::Ok }),
+        ("ole32.dll", "CoTaskMemAlloc", |c| {
+            let n = c.arg(0);
+            let p = c.heap_alloc(n);
+            c.ret_stdcall(p, 1);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoTaskMemFree", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoTaskMemRealloc", |c| {
+            let p = c.arg(0);
+            let n = c.arg(1);
+            let r = c.heap_realloc(p, n);
+            c.ret_stdcall(r, 2);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoInitialize", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }), // S_OK
+        ("ole32.dll", "CoInitializeEx", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("ole32.dll", "OleInitialize", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoCreateGuid", |c| {
+            let p = c.arg(0);
+            if p != 0 {
+                let _ = c.memory.write_bytes(p, &[0u8; 16]);
+            }
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoGetMalloc", |c| {
+            let o = c.arg(1);
+            if o != 0 {
+                let _ = c.memory.write_u32(o, 0);
+            }
+            c.ret_stdcall(0x8000_4001u32, 2);
+            Handled::Ok
+        }),
         ("mfc42u.dll", "#1165", |c| {
             let ptr = c.heap_alloc(256); // give it a nice 256 byte chunk to write to
-            c.ret_stdcall(ptr, 1);       // guess: 1 arg? The log said "cleaned 1 args"
+            c.ret_stdcall(ptr, 1); // guess: 1 arg? The log said "cleaned 1 args"
             Handled::Ok
         }),
     ];
@@ -565,7 +1368,9 @@ fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
     let mut last_slash = 0;
     let mut curr = p;
     while let Ok(b) = ctx.memory.read_u8(curr) {
-        if b == 0 { break; }
+        if b == 0 {
+            break;
+        }
         if b == b'\\' || b == b'/' {
             last_slash = curr + 1;
         }
@@ -584,7 +1389,9 @@ fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
         let low = ctx.memory.read_u8(curr).unwrap_or(0);
         let high = ctx.memory.read_u8(curr + 1).unwrap_or(0);
         let w = u16::from_le_bytes([low, high]);
-        if w == 0 { break; }
+        if w == 0 {
+            break;
+        }
         if w == '\\' as u16 || w == '/' as u16 {
             last_slash = curr + 2;
         }
@@ -597,16 +1404,36 @@ fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
 
 fn strcmp_ni_a(ctx: &mut ApiContext) -> Handled {
     let n = ctx.arg(2) as usize;
-    let a = ctx.cstr(ctx.arg(0)).chars().take(n).collect::<String>().to_lowercase();
-    let b = ctx.cstr(ctx.arg(1)).chars().take(n).collect::<String>().to_lowercase();
+    let a = ctx
+        .cstr(ctx.arg(0))
+        .chars()
+        .take(n)
+        .collect::<String>()
+        .to_lowercase();
+    let b = ctx
+        .cstr(ctx.arg(1))
+        .chars()
+        .take(n)
+        .collect::<String>()
+        .to_lowercase();
     ctx.ret_stdcall(a.cmp(&b) as i32 as u32, 3);
     Handled::Ok
 }
 
 fn strcmp_ni_w(ctx: &mut ApiContext) -> Handled {
     let n = ctx.arg(2) as usize;
-    let a = ctx.wstr(ctx.arg(0)).chars().take(n).collect::<String>().to_lowercase();
-    let b = ctx.wstr(ctx.arg(1)).chars().take(n).collect::<String>().to_lowercase();
+    let a = ctx
+        .wstr(ctx.arg(0))
+        .chars()
+        .take(n)
+        .collect::<String>()
+        .to_lowercase();
+    let b = ctx
+        .wstr(ctx.arg(1))
+        .chars()
+        .take(n)
+        .collect::<String>()
+        .to_lowercase();
     ctx.ret_stdcall(a.cmp(&b) as i32 as u32, 3);
     Handled::Ok
 }
@@ -792,11 +1619,17 @@ fn write_console_w(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(1);
     let count = ctx.arg(2);
     let out = ctx.arg(3);
-    
-    let bytes = ctx.memory.read_bytes(buf, (count * 2) as usize).unwrap_or_default();
-    let u16s: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+
+    let bytes = ctx
+        .memory
+        .read_bytes(buf, (count * 2) as usize)
+        .unwrap_or_default();
+    let u16s: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
     let s = String::from_utf16_lossy(&u16s);
-    
+
     route_output(handle, s.as_bytes(), ctx);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, count);
@@ -1130,19 +1963,31 @@ fn find_matches(ctx: &ApiContext, raw: &str) -> Vec<(String, bool, u64)> {
 
 // Fill a WIN32_FIND_DATAW at `p` for one entry (wide cFileName at +44).
 fn fill_find_data_w(ctx: &mut ApiContext, p: u32, name: &str, is_dir: bool, size: u64) {
-    let attrs = if is_dir { FILE_ATTRIBUTE_DIRECTORY } else { FILE_ATTRIBUTE_NORMAL };
+    let attrs = if is_dir {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
     let _ = ctx.memory.write_bytes(p, &[0u8; 44]); // attrs + 3 FILETIMEs + sizes + reserved
     let _ = ctx.memory.write_u32(p, attrs);
     let _ = ctx.memory.write_u32(p + 28, (size >> 32) as u32);
     let _ = ctx.memory.write_u32(p + 32, size as u32);
-    let mut wide: Vec<u8> = name.encode_utf16().take(259).flat_map(|c| c.to_le_bytes()).collect();
+    let mut wide: Vec<u8> = name
+        .encode_utf16()
+        .take(259)
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
     wide.extend_from_slice(&[0, 0]);
     let _ = ctx.memory.write_bytes(p + 44, &wide);
 }
 
 // Same, ANSI cFileName for WIN32_FIND_DATAA (cFileName at +44, bytes).
 fn fill_find_data_a(ctx: &mut ApiContext, p: u32, name: &str, is_dir: bool, size: u64) {
-    let attrs = if is_dir { FILE_ATTRIBUTE_DIRECTORY } else { FILE_ATTRIBUTE_NORMAL };
+    let attrs = if is_dir {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
     let _ = ctx.memory.write_bytes(p, &[0u8; 44]);
     let _ = ctx.memory.write_u32(p, attrs);
     let _ = ctx.memory.write_u32(p + 28, (size >> 32) as u32);
@@ -1163,9 +2008,13 @@ fn find_first_common(ctx: &mut ApiContext, raw: &str, data: u32, wide: bool) -> 
         return INVALID_HANDLE_VALUE;
     }
     let (name, is_dir, size) = matches[0].clone();
-    if wide { fill_find_data_w(ctx, data, &name, is_dir, size); }
-    else { fill_find_data_a(ctx, data, &name, is_dir, size); }
-    ctx.handles.insert(KernelObject::FindHandle { matches, cursor: 1 })
+    if wide {
+        fill_find_data_w(ctx, data, &name, is_dir, size);
+    } else {
+        fill_find_data_a(ctx, data, &name, is_dir, size);
+    }
+    ctx.handles
+        .insert(KernelObject::FindHandle { matches, cursor: 1 })
 }
 
 fn find_first_file_w(ctx: &mut ApiContext) -> Handled {
@@ -1193,8 +2042,11 @@ fn find_next_common(ctx: &mut ApiContext, handle: u32, data: u32, wide: bool) ->
     };
     match next {
         Some((name, is_dir, size)) => {
-            if wide { fill_find_data_w(ctx, data, &name, is_dir, size); }
-            else { fill_find_data_a(ctx, data, &name, is_dir, size); }
+            if wide {
+                fill_find_data_w(ctx, data, &name, is_dir, size);
+            } else {
+                fill_find_data_a(ctx, data, &name, is_dir, size);
+            }
             if let Some(KernelObject::FindHandle { cursor, .. }) = ctx.handles.get_mut(handle) {
                 *cursor += 1;
             }
@@ -1239,7 +2091,9 @@ fn get_volume_info(ctx: &mut ApiContext, wide: bool) -> Handled {
     let fs_flags = ctx.arg(5);
     let fs_buf = ctx.arg(6);
     let write = |ctx: &mut ApiContext, p: u32, s: &str| {
-        if p == 0 { return; }
+        if p == 0 {
+            return;
+        }
         if wide {
             let mut b: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
             b.extend_from_slice(&[0, 0]);
@@ -1252,26 +2106,40 @@ fn get_volume_info(ctx: &mut ApiContext, wide: bool) -> Handled {
     };
     write(ctx, vol_buf, "WEBWINE");
     write(ctx, fs_buf, "NTFS");
-    if serial != 0 { let _ = ctx.memory.write_u32(serial, 0x1234_ABCD); }
-    if max_comp != 0 { let _ = ctx.memory.write_u32(max_comp, 255); }
-    if fs_flags != 0 { let _ = ctx.memory.write_u32(fs_flags, 0); }
+    if serial != 0 {
+        let _ = ctx.memory.write_u32(serial, 0x1234_ABCD);
+    }
+    if max_comp != 0 {
+        let _ = ctx.memory.write_u32(max_comp, 255);
+    }
+    if fs_flags != 0 {
+        let _ = ctx.memory.write_u32(fs_flags, 0);
+    }
     ctx.ret_stdcall(1, 8);
     Handled::Ok
 }
 
-fn get_volume_information_w(ctx: &mut ApiContext) -> Handled { get_volume_info(ctx, true) }
-fn get_volume_information_a(ctx: &mut ApiContext) -> Handled { get_volume_info(ctx, false) }
+fn get_volume_information_w(ctx: &mut ApiContext) -> Handled {
+    get_volume_info(ctx, true)
+}
+fn get_volume_information_a(ctx: &mut ApiContext) -> Handled {
+    get_volume_info(ctx, false)
+}
 
 // Convert a FILETIME (100ns since 1601) to civil (year, month, day, dow, h, m, s).
 fn filetime_to_civil(ft: u64) -> (u16, u16, u16, u16, u16, u16, u16) {
     let secs = (ft / 10_000_000) as i64;
     let days_1601 = secs.div_euclid(86400);
     let tod = secs.rem_euclid(86400);
-    let (h, mi, s) = ((tod / 3600) as u16, ((tod % 3600) / 60) as u16, (tod % 60) as u16);
+    let (h, mi, s) = (
+        (tod / 3600) as u16,
+        ((tod % 3600) / 60) as u16,
+        (tod % 60) as u16,
+    );
     // days since 1970-01-01 (1601->1970 = 134774 days)
     let days = days_1601 - 134774;
     let dow = (days.rem_euclid(7) + 4) % 7; // 1970-01-01 was Thursday (4)
-    // Howard Hinnant's civil_from_days
+                                            // Howard Hinnant's civil_from_days
     let z = days + 719468;
     let era = z.div_euclid(146097);
     let doe = z - era * 146097;
@@ -1341,12 +2209,24 @@ fn date_time_format(ctx: &mut ApiContext, wide: bool, is_date: bool) -> Handled 
         format!("{:02}/{:02}/{:04}", rd(ctx, 2), rd(ctx, 6), rd(ctx, 0)) // MM/dd/yyyy
     } else {
         let h = rd(ctx, 8);
-        let (h12, ap) = if h == 0 { (12, "AM") } else if h < 12 { (h, "AM") } else if h == 12 { (12, "PM") } else { (h - 12, "PM") };
+        let (h12, ap) = if h == 0 {
+            (12, "AM")
+        } else if h < 12 {
+            (h, "AM")
+        } else if h == 12 {
+            (12, "PM")
+        } else {
+            (h - 12, "PM")
+        };
         format!("{:02}:{:02} {}", h12, rd(ctx, 10), ap)
     };
     let n = if wide {
         let units: Vec<u16> = text.encode_utf16().collect();
-        let w = if cch > 0 { units.len().min(cch as usize - 1) } else { units.len() };
+        let w = if cch > 0 {
+            units.len().min(cch as usize - 1)
+        } else {
+            units.len()
+        };
         if buf != 0 {
             let mut b: Vec<u8> = units[..w].iter().flat_map(|u| u.to_le_bytes()).collect();
             b.extend_from_slice(&[0, 0]);
@@ -1355,7 +2235,11 @@ fn date_time_format(ctx: &mut ApiContext, wide: bool, is_date: bool) -> Handled 
         w + 1
     } else {
         let bytes = text.as_bytes();
-        let w = if cch > 0 { bytes.len().min(cch as usize - 1) } else { bytes.len() };
+        let w = if cch > 0 {
+            bytes.len().min(cch as usize - 1)
+        } else {
+            bytes.len()
+        };
         if buf != 0 {
             let _ = ctx.memory.write_bytes(buf, &bytes[..w]);
             let _ = ctx.memory.write_u8(buf + w as u32, 0);
@@ -1459,8 +2343,12 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
         if v == 0 {
             // A miss means a dynamically-resolved import we don't provide; the
             // guest may call NULL. Logged at trace for diagnosis ("Run as debug").
-            ctx.logs.log(crate::logs::LogLevel::Trace, "api",
-                &format!("GetProcAddress miss: {name}"), Some(ctx.pid));
+            ctx.logs.log(
+                crate::logs::LogLevel::Trace,
+                "api",
+                &format!("GetProcAddress miss: {name}"),
+                Some(ctx.pid),
+            );
         }
         v
     };
@@ -1472,7 +2360,8 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
 fn beep(ctx: &mut ApiContext) -> Handled {
     let freq = ctx.arg(0);
     let duration = ctx.arg(1);
-    ctx.ui_events.push(crate::vm::process::UiEvent::Beep { freq, duration });
+    ctx.ui_events
+        .push(crate::vm::process::UiEvent::Beep { freq, duration });
     ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
@@ -1765,7 +2654,11 @@ const ENV_VARS: &[&str] = &[
 fn env_lookup(name: &str) -> Option<&'static str> {
     ENV_VARS.iter().find_map(|v| {
         let (k, val) = v.split_once('=')?;
-        if k.eq_ignore_ascii_case(name) { Some(val) } else { None }
+        if k.eq_ignore_ascii_case(name) {
+            Some(val)
+        } else {
+            None
+        }
     })
 }
 
@@ -1839,7 +2732,9 @@ fn sysdir(ctx: &mut ApiContext, wide: bool, path: &str) -> Handled {
             b.extend_from_slice(&[0, 0]);
             let _ = ctx.memory.write_bytes(buf, &b);
             len
-        } else { len + 1 }
+        } else {
+            len + 1
+        }
     } else {
         let bytes = path.as_bytes();
         let len = bytes.len() as u32;
@@ -1847,7 +2742,9 @@ fn sysdir(ctx: &mut ApiContext, wide: bool, path: &str) -> Handled {
             let _ = ctx.memory.write_bytes(buf, bytes);
             let _ = ctx.memory.write_u8(buf + len, 0);
             len
-        } else { len + 1 }
+        } else {
+            len + 1
+        }
     };
     ctx.ret_stdcall(n, 2);
     Handled::Ok
@@ -1869,7 +2766,10 @@ fn get_env_var_a(ctx: &mut ApiContext) -> Handled {
                 ctx.ret_stdcall(needed, 3); // required size incl. NUL
             }
         }
-        None => { ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND; ctx.ret_stdcall(0, 3); }
+        None => {
+            ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND;
+            ctx.ret_stdcall(0, 3);
+        }
     }
     Handled::Ok
 }
@@ -1891,7 +2791,10 @@ fn get_env_var_w(ctx: &mut ApiContext) -> Handled {
                 ctx.ret_stdcall(needed, 3);
             }
         }
-        None => { ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND; ctx.ret_stdcall(0, 3); }
+        None => {
+            ctx.cpu.last_error = ERROR_ENVVAR_NOT_FOUND;
+            ctx.ret_stdcall(0, 3);
+        }
     }
     Handled::Ok
 }
@@ -2082,8 +2985,12 @@ fn dup_handle(ctx: &mut ApiContext) -> Handled {
 
 fn raise_exception(ctx: &mut ApiContext) -> Handled {
     let code = ctx.arg(0);
-    ctx.logs.log(crate::logs::LogLevel::Warn, "api",
-        &format!("RaiseException code=0x{code:08X}"), Some(ctx.pid));
+    ctx.logs.log(
+        crate::logs::LogLevel::Warn,
+        "api",
+        &format!("RaiseException code=0x{code:08X}"),
+        Some(ctx.pid),
+    );
     Handled::ExitProcess(1)
 }
 
@@ -2254,10 +3161,10 @@ fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
 // the caller's error-checking paths still work.
 
 const FORMAT_MESSAGE_ALLOCATE_BUFFER: u32 = 0x0000_0100;
-const FORMAT_MESSAGE_IGNORE_INSERTS:  u32 = 0x0000_0200;
-const FORMAT_MESSAGE_FROM_HMODULE:    u32 = 0x0000_0800;
-const FORMAT_MESSAGE_FROM_STRING:     u32 = 0x0000_0400;
-const FORMAT_MESSAGE_FROM_SYSTEM:     u32 = 0x0000_1000;
+const FORMAT_MESSAGE_IGNORE_INSERTS: u32 = 0x0000_0200;
+const FORMAT_MESSAGE_FROM_HMODULE: u32 = 0x0000_0800;
+const FORMAT_MESSAGE_FROM_STRING: u32 = 0x0000_0400;
+const FORMAT_MESSAGE_FROM_SYSTEM: u32 = 0x0000_1000;
 
 /// Minimal table of Win32 error strings (MESSAGE_RESOURCE_ENTRY equivalents).
 /// cmd.exe prints these via its own internal wording anyway; we just need
@@ -2328,10 +3235,26 @@ fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext, wid
         }
         // Escape/control sequences (always processed).
         match chars.get(i + 1).copied() {
-            Some('%') => { out.push('%'); i += 2; continue; }
-            Some('n') | Some('r') => { out.push_str("\r\n"); i += 2; continue; }
-            Some('t') => { out.push('\t'); i += 2; continue; }
-            Some('b') => { out.push(' '); i += 2; continue; }
+            Some('%') => {
+                out.push('%');
+                i += 2;
+                continue;
+            }
+            Some('n') | Some('r') => {
+                out.push_str("\r\n");
+                i += 2;
+                continue;
+            }
+            Some('t') => {
+                out.push('\t');
+                i += 2;
+                continue;
+            }
+            Some('b') => {
+                out.push(' ');
+                i += 2;
+                continue;
+            }
             Some('0') => break, // %0: end of message, no trailing newline
             Some(d) if d.is_ascii_digit() => {
                 let n = (d as u8 - b'1') as usize; // %1 -> index 0
@@ -2340,10 +3263,17 @@ fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext, wid
                 let mut spec = String::new();
                 if chars.get(i) == Some(&'!') {
                     i += 1;
-                    while i < chars.len() && chars[i] != '!' { spec.push(chars[i]); i += 1; }
-                    if i < chars.len() { i += 1; } // closing !
+                    while i < chars.len() && chars[i] != '!' {
+                        spec.push(chars[i]);
+                        i += 1;
+                    }
+                    if i < chars.len() {
+                        i += 1;
+                    } // closing !
                 }
-                if ignore { continue; }
+                if ignore {
+                    continue;
+                }
                 let val = raw.get(n).copied().unwrap_or(0);
                 let kind = spec.chars().rev().find(|c| c.is_ascii_alphabetic());
                 match kind {
@@ -2354,12 +3284,20 @@ fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext, wid
                     Some('c') => out.push(val as u8 as char),
                     _ => {
                         // string insert: val is a pointer
-                        out.push_str(&if wide { ctx.memory.read_wstr(val) } else { ctx.memory.read_cstr(val) });
+                        out.push_str(&if wide {
+                            ctx.memory.read_wstr(val)
+                        } else {
+                            ctx.memory.read_cstr(val)
+                        });
                     }
                 }
                 continue;
             }
-            _ => { out.push('%'); i += 1; continue; }
+            _ => {
+                out.push('%');
+                i += 1;
+                continue;
+            }
         }
     }
     out
@@ -2367,18 +3305,22 @@ fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext, wid
 
 /// Shared core: build the formatted string and write it to lpBuffer.
 fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
-    let flags   = ctx.arg(0);
-    let source  = ctx.arg(1);
-    let msg_id  = ctx.arg(2);
+    let flags = ctx.arg(0);
+    let source = ctx.arg(1);
+    let msg_id = ctx.arg(2);
     // arg(3) = language id — ignored, we always produce en-US
-    let lp_buf  = ctx.arg(4);
-    let n_size  = ctx.arg(5);
+    let lp_buf = ctx.arg(4);
+    let n_size = ctx.arg(5);
     let arg_ptr = ctx.arg(6);
 
     // Build the message text.
     let text: String = if flags & FORMAT_MESSAGE_FROM_STRING != 0 {
         // lpSource is a pointer to the format string.
-        let template = if wide { ctx.memory.read_wstr(source) } else { ctx.memory.read_cstr(source) };
+        let template = if wide {
+            ctx.memory.read_wstr(source)
+        } else {
+            ctx.memory.read_cstr(source)
+        };
         apply_inserts(&template, flags, arg_ptr, ctx, wide)
     } else if flags & FORMAT_MESSAGE_FROM_HMODULE != 0 && ctx.messages.contains_key(&msg_id) {
         // Module message-table resource (cmd.exe banner/messages/output).
@@ -2390,36 +3332,48 @@ fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
             .to_string();
         let with_ins = apply_inserts(&raw, flags, arg_ptr, ctx, wide);
         // Windows appends "\r\n" to system messages.
-        format!("{}\r\n", with_ins.trim_end_matches(|c| c == '\r' || c == '\n'))
+        format!(
+            "{}\r\n",
+            with_ins.trim_end_matches(|c| c == '\r' || c == '\n')
+        )
     } else {
         // Unsupported flags — return empty (caller checks len).
         return 0;
     };
 
-    if text.is_empty() { return 0; }
+    if text.is_empty() {
+        return 0;
+    }
     let char_count = text.chars().count() as u32;
 
     if flags & FORMAT_MESSAGE_ALLOCATE_BUFFER != 0 {
         // Allocate a heap buffer, write pointer to *lpBuffer.
-        let byte_len = if wide { char_count * 2 + 2 } else { char_count + 1 };
+        let byte_len = if wide {
+            char_count * 2 + 2
+        } else {
+            char_count + 1
+        };
         let p = ctx.heap_alloc(byte_len);
         if wide {
-            let encoded: Vec<u8> = text.encode_utf16()
-                .flat_map(|c| c.to_le_bytes()).collect();
+            let encoded: Vec<u8> = text.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
             let _ = ctx.memory.write_bytes(p, &encoded);
             let _ = ctx.memory.write_u16(p + char_count * 2, 0);
         } else {
             let _ = ctx.memory.write_bytes(p, text.as_bytes());
             let _ = ctx.memory.write_u8(p + char_count, 0);
         }
-        if lp_buf != 0 { let _ = ctx.memory.write_u32(lp_buf, p); }
+        if lp_buf != 0 {
+            let _ = ctx.memory.write_u32(lp_buf, p);
+        }
         char_count
     } else if lp_buf != 0 && n_size > 0 {
         let limit = (n_size as usize).min(text.chars().count() + 1);
         if wide {
-            let encoded: Vec<u8> = text.encode_utf16()
+            let encoded: Vec<u8> = text
+                .encode_utf16()
                 .take(limit.saturating_sub(1))
-                .flat_map(|c| c.to_le_bytes()).collect();
+                .flat_map(|c| c.to_le_bytes())
+                .collect();
             let written = (encoded.len() / 2) as u32;
             let _ = ctx.memory.write_bytes(lp_buf, &encoded);
             let _ = ctx.memory.write_u16(lp_buf + written * 2, 0);

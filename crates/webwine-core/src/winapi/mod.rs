@@ -4,6 +4,9 @@ pub mod msvcrt;
 pub mod ntdll;
 pub mod user32;
 pub mod winmm;
+pub mod ddraw;
+pub mod dsound;
+pub mod dinput;
 
 pub use context::{ApiContext, Handled};
 
@@ -113,6 +116,51 @@ impl WinApiRegistry {
     pub fn lookup_name(&self, va: u32) -> Option<&(String, String)> {
         self.by_va.get(&va)
     }
+
+    /// Whether we have a real handler for this import (exact (dll,name), the
+    /// global name-only fallback, or the UCRT `_o_` downlevel alias). Used by the
+    /// loader to tell a stubbed system DLL apart from a genuinely missing one.
+    pub fn is_implemented(&self, dll: &str, name: &str) -> bool {
+        let key = (dll.to_ascii_uppercase(), name.to_string());
+        self.handlers.contains_key(&key)
+            || self.by_func.contains_key(name)
+            || name.strip_prefix("_o_").is_some_and(|n| self.by_func.contains_key(n))
+    }
+}
+
+/// True for DLLs WebWINE provides via built-in stubs (kernel32, user32, the CRT,
+/// DirectX, winsock, …). The loader treats these as always-present and never
+/// tries to load a real file for them (our stubs are the intended implementation;
+/// a real system DLL would issue syscalls we don't host). Everything else is an
+/// app/third-party DLL that must come from a file in the search path.
+pub fn is_known_system_dll(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    let n = n.strip_suffix(".dll").unwrap_or(&n);
+    const EXACT: &[&str] = &[
+        "kernel32", "kernelbase", "ntdll", "user32", "gdi32", "gdi32full", "advapi32",
+        "ole32", "oleaut32", "shell32", "shlwapi", "shcore", "comctl32", "comdlg32",
+        "winmm", "ws2_32", "wsock32", "mswsock", "wininet", "winhttp", "iphlpapi",
+        "version", "imm32", "msimg32", "usp10", "uxtheme", "dwmapi", "powrprof",
+        "setupapi", "cfgmgr32", "crypt32", "bcrypt", "ncrypt", "secur32", "rpcrt4",
+        "winspool", "winspool.drv", "gdiplus", "msvcrt", "msvcp60", "msvcp_win",
+        "ucrtbase", "ucrtbased", "normaliz", "psapi", "userenv", "netapi32",
+        "ddraw", "dsound", "dinput", "dinput8", "dplayx", "dxguid", "d3d8", "d3d9",
+        "d3d10", "d3d11", "dwrite", "d2d1", "dxgi", "opengl32", "glu32",
+        "avifil32", "msacm32", "mfplat", "mf", "mfreadwrite", "windowscodecs",
+    ];
+    if EXACT.contains(&n) {
+        return true;
+    }
+    // Versioned CRT/apiset families we stub via the global name fallback. NOTE:
+    // redistributables we do NOT implement (mfc*, d3dx9_*, d3dcompiler_*, xinput)
+    // are deliberately excluded so they go through the file-search path: loaded
+    // for real if the user supplies them, warned-about if genuinely missing.
+    n.starts_with("api-ms-win-")
+        || n.starts_with("ext-ms-win-")
+        || n.starts_with("msvcr")     // msvcr71, msvcr100, msvcr120, …
+        || n.starts_with("msvcp")     // msvcp100, msvcp140, …
+        || n.starts_with("vcruntime") // vcruntime140, …
+        || n.starts_with("concrt")
 }
 
 impl Default for WinApiRegistry {
@@ -126,6 +174,9 @@ pub fn register_all(r: &mut WinApiRegistry) {
     ntdll::register(r);
     user32::register(r);
     winmm::register(r);
+    ddraw::register(r);
+    dsound::register(r);
+    dinput::register(r);
     r.finalize(); // allocate GetProcAddress trampolines for every registered name
 }
 

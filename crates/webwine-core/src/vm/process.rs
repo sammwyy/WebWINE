@@ -107,6 +107,27 @@ pub struct GuiState {
     // GDI objects (memory DCs, DIB sections) keyed by an opaque handle.
     pub gdi_objects: std::collections::HashMap<u32, GdiObject>,
     pub next_gdi: u32,
+
+    pub ddraw_display_w: u32,
+    pub ddraw_display_h: u32,
+    pub ddraw_display_bpp: u32,
+    pub ddraw_surfaces: std::collections::HashMap<u32, DDrawSurface>,
+    pub next_ddraw_surface: u32,
+}
+
+pub enum DDrawSurfaceKind {
+    Primary,
+    Offscreen,
+}
+
+pub struct DDrawSurface {
+    pub kind: DDrawSurfaceKind,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixels_va: u32,
+    pub color_key: Option<u32>,
+    pub back_id: Option<u32>,
 }
 
 pub struct WindowEntry {
@@ -131,6 +152,11 @@ impl GuiState {
             quit: None,
             gdi_objects: std::collections::HashMap::new(),
             next_gdi: GDI_TAG | 0x10,
+            ddraw_display_w: 640,
+            ddraw_display_h: 480,
+            ddraw_display_bpp: 32,
+            ddraw_surfaces: std::collections::HashMap::new(),
+            next_ddraw_surface: 1,
         }
     }
 }

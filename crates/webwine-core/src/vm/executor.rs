@@ -35,9 +35,9 @@ pub fn run_slice(
 
     let mut executed = 0u32;
     let mut prev_eip = proc.cpu.eip; // last instruction address, for crash reports
-    // Consecutive faults absorbed by SEH without a clean instruction in between.
-    // A garbage pointer makes every access fault and SEH resume forever; cap it
-    // so the process crashes cleanly instead of hanging.
+                                     // Consecutive faults absorbed by SEH without a clean instruction in between.
+                                     // A garbage pointer makes every access fault and SEH resume forever; cap it
+                                     // so the process crashes cleanly instead of hanging.
     let mut seh_fault_streak = 0u32;
     const SEH_FAULT_LIMIT: u32 = 512;
 
@@ -87,7 +87,10 @@ pub fn run_slice(
                 logs.log(
                     LogLevel::Error,
                     "cpu",
-                    &format!("[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}", proc.cpu.eip),
+                    &format!(
+                        "[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}",
+                        proc.cpu.eip
+                    ),
                     Some(proc.pid),
                 );
                 // Try SEH: walk the exception chain at fs:[0] (TEB+0x00).
@@ -149,7 +152,12 @@ fn handle_trampoline(
     let va = proc.cpu.eip;
     // Trace every API call (shown in "Run as debug" and useful for diagnosis).
     if let Some((dll, name)) = api.lookup_name(va) {
-        logs.log(LogLevel::Trace, "api", &format!("{dll}!{name}"), Some(proc.pid));
+        logs.log(
+            LogLevel::Trace,
+            "api",
+            &format!("{dll}!{name}"),
+            Some(proc.pid),
+        );
     }
     let result = {
         let mut ctx = ApiContext {
@@ -211,7 +219,11 @@ fn handle_trampoline(
             // Leave EIP at the trampoline so the call re-dispatches on resume.
             Flow::Block
         }
-        Some(Handled::Invoke { func, args, ret_args }) => {
+        Some(Handled::Invoke {
+            func,
+            args,
+            ret_args,
+        }) => {
             // Call the guest function (stdcall: callee cleans its own args).
             match call_guest_fn_args(proc, api, fs, logs, func, &args, depth + 1, executed) {
                 Flow::Continue => {}
@@ -352,7 +364,7 @@ fn try_seh(
     use crate::pe::loader::TEB_VA;
     // Exception disposition values (for handlers that return normally).
     const EXCEPTION_CONTINUE_EXECUTION: u32 = 0;
-    const EXCEPTION_EXECUTE_HANDLER:    u32 = 0xFFFF_FFFF; // -1i32 as u32
+    const EXCEPTION_EXECUTE_HANDLER: u32 = 0xFFFF_FFFF; // -1i32 as u32
     const EXCEPTION_CODE: u32 = 0xC000_0005; // STATUS_ACCESS_VIOLATION
 
     // ExceptionList is at TEB+0x00.
@@ -370,7 +382,7 @@ fn try_seh(
         }
 
         let mut resolved_handler = handler;
-        
+
         if handler != 0 && handler < TRAMPOLINE_BASE {
             // Check if it's an IAT thunk: jmp dword ptr [iat_addr] (FF 25 xx xx xx xx)
             let bytes = proc.memory.read_bytes(handler, 6).unwrap_or_default();
@@ -397,29 +409,38 @@ fn try_seh(
 
                 let mut level = trylevel as i32;
                 let mut absorbed = false;
-                
+
                 while level != -1 {
                     let entry = scopetable + (level as u32) * 12;
                     let enclosing = proc.memory.read_u32(entry).unwrap_or(0xFFFF_FFFF) as i32;
                     let filter = proc.memory.read_u32(entry + 4).unwrap_or(0);
                     let specific_handler = proc.memory.read_u32(entry + 8).unwrap_or(0);
-                    
+
                     let mut filter_action = 1; // EXCEPTION_EXECUTE_HANDLER if filter is null
                     if filter != 0 {
                         // evaluate filter
                         let saved_ebp = proc.cpu.ebp;
                         let saved_eip = proc.cpu.eip;
                         let saved_esp = proc.cpu.esp;
-                        
+
                         proc.cpu.ebp = _ebp; // MSVC filters expect EBP = _ebp
-                        let flow = call_guest_fn_args(proc, api, fs, logs, filter, &[], depth + 1, executed);
-                        
+                        let flow = call_guest_fn_args(
+                            proc,
+                            api,
+                            fs,
+                            logs,
+                            filter,
+                            &[],
+                            depth + 1,
+                            executed,
+                        );
+
                         // We must restore CPU registers that shouldn't be clobbered
                         let action = proc.cpu.eax as i32;
                         proc.cpu.ebp = saved_ebp;
                         proc.cpu.eip = saved_eip;
                         proc.cpu.esp = saved_esp;
-                        
+
                         if let Flow::Continue = flow {
                             filter_action = action;
                         } else {
@@ -428,29 +449,44 @@ fn try_seh(
                             continue;
                         }
                     }
-                    
-                    if filter_action == 1 { // EXCEPTION_EXECUTE_HANDLER
-                        logs.log(LogLevel::Info, "seh", &format!("_except_handler3 executing handler at 0x{:08X}", specific_handler), Some(proc.pid));
+
+                    if filter_action == 1 {
+                        // EXCEPTION_EXECUTE_HANDLER
+                        logs.log(
+                            LogLevel::Info,
+                            "seh",
+                            &format!(
+                                "_except_handler3 executing handler at 0x{:08X}",
+                                specific_handler
+                            ),
+                            Some(proc.pid),
+                        );
                         // Jump to handler.
                         // MSVC specific_handler expects EBP = _ebp, and ESP is usually restored.
                         // To be safe, we set EBP = _ebp, and leave ESP at the fault_esp (or maybe the node?).
                         // Usually local variables are accessed via EBP. We will restore EBP and jump.
                         proc.cpu.ebp = _ebp;
                         // ESP must be valid. The handler might assume ESP is below its locals.
-                        // We'll set ESP to the node itself (the registration frame), minus a little buffer, 
+                        // We'll set ESP to the node itself (the registration frame), minus a little buffer,
                         // as it's safe. But fault_esp is also fine. Let's use fault_esp.
                         proc.cpu.esp = fault_esp;
                         proc.cpu.eip = specific_handler;
                         return true;
-                    } else if filter_action == -1 { // EXCEPTION_CONTINUE_EXECUTION
-                        logs.log(LogLevel::Info, "seh", &format!("_except_handler3 continuing execution"), Some(proc.pid));
+                    } else if filter_action == -1 {
+                        // EXCEPTION_CONTINUE_EXECUTION
+                        logs.log(
+                            LogLevel::Info,
+                            "seh",
+                            &format!("_except_handler3 continuing execution"),
+                            Some(proc.pid),
+                        );
                         proc.cpu.esp = fault_esp;
                         return true;
                     }
-                    
+
                     level = enclosing;
                 }
-                
+
                 // If we get here, no handler in the scopetable caught it.
                 // Move to next node.
                 node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
@@ -466,20 +502,22 @@ fn try_seh(
         // Layout: ExceptionCode, ExceptionFlags, NextRecord*, ExceptionAddress,
         //         NumberParameters  — 5 dwords = 20 bytes.
         let rec_va = fault_esp.wrapping_sub(20);
-        let _ = proc.memory.write_u32(rec_va,      EXCEPTION_CODE);
-        let _ = proc.memory.write_u32(rec_va + 4,  0);              // ExceptionFlags
-        let _ = proc.memory.write_u32(rec_va + 8,  0);              // NextRecord = NULL
-        let _ = proc.memory.write_u32(rec_va + 12, fault_eip);      // ExceptionAddress
-        let _ = proc.memory.write_u32(rec_va + 16, 0);              // NumberParameters
+        let _ = proc.memory.write_u32(rec_va, EXCEPTION_CODE);
+        let _ = proc.memory.write_u32(rec_va + 4, 0); // ExceptionFlags
+        let _ = proc.memory.write_u32(rec_va + 8, 0); // NextRecord = NULL
+        let _ = proc.memory.write_u32(rec_va + 12, fault_eip); // ExceptionAddress
+        let _ = proc.memory.write_u32(rec_va + 16, 0); // NumberParameters
 
         // Build a minimal CONTEXT_i386 (0x2CC bytes).
         // We fill ContextFlags, EIP, and ESP; everything else is zeroed.
         const CTX_SIZE: u32 = 0x2CC;
         let ctx_va = rec_va.wrapping_sub(CTX_SIZE);
-        let _ = proc.memory.write_bytes(ctx_va, &vec![0u8; CTX_SIZE as usize]);
-        let _ = proc.memory.write_u32(ctx_va,        0x0001_0007); // CONTEXT_FULL
-        let _ = proc.memory.write_u32(ctx_va + 0xB8, fault_eip);   // EIP offset
-        let _ = proc.memory.write_u32(ctx_va + 0xC4, fault_esp);   // ESP offset
+        let _ = proc
+            .memory
+            .write_bytes(ctx_va, &vec![0u8; CTX_SIZE as usize]);
+        let _ = proc.memory.write_u32(ctx_va, 0x0001_0007); // CONTEXT_FULL
+        let _ = proc.memory.write_u32(ctx_va + 0xB8, fault_eip); // EIP offset
+        let _ = proc.memory.write_u32(ctx_va + 0xC4, fault_esp); // ESP offset
 
         // Prepare ESP below the on-stack structures and call the handler.
         // handler(ExceptionRecord*, EstablisherFrame*, ContextRecord*, Dispatcher*)
@@ -494,7 +532,7 @@ fn try_seh(
 
         let flow = call_guest_fn_args(proc, api, fs, logs, handler, &args, 1, executed);
 
-        // ── Check if longjmp fired ──────────────────────────────────────────
+        // Check if longjmp fired
         // If _except_handler4_common called longjmp, our longjmp_fn already
         // restored cpu.eip/esp to the __except block.  Detect this by checking
         // whether EIP now points to real (mapped) code that is NOT the sentinel.
@@ -507,9 +545,12 @@ fn try_seh(
         if longjmp_fired {
             // longjmp redirected execution to the __except block.  The handler
             // already restored ESP from the jmp_buf, so we don't touch it.
-            logs.log(LogLevel::Info, "seh",
+            logs.log(
+                LogLevel::Info,
+                "seh",
                 &format!("SEH longjmp → 0x{eip_after:08X} for fault: {reason}"),
-                Some(proc.pid));
+                Some(proc.pid),
+            );
             return true;
         }
 
@@ -527,17 +568,23 @@ fn try_seh(
 
         let retval = proc.cpu.eax;
         if retval == EXCEPTION_CONTINUE_EXECUTION {
-            logs.log(LogLevel::Info, "seh",
+            logs.log(
+                LogLevel::Info,
+                "seh",
                 &format!("SEH handler at 0x{handler:08X} absorbed fault: {reason}"),
-                Some(proc.pid));
+                Some(proc.pid),
+            );
             // Restore ESP to the pre-fault position; keep EIP from handler.
             proc.cpu.esp = fault_esp;
             return true;
         }
         if retval == EXCEPTION_EXECUTE_HANDLER {
-            logs.log(LogLevel::Info, "seh",
+            logs.log(
+                LogLevel::Info,
+                "seh",
                 &format!("SEH EXECUTE_HANDLER at 0x{handler:08X}: {reason}"),
-                Some(proc.pid));
+                Some(proc.pid),
+            );
             proc.cpu.esp = fault_esp;
             return true;
         }
@@ -560,7 +607,9 @@ fn describe_instr(proc: &GuestProcess, addr: u32) -> String {
     dec.decode_out(&mut ins);
 
     let raw: Vec<String> = bytes[..ins.len().min(bytes.len())]
-        .iter().map(|b| format!("{b:02X}")).collect();
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect();
     let mut s = format!("0x{addr:08X}: {:?} [{}]", ins.mnemonic(), raw.join(" "));
 
     // If an operand is memory, resolve its address and the dword stored there.
@@ -718,21 +767,31 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         Setns => exec_setcc(instr, cpu, mem, !get_sf(cpu.eflags)),
 
         // Conditional moves (CMOVcc): dst = src if condition. Flags unaffected.
-        Cmove  => exec_cmovcc(instr, cpu, mem, get_zf(cpu.eflags)),
+        Cmove => exec_cmovcc(instr, cpu, mem, get_zf(cpu.eflags)),
         Cmovne => exec_cmovcc(instr, cpu, mem, !get_zf(cpu.eflags)),
-        Cmovl  => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags) != get_of(cpu.eflags)),
-        Cmovle => exec_cmovcc(instr, cpu, mem, get_zf(cpu.eflags) || get_sf(cpu.eflags) != get_of(cpu.eflags)),
-        Cmovg  => exec_cmovcc(instr, cpu, mem, !get_zf(cpu.eflags) && get_sf(cpu.eflags) == get_of(cpu.eflags)),
+        Cmovl => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags) != get_of(cpu.eflags)),
+        Cmovle => exec_cmovcc(
+            instr,
+            cpu,
+            mem,
+            get_zf(cpu.eflags) || get_sf(cpu.eflags) != get_of(cpu.eflags),
+        ),
+        Cmovg => exec_cmovcc(
+            instr,
+            cpu,
+            mem,
+            !get_zf(cpu.eflags) && get_sf(cpu.eflags) == get_of(cpu.eflags),
+        ),
         Cmovge => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags) == get_of(cpu.eflags)),
-        Cmovb  => exec_cmovcc(instr, cpu, mem, get_cf(cpu.eflags)),
+        Cmovb => exec_cmovcc(instr, cpu, mem, get_cf(cpu.eflags)),
         Cmovbe => exec_cmovcc(instr, cpu, mem, get_cf(cpu.eflags) || get_zf(cpu.eflags)),
-        Cmova  => exec_cmovcc(instr, cpu, mem, !get_cf(cpu.eflags) && !get_zf(cpu.eflags)),
+        Cmova => exec_cmovcc(instr, cpu, mem, !get_cf(cpu.eflags) && !get_zf(cpu.eflags)),
         Cmovae => exec_cmovcc(instr, cpu, mem, !get_cf(cpu.eflags)),
-        Cmovs  => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags)),
+        Cmovs => exec_cmovcc(instr, cpu, mem, get_sf(cpu.eflags)),
         Cmovns => exec_cmovcc(instr, cpu, mem, !get_sf(cpu.eflags)),
-        Cmovo  => exec_cmovcc(instr, cpu, mem, get_of(cpu.eflags)),
+        Cmovo => exec_cmovcc(instr, cpu, mem, get_of(cpu.eflags)),
         Cmovno => exec_cmovcc(instr, cpu, mem, !get_of(cpu.eflags)),
-        Cmovp  => exec_cmovcc(instr, cpu, mem, get_pf(cpu.eflags)),
+        Cmovp => exec_cmovcc(instr, cpu, mem, get_pf(cpu.eflags)),
         Cmovnp => exec_cmovcc(instr, cpu, mem, !get_pf(cpu.eflags)),
 
         Leave => {
@@ -753,16 +812,23 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         // MOVSD is ambiguous: both the string op (A5) and SSE scalar double (F2 0F 10/11)
         // use the same iced-x86 mnemonic. Dispatch by checking for XMM operands.
         Movsd => {
-            let has_xmm = (0..instr.op_count())
-                .any(|i| instr.op_kind(i) == OpKind::Register && xmm_idx(instr.op_register(i)).is_some());
-            if has_xmm { exec_xmm_mov(instr, cpu, mem) }
-            else        { exec_movs(instr, cpu, mem, 4) }
+            let has_xmm = (0..instr.op_count()).any(|i| {
+                instr.op_kind(i) == OpKind::Register && xmm_idx(instr.op_register(i)).is_some()
+            });
+            if has_xmm {
+                exec_xmm_mov(instr, cpu, mem)
+            } else {
+                exec_movs(instr, cpu, mem, 4)
+            }
         }
         Movsw => exec_movs(instr, cpu, mem, 2),
         Movsb => exec_movs(instr, cpu, mem, 1),
         Scasd => exec_scas(instr, cpu, mem, 4),
         Scasw => exec_scas(instr, cpu, mem, 2),
         Scasb => exec_scas(instr, cpu, mem, 1),
+        Cmpsd => exec_cmps(instr, cpu, mem, 4),
+        Cmpsw => exec_cmps(instr, cpu, mem, 2),
+        Cmpsb => exec_cmps(instr, cpu, mem, 1),
         Lodsd => match mem.read_u32(cpu.esi) {
             Ok(v) => {
                 cpu.eax = v;
@@ -780,10 +846,11 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
             Err(e) => StepResult::Fault(e.to_string()),
         },
 
-        // SSE / XMM 
+        // SSE / XMM
         Xorps | Xorpd | Pxor => exec_xmm_binop(instr, cpu, mem, |a, b| xmm_xor(a, b)),
-        Andps | Andpd | Pand | Andnps | Andnpd | Pandn
-            => exec_xmm_binop(instr, cpu, mem, |a, b| xmm_and(a, b)),
+        Andps | Andpd | Pand | Andnps | Andnpd | Pandn => {
+            exec_xmm_binop(instr, cpu, mem, |a, b| xmm_and(a, b))
+        }
         Orps | Orpd | Por => exec_xmm_binop(instr, cpu, mem, |a, b| xmm_or(a, b)),
 
         // 128-bit moves
@@ -805,49 +872,46 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         Punpckhbw | Punpckhwd | Punpckhdq | Punpckhqdq => exec_punpckh(instr, cpu, mem),
 
         // packed int — stub (wrong values are acceptable for CRT init)
-        Paddb | Paddw | Paddd | Paddq
-        | Psubb | Psubw | Psubd | Psubq
-        | Pminub | Pmaxub | Pminuw | Pmaxuw | Pminud | Pmaxud
-        | Pmullw | Pmulhw | Pmulhuw | Pmulld
-        | Psrlw | Psrld | Psrlq | Psllw | Pslld | Psllq | Psraw | Psrad
-        | Pshufb | Pshuflw | Pshufhw | Pshufd | Shufps | Shufpd
-        | Palignr | Pblendw | Pblendvb | Blendvps | Blendvpd | Blendps | Blendpd
-        | Pabsb | Pabsw | Pabsd
-        | Packuswb | Packusdw | Packsswb | Packssdw
-        => exec_xmm_mov(instr, cpu, mem),
+        Paddb | Paddw | Paddd | Paddq | Psubb | Psubw | Psubd | Psubq | Pminub | Pmaxub
+        | Pminuw | Pmaxuw | Pminud | Pmaxud | Pmullw | Pmulhw | Pmulhuw | Pmulld | Psrlw
+        | Psrld | Psrlq | Psllw | Pslld | Psllq | Psraw | Psrad | Pshufb | Pshuflw | Pshufhw
+        | Pshufd | Shufps | Shufpd | Palignr | Pblendw | Pblendvb | Blendvps | Blendvpd
+        | Blendps | Blendpd | Pabsb | Pabsw | Pabsd | Packuswb | Packusdw | Packsswb | Packssdw => {
+            exec_xmm_mov(instr, cpu, mem)
+        }
 
         // scalar FP arithmetic — stub to keep XMM state from crashing
-        Addss | Addsd | Subss | Subsd | Mulss | Mulsd | Divss | Divsd
-        | Maxss | Maxsd | Minss | Minsd | Sqrtss | Sqrtsd | Rcpss | Rsqrtss
-        => exec_xmm_mov(instr, cpu, mem),
+        Addss | Addsd | Subss | Subsd | Mulss | Mulsd | Divss | Divsd | Maxss | Maxsd | Minss
+        | Minsd | Sqrtss | Sqrtsd | Rcpss | Rsqrtss => exec_xmm_mov(instr, cpu, mem),
 
         // FP comparisons — set EFLAGS conservatively (ZF=0, CF=0, PF=0 = "unordered false")
-        Ucomiss | Ucomisd | Comiss | Comisd => { cpu.eflags &= !(CF | ZF | PF); StepResult::Continue }
+        Ucomiss | Ucomisd | Comiss | Comisd => {
+            cpu.eflags &= !(CF | ZF | PF);
+            StepResult::Continue
+        }
 
         // FP conversions — zero the destination
-        Cvtsi2ss | Cvtsi2sd | Cvttss2si | Cvttsd2si | Cvtss2si | Cvtsd2si
-        | Cvtss2sd | Cvtsd2ss | Cvtdq2ps | Cvtdq2pd | Cvtps2dq | Cvtpd2dq
-        | Cvttps2dq | Cvttpd2dq
-        => exec_xmm_mov(instr, cpu, mem),
+        Cvtsi2ss | Cvtsi2sd | Cvttss2si | Cvttsd2si | Cvtss2si | Cvtsd2si | Cvtss2sd | Cvtsd2ss
+        | Cvtdq2ps | Cvtdq2pd | Cvtps2dq | Cvtpd2dq | Cvttps2dq | Cvttpd2dq => {
+            exec_xmm_mov(instr, cpu, mem)
+        }
 
         // FP control
         Ldmxcsr | Stmxcsr | Fldcw | Fnstcw | Fstcw => exec_sse_ctrl(instr, cpu, mem),
 
         // x87 FPU — we don't track the FP stack; treat as no-ops
-        Fld | Fld1 | Fldz | Fldpi | Fldl2e | Fldl2t | Fldlg2 | Fldln2
-        | Fst | Fstp | Fild | Fistp | Fist | Fisttp
-        | Fadd | Faddp | Fiadd | Fsub | Fsubp | Fsubr | Fsubrp | Fisub | Fisubr
-        | Fmul | Fmulp | Fimul | Fdiv | Fdivp | Fdivr | Fdivrp | Fidiv | Fidivr
-        | Fabs | Fchs | Fsqrt | Frndint | Fscale | Fprem | Fprem1 | Fxtract | F2xm1
-        | Fsin | Fcos | Fsincos | Fptan | Fpatan | Fyl2x | Fyl2xp1
-        | Fcom | Fcomp | Fcompp | Fucom | Fucomp | Fucompp | Fcomi | Fcomip | Fucomi | Fucomip
-        | Ftst | Fxam | Fnstsw | Fstenv | Fldenv | Fsave | Frstor | Fnclex | Fninit | Fnop
-        | Sahf | Emms | Ffree | Fxch
-        | Wait
-        => StepResult::Continue,
+        Fld | Fld1 | Fldz | Fldpi | Fldl2e | Fldl2t | Fldlg2 | Fldln2 | Fst | Fstp | Fild
+        | Fistp | Fist | Fisttp | Fadd | Faddp | Fiadd | Fsub | Fsubp | Fsubr | Fsubrp | Fisub
+        | Fisubr | Fmul | Fmulp | Fimul | Fdiv | Fdivp | Fdivr | Fdivrp | Fidiv | Fidivr | Fabs
+        | Fchs | Fsqrt | Frndint | Fscale | Fprem | Fprem1 | Fxtract | F2xm1 | Fsin | Fcos
+        | Fsincos | Fptan | Fpatan | Fyl2x | Fyl2xp1 | Fcom | Fcomp | Fcompp | Fucom | Fucomp
+        | Fucompp | Fcomi | Fcomip | Fucomi | Fucomip | Ftst | Fxam | Fnstsw | Fstenv | Fldenv
+        | Fsave | Frstor | Fnclex | Fninit | Fnop | Sahf | Emms | Ffree | Fxch | Wait => {
+            StepResult::Continue
+        }
 
         Int3 => StepResult::Fault("INT3 breakpoint".into()),
-        Int   => {
+        Int => {
             let v = instr.immediate8();
             if v == 0x29 {
                 // __fastfail — the program is aborting; ECX holds the code.
@@ -866,7 +930,7 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
                 StepResult::Fault(format!("INT 0x{v:02X}"))
             }
         }
-        Hlt   => StepResult::Exit(0),
+        Hlt => StepResult::Exit(0),
 
         // Unknown — skip rather than crash. CRT init contains many obscure instructions
         // that don't affect program output. A wrong skip is visible; a crash isn't useful.
@@ -970,11 +1034,13 @@ fn mem_size(instr: &Instruction) -> usize {
 }
 
 fn calc_addr(instr: &Instruction, cpu: &X86Cpu) -> u32 {
-    let base  = read_reg(instr.memory_base(),  cpu);
+    let base = read_reg(instr.memory_base(), cpu);
     let index = read_reg(instr.memory_index(), cpu);
     let scale = instr.memory_index_scale();
-    let disp  = instr.memory_displacement32();
-    let flat  = base.wrapping_add(index.wrapping_mul(scale)).wrapping_add(disp);
+    let disp = instr.memory_displacement32();
+    let flat = base
+        .wrapping_add(index.wrapping_mul(scale))
+        .wrapping_add(disp);
 
     // Apply segment base for FS-relative accesses (TEB).
     // GS is not used in 32-bit mode; other segments use flat base 0.
@@ -1129,8 +1195,14 @@ fn exec_xchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> St
 // If equal: ZF=1, dst = src. Else: ZF=0, accumulator = dst.
 fn exec_cmpxchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> StepResult {
     let size = op_size(instr, 0);
-    let dst = match read_op(instr, 0, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
-    let src = match read_op(instr, 1, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let dst = match read_op(instr, 0, cpu, mem) {
+        Err(e) => return fault(e),
+        Ok(v) => v,
+    };
+    let src = match read_op(instr, 1, cpu, mem) {
+        Err(e) => return fault(e),
+        Ok(v) => v,
+    };
     let acc = match size {
         1 => cpu.eax & 0xFF,
         2 => cpu.eax & 0xFFFF,
@@ -1139,11 +1211,16 @@ fn exec_cmpxchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) ->
 
     // Flags reflect (acc - dst), like CMP.
     let r = acc.wrapping_sub(dst);
-    if size == 1 { set_sub8(&mut cpu.eflags, acc as u8, dst as u8, r as u8); }
-    else         { set_sub32(&mut cpu.eflags, acc, dst, r); }
+    if size == 1 {
+        set_sub8(&mut cpu.eflags, acc as u8, dst as u8, r as u8);
+    } else {
+        set_sub32(&mut cpu.eflags, acc, dst, r);
+    }
 
     if acc == dst {
-        if let Err(e) = write_op(instr, 0, src, cpu, mem) { return fault(e); }
+        if let Err(e) = write_op(instr, 0, src, cpu, mem) {
+            return fault(e);
+        }
     } else {
         match size {
             1 => cpu.eax = (cpu.eax & 0xFFFF_FF00) | (dst & 0xFF),
@@ -1156,12 +1233,22 @@ fn exec_cmpxchg(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) ->
 
 // XADD dst, src: temp = dst + src; src = dst; dst = temp.
 fn exec_xadd(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> StepResult {
-    let dst = match read_op(instr, 0, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
-    let src = match read_op(instr, 1, cpu, mem) { Err(e) => return fault(e), Ok(v) => v };
+    let dst = match read_op(instr, 0, cpu, mem) {
+        Err(e) => return fault(e),
+        Ok(v) => v,
+    };
+    let src = match read_op(instr, 1, cpu, mem) {
+        Err(e) => return fault(e),
+        Ok(v) => v,
+    };
     let sum = dst.wrapping_add(src);
     set_add32(&mut cpu.eflags, dst, src, sum);
-    if let Err(e) = write_op(instr, 1, dst, cpu, mem) { return fault(e); }
-    if let Err(e) = write_op(instr, 0, sum, cpu, mem) { return fault(e); }
+    if let Err(e) = write_op(instr, 1, dst, cpu, mem) {
+        return fault(e);
+    }
+    if let Err(e) = write_op(instr, 0, sum, cpu, mem) {
+        return fault(e);
+    }
     StepResult::Continue
 }
 
@@ -1277,27 +1364,40 @@ fn exec_alu(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory, op: Al
             let c = get_cf(cpu.eflags) as u32;
             (flags_add(&mut cpu.eflags, dst, src, c, w), true)
         }
-        AluOp::Sub | AluOp::Cmp => {
-            (flags_sub(&mut cpu.eflags, dst, src, 0, w), matches!(op, AluOp::Sub))
-        }
+        AluOp::Sub | AluOp::Cmp => (
+            flags_sub(&mut cpu.eflags, dst, src, 0, w),
+            matches!(op, AluOp::Sub),
+        ),
         AluOp::Sbb => {
             let c = get_cf(cpu.eflags) as u32;
             (flags_sub(&mut cpu.eflags, dst, src, c, w), true)
         }
         AluOp::And | AluOp::Test => {
-            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let m = if w >= 4 {
+                0xFFFF_FFFF
+            } else {
+                (1u32 << (w * 8)) - 1
+            };
             let r = (dst & src) & m;
             flags_logic(&mut cpu.eflags, r, w);
             (r, matches!(op, AluOp::And))
         }
         AluOp::Or => {
-            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let m = if w >= 4 {
+                0xFFFF_FFFF
+            } else {
+                (1u32 << (w * 8)) - 1
+            };
             let r = (dst | src) & m;
             flags_logic(&mut cpu.eflags, r, w);
             (r, true)
         }
         AluOp::Xor => {
-            let m = if w >= 4 { 0xFFFF_FFFF } else { (1u32 << (w * 8)) - 1 };
+            let m = if w >= 4 {
+                0xFFFF_FFFF
+            } else {
+                (1u32 << (w * 8)) - 1
+            };
             let r = (dst ^ src) & m;
             flags_logic(&mut cpu.eflags, r, w);
             (r, true)
@@ -1494,7 +1594,11 @@ fn exec_shift(
 ) -> StepResult {
     let w = op_size(instr, 0) as u32;
     let bits = w * 8;
-    let mask = if bits == 32 { 0xFFFFFFFF } else { (1 << bits) - 1 };
+    let mask = if bits == 32 {
+        0xFFFFFFFF
+    } else {
+        (1 << bits) - 1
+    };
     let dst = match read_op(instr, 0, cpu, mem) {
         Err(e) => return fault(e),
         Ok(v) => v & mask,
@@ -1532,20 +1636,16 @@ fn exec_shift(
                 _ => ((dst as i32) >> cnt) as u32,
             }
         }
-        ShiftOp::Rol => {
-            match w {
-                1 => (dst as u8).rotate_left(cnt) as u32,
-                2 => (dst as u16).rotate_left(cnt) as u32,
-                _ => dst.rotate_left(cnt),
-            }
-        }
-        ShiftOp::Ror => {
-            match w {
-                1 => (dst as u8).rotate_right(cnt) as u32,
-                2 => (dst as u16).rotate_right(cnt) as u32,
-                _ => dst.rotate_right(cnt),
-            }
-        }
+        ShiftOp::Rol => match w {
+            1 => (dst as u8).rotate_left(cnt) as u32,
+            2 => (dst as u16).rotate_left(cnt) as u32,
+            _ => dst.rotate_left(cnt),
+        },
+        ShiftOp::Ror => match w {
+            1 => (dst as u8).rotate_right(cnt) as u32,
+            2 => (dst as u16).rotate_right(cnt) as u32,
+            _ => dst.rotate_right(cnt),
+        },
     };
     crate::vm::cpu::set_szp_w(&mut cpu.eflags, result, w);
     match write_op(instr, 0, result, cpu, mem) {
@@ -1766,6 +1866,60 @@ fn exec_scas(
     StepResult::Continue
 }
 
+// CMPS: compare DS:[ESI] with ES:[EDI], set flags as ([ESI] - [EDI]), then
+// advance both pointers (honoring DF). With REPE/REPNE, loops on ECX. The CRT's
+// strcmp/memcmp use `repe cmpsb`; without this every byte-string compare (e.g.
+// PBG3 archive filename lookups in Touhou 6) silently fails.
+fn exec_cmps(
+    instr: &Instruction,
+    cpu: &mut X86Cpu,
+    mem: &mut GuestMemory,
+    sz: usize,
+) -> StepResult {
+    let repe = instr.has_rep_prefix();
+    let repne = instr.has_repne_prefix();
+    let step = if get_df(cpu.eflags) {
+        (0u32).wrapping_sub(sz as u32)
+    } else {
+        sz as u32
+    };
+    loop {
+        if (repe || repne) && cpu.ecx == 0 {
+            break;
+        }
+        let read = |addr: u32, mem: &mut GuestMemory| match sz {
+            1 => mem.read_u8(addr).map(|v| v as u32),
+            2 => mem.read_u16(addr).map(|v| v as u32),
+            _ => mem.read_u32(addr),
+        };
+        let a = match read(cpu.esi, mem) {
+            Err(e) => return fault(e),
+            Ok(v) => v,
+        };
+        let b = match read(cpu.edi, mem) {
+            Err(e) => return fault(e),
+            Ok(v) => v,
+        };
+        crate::vm::cpu::flags_sub(&mut cpu.eflags, a, b, 0, sz as u32);
+        cpu.esi = cpu.esi.wrapping_add(step);
+        cpu.edi = cpu.edi.wrapping_add(step);
+        if repe {
+            cpu.ecx -= 1;
+            if !get_zf(cpu.eflags) {
+                break;
+            }
+        } else if repne {
+            cpu.ecx -= 1;
+            if get_zf(cpu.eflags) {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    StepResult::Continue
+}
+
 // XMM / SSE helpers
 
 // MOVLPD/MOVLPS: move low 64 bits (preserving upper 64 when loading into XMM)
@@ -1775,12 +1929,16 @@ fn exec_movlp(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> S
         let addr = calc_addr(instr, cpu);
         match mem.read_bytes(addr, 8) {
             Err(e) => return fault(e),
-            Ok(b)  => cpu.xmm[i][..8].copy_from_slice(&b),
+            Ok(b) => cpu.xmm[i][..8].copy_from_slice(&b),
         }
     } else {
-        let src = xmm_idx(instr.op1_register()).map(|i| cpu.xmm[i]).unwrap_or([0u8; 16]);
+        let src = xmm_idx(instr.op1_register())
+            .map(|i| cpu.xmm[i])
+            .unwrap_or([0u8; 16]);
         let addr = calc_addr(instr, cpu);
-        if let Err(e) = mem.write_bytes(addr, &src[..8]) { return fault(e); }
+        if let Err(e) = mem.write_bytes(addr, &src[..8]) {
+            return fault(e);
+        }
     }
     StepResult::Continue
 }
@@ -1792,12 +1950,16 @@ fn exec_movhp(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> S
         let addr = calc_addr(instr, cpu);
         match mem.read_bytes(addr, 8) {
             Err(e) => return fault(e),
-            Ok(b)  => cpu.xmm[i][8..].copy_from_slice(&b),
+            Ok(b) => cpu.xmm[i][8..].copy_from_slice(&b),
         }
     } else {
-        let src = xmm_idx(instr.op1_register()).map(|i| cpu.xmm[i]).unwrap_or([0u8; 16]);
+        let src = xmm_idx(instr.op1_register())
+            .map(|i| cpu.xmm[i])
+            .unwrap_or([0u8; 16]);
         let addr = calc_addr(instr, cpu);
-        if let Err(e) = mem.write_bytes(addr, &src[8..]) { return fault(e); }
+        if let Err(e) = mem.write_bytes(addr, &src[8..]) {
+            return fault(e);
+        }
     }
     StepResult::Continue
 }
@@ -2036,8 +2198,8 @@ fn exec_sse_ctrl(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -
 
 // run result
 
-use serde::{Deserialize, Serialize};
 use crate::vm::process::UiEvent;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SliceResult {

@@ -98,6 +98,18 @@ impl<'a> ApiContext<'a> {
         self.memory.read_wstr(va)
     }
 
+    pub fn current_trampoline_va(&self) -> u32 {
+        self.cpu.eip
+    }
+
+    pub fn api_trampoline_va(&self, _dll: &str, name: &str) -> u32 {
+        *self.proc_addr.get(name).unwrap_or(&0)
+    }
+
+    pub fn api_resolve_trampoline(&mut self, dll: &str, name: &str) -> u32 {
+        self.api_trampoline_va(dll, name)
+    }
+
     /// Bump allocator on the process heap, tracking sizes so realloc can copy.
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
         if size == 0 { return 0; }

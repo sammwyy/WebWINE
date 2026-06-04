@@ -1,12 +1,19 @@
 use goblin::pe::PE;
+use std::collections::HashMap;
 
 use crate::error::{Result, VmError};
+use crate::fs::vfs::VirtualFileSystem;
 use crate::logs::{LogBuffer, LogLevel};
 use crate::vm::cpu::X86Cpu;
 use crate::vm::handles::HandleTable;
 use crate::vm::memory::{GuestMemory, PageProt};
-use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState};
-use crate::winapi::WinApiRegistry;
+use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState, UiEvent};
+use crate::winapi::{is_known_system_dll, WinApiRegistry};
+
+// Region where dependent DLLs are mapped (between the heap top and the stack).
+// Each DLL is placed at the next free, section-aligned slot and base-relocated.
+const DLL_REGION_BASE: u32 = 0x3000_0000;
+const DLL_REGION_END:  u32 = 0x6000_0000;
 
 /// Extract the message-table resource (RT_MESSAGETABLE) into an id->text map.
 /// cmd.exe and other system apps load their banner/messages/output templates
@@ -129,6 +136,7 @@ pub fn load_pe(
     path: &str,
     pid: u32,
     api: &mut WinApiRegistry,
+    fs: &VirtualFileSystem,
     logs: &mut LogBuffer,
 ) -> Result<GuestProcess> {
     let pe = PE::parse(bytes)
@@ -206,8 +214,16 @@ pub fn load_pe(
         if rsz > 0 && roff < bytes.len() {
             let end = (roff + rsz).min(bytes.len());
             let src = &bytes[roff..end];
-            let copy_len = src.len().min(vsz);
-            mem.write_bytes(va, &src[..copy_len])?;
+            // Copy the full raw data, NOT min(rsz, vsz). Windows maps
+            // SizeOfRawData bytes into the section's reserved virtual extent
+            // (VirtualSize rounded up to section alignment, always large
+            // enough). When VirtualSize < SizeOfRawData the trailing raw bytes
+            // still contain real code/data the program references -- e.g.
+            // Touhou 6's .text has vsz=0x68A5F < rsz=0x69000 and jumps into
+            // the gap at 0x469AA0. Truncating to vsz zero-filled that code and
+            // crashed. (When vsz > rsz this is a BSS tail; leaving it zeroed is
+            // correct since guest memory is zero-initialised.)
+            mem.write_bytes(va, src)?;
         }
         logs.log(LogLevel::Debug, "loader",
             &format!("[pe] section {name:<8} va=0x{va:08X} vsz=0x{vsz:X} rsz=0x{rsz:X}"), None);
@@ -219,8 +235,12 @@ pub fn load_pe(
     // Resolve imports by walking the import directory ourselves and patching the
     // FirstThunk (IAT) — the table the CPU actually calls through. goblin's
     // high-level `imports` reports OriginalFirstThunk (ILT) RVAs, which are NOT
-    // what `call dword ptr [iat]` reads.
-    let import_count = patch_imports(&pe, image_base, &mut mem, api, logs)?;
+    // what `call dword ptr [iat]` reads. App/third-party DLLs found in the search
+    // path (exe dir, System32, Windows) are mapped and base-relocated here so the
+    // IAT points at their real code; genuinely-missing DLLs produce a warning.
+    let mut mctx = ModuleCtx::new(fs, crate::vm::process::parent_dir(path));
+    let import_count = resolve_imports(&pe, image_base, &mut mctx, &mut mem, api, logs)?;
+    let load_warnings = std::mem::take(&mut mctx.warnings);
     logs.log(LogLevel::Info, "loader",
         &format!("[loader] resolved {import_count} imports"), None);
 
@@ -353,7 +373,20 @@ pub fn load_pe(
         cpu,
         handles: HandleTable::new(pid),
         console: ConsoleStreams::new(),
-        ui_events: Vec::new(),
+        // Surface any missing-DLL warnings as a dialog on the first slice; the
+        // process still runs (with stub fallbacks) per the warn-and-continue policy.
+        ui_events: if load_warnings.is_empty() {
+            Vec::new()
+        } else {
+            vec![UiEvent::MessageBox {
+                title: "WebWINE".to_string(),
+                text: format!(
+                    "The program may not run correctly:\n\n{}",
+                    load_warnings.join("\n")
+                ),
+                style: 0x30, // MB_OK | MB_ICONWARNING
+            }]
+        },
         gui: crate::vm::process::GuiState::new(),
         spawns: Vec::new(),
         next_child_pid: 0,
@@ -368,12 +401,61 @@ pub fn load_pe(
     })
 }
 
-/// Walk the PE import directory and patch each FirstThunk (IAT) slot with a
-/// trampoline VA. Reads thunk names from the OriginalFirstThunk (ILT) when
-/// present, falling back to the FirstThunk itself for bound-by-name images.
-fn patch_imports(
+/// Exports of a loaded dependent DLL: function name / ordinal -> resolved VA.
+struct DllExports {
+    by_name: HashMap<String, u32>,
+    by_ord:  HashMap<u32, u32>,
+}
+
+/// State carried while resolving a module tree (the exe plus its dependent DLLs).
+struct ModuleCtx<'a> {
+    fs: &'a VirtualFileSystem,
+    exe_dir: String,
+    next_dll_base: u32,
+    /// Upper-cased DLL name -> its exports. `None` marks a DLL currently being
+    /// loaded (cycle guard) or one that failed to load.
+    loaded: HashMap<String, Option<DllExports>>,
+    warnings: Vec<String>,
+}
+
+impl<'a> ModuleCtx<'a> {
+    fn new(fs: &'a VirtualFileSystem, exe_dir: String) -> Self {
+        ModuleCtx {
+            fs,
+            exe_dir,
+            next_dll_base: DLL_REGION_BASE,
+            loaded: HashMap::new(),
+            warnings: Vec::new(),
+        }
+    }
+}
+
+/// Read a NUL-terminated ASCII name from a section's raw bytes via its RVA.
+fn read_cstr_at(mem: &GuestMemory, va: u32) -> String {
+    mem.read_cstr(va)
+}
+
+/// Locate a DLL file by Windows search order: the exe's own directory, then
+/// C:\Windows\System32, then C:\Windows. Returns the guest path if it exists.
+fn find_dll_file(fs: &VirtualFileSystem, exe_dir: &str, dll: &str) -> Option<String> {
+    let dir = exe_dir.trim_end_matches('\\');
+    let candidates = [
+        format!("{dir}\\{dll}"),
+        format!("C:\\Windows\\System32\\{dll}"),
+        format!("C:\\Windows\\{dll}"),
+    ];
+    candidates.into_iter().find(|p| fs.node_exists(p))
+}
+
+/// Walk a PE's import directory (the exe or a dependent DLL) and patch each
+/// FirstThunk (IAT) slot. App/third-party DLLs found in the search path are
+/// loaded for real and their exports wired in; system DLLs route to trampolines;
+/// genuinely-missing DLLs (and missing entry points) record a warning and fall
+/// back to a trampoline so execution can continue.
+fn resolve_imports(
     pe: &PE,
     image_base: u32,
+    mctx: &mut ModuleCtx,
     mem: &mut GuestMemory,
     api: &mut WinApiRegistry,
     logs: &mut LogBuffer,
@@ -400,14 +482,20 @@ fn patch_imports(
         let name = mem.read_u32(desc_va + 12).unwrap_or(0);     // DLL name RVA
         let ft   = mem.read_u32(desc_va + 16).unwrap_or(0);     // FirstThunk (IAT)
 
-        // Null descriptor terminates the array.
         if oft == 0 && name == 0 && ft == 0 {
-            break;
+            break; // null descriptor terminates the array
         }
 
-        let dll = mem.read_cstr(image_base + name);
+        let dll = read_cstr_at(mem, image_base + name);
 
-        // Names come from the lookup table; addresses get written to the IAT.
+        // Decide where this DLL's exports come from. System DLLs always use our
+        // built-in stubs. Everything else is looked up as a real file.
+        let from_file = if is_known_system_dll(&dll) {
+            false
+        } else {
+            ensure_dll_loaded(&dll, mctx, mem, api, logs, 0)
+        };
+
         let lookup_rva = if oft != 0 { oft } else { ft };
         let mut i = 0u32;
         loop {
@@ -415,30 +503,270 @@ fn patch_imports(
             if thunk == 0 {
                 break;
             }
-
-            let func_name = if thunk & 0x8000_0000 != 0 {
-                // Import by ordinal
-                format!("#{}", thunk & 0xFFFF)
+            let (func_name, ordinal) = if thunk & 0x8000_0000 != 0 {
+                (format!("#{}", thunk & 0xFFFF), Some(thunk & 0xFFFF))
             } else {
-                // Import by name: thunk -> IMAGE_IMPORT_BY_NAME { hint:u16, name:cstr }
-                mem.read_cstr(image_base + (thunk & 0x7FFF_FFFF) + 2)
+                (mem.read_cstr(image_base + (thunk & 0x7FFF_FFFF) + 2), None)
             };
 
-            let tramp = api.resolve_trampoline(&dll, &func_name);
+            // Prefer a real export VA from a loaded file; otherwise a trampoline.
+            let mut addr = 0u32;
+            if from_file {
+                if let Some(Some(exp)) = mctx.loaded.get(&dll.to_ascii_uppercase()) {
+                    addr = ordinal
+                        .and_then(|o| exp.by_ord.get(&o).copied())
+                        .or_else(|| exp.by_name.get(&func_name).copied())
+                        .unwrap_or(0);
+                }
+                if addr == 0 {
+                    mctx.warnings.push(format!(
+                        "{dll}: entry point '{func_name}' not found"));
+                }
+            } else if !is_known_system_dll(&dll) && !api.is_implemented(&dll, &func_name) {
+                // Not a system DLL, no file, no stub -> genuinely missing. Warn
+                // once per DLL (dedup) and fall through to a trampoline.
+                let msg = format!("'{dll}' was not found");
+                if !mctx.warnings.contains(&msg) {
+                    mctx.warnings.push(msg);
+                }
+            }
+            if addr == 0 {
+                addr = api.resolve_trampoline(&dll, &func_name);
+            }
+
             let iat_slot = image_base + ft + i * 4;
-            if mem.write_u32(iat_slot, tramp).is_ok() {
+            if mem.write_u32(iat_slot, addr).is_ok() {
                 count += 1;
             }
             i += 1;
         }
 
         logs.log(LogLevel::Debug, "loader",
-            &format!("[loader] {dll}: {i} imports patched"), None);
+            &format!("[loader] {dll}: {i} imports patched{}",
+                if from_file { " (real DLL)" } else { "" }), None);
 
         desc_va += DESC_SIZE;
     }
 
     Ok(count)
+}
+
+/// Map, relocate and link a dependent DLL (recursively resolving its own
+/// imports), recording its exports in `mctx.loaded`. Returns true if the DLL is
+/// available as a real file and was (or already is) loaded. `depth` guards
+/// against runaway dependency chains.
+fn ensure_dll_loaded(
+    dll: &str,
+    mctx: &mut ModuleCtx,
+    mem: &mut GuestMemory,
+    api: &mut WinApiRegistry,
+    logs: &mut LogBuffer,
+    depth: u32,
+) -> bool {
+    let key = dll.to_ascii_uppercase();
+    if let Some(slot) = mctx.loaded.get(&key) {
+        return slot.is_some(); // already loaded (Some) or in-progress/failed (None)
+    }
+    if depth > 16 {
+        return false;
+    }
+
+    let Some(path) = find_dll_file(mctx.fs, &mctx.exe_dir, dll) else {
+        return false; // no file -> caller treats as missing/stub
+    };
+    let Ok(bytes) = mctx.fs.read_file(&path) else { return false };
+
+    // Mark in-progress so a circular import returns "loaded" instead of recursing.
+    mctx.loaded.insert(key.clone(), None);
+
+    let pe = match PE::parse(&bytes) {
+        Ok(pe) => pe,
+        Err(e) => {
+            mctx.warnings.push(format!("{dll}: not a valid PE ({e})"));
+            return false;
+        }
+    };
+    if pe.header.coff_header.machine != 0x014C {
+        mctx.warnings.push(format!("{dll}: not a 32-bit (x86) DLL"));
+        return false;
+    }
+    let Some(oh) = pe.header.optional_header else { return false };
+    let preferred = oh.windows_fields.image_base as u32;
+    let image_size = oh.windows_fields.size_of_image;
+    let hdr_size = oh.windows_fields.size_of_headers;
+
+    // Place the DLL at the next free, page-aligned slot in the DLL region.
+    let base = (mctx.next_dll_base + 0xFFF) & !0xFFF;
+    let span = (image_size + 0xFFF) & !0xFFF;
+    if base.checked_add(span).map(|e| e > DLL_REGION_END).unwrap_or(true) {
+        mctx.warnings.push(format!("{dll}: no room to map ({image_size} bytes)"));
+        return false;
+    }
+    if mem.allocate(base, span, PageProt::RWX).is_err() {
+        mctx.warnings.push(format!("{dll}: could not map at 0x{base:08X}"));
+        return false;
+    }
+    mctx.next_dll_base = base + span;
+
+    // Headers + sections (copy SizeOfRawData, same rule as the main image).
+    let _ = mem.write_bytes(base, &bytes[..hdr_size.min(bytes.len() as u32) as usize]);
+    for s in &pe.sections {
+        let roff = s.pointer_to_raw_data as usize;
+        let rsz = s.size_of_raw_data as usize;
+        if rsz > 0 && roff < bytes.len() {
+            let end = (roff + rsz).min(bytes.len());
+            let _ = mem.write_bytes(base + s.virtual_address, &bytes[roff..end]);
+        }
+    }
+
+    apply_relocations(&pe, base, preferred, mem);
+    let exports = parse_exports(&pe, base, mem);
+    mctx.loaded.insert(key.clone(), Some(exports));
+
+    logs.log(LogLevel::Info, "loader",
+        &format!("[loader] loaded DLL {dll} at 0x{base:08X} (preferred 0x{preferred:08X})"), None);
+
+    // Resolve the DLL's own imports now that it is mapped.
+    let _ = resolve_imports_recursive(&pe, base, mctx, mem, api, logs, depth + 1);
+    true
+}
+
+/// Like `resolve_imports` but reached from a dependent DLL, so nested file DLLs
+/// recurse with an incremented depth.
+fn resolve_imports_recursive(
+    pe: &PE,
+    image_base: u32,
+    mctx: &mut ModuleCtx,
+    mem: &mut GuestMemory,
+    api: &mut WinApiRegistry,
+    logs: &mut LogBuffer,
+    depth: u32,
+) -> Result<usize> {
+    let oh = match pe.header.optional_header { Some(oh) => oh, None => return Ok(0) };
+    let import_dir = match oh.data_directories.get_import_table() {
+        Some(d) if d.virtual_address != 0 => *d,
+        _ => return Ok(0),
+    };
+    const DESC_SIZE: u32 = 20;
+    let mut desc_va = image_base + import_dir.virtual_address;
+    let desc_end = desc_va + import_dir.size;
+    loop {
+        if desc_va + DESC_SIZE > desc_end { break; }
+        let oft = mem.read_u32(desc_va).unwrap_or(0);
+        let name = mem.read_u32(desc_va + 12).unwrap_or(0);
+        let ft = mem.read_u32(desc_va + 16).unwrap_or(0);
+        if oft == 0 && name == 0 && ft == 0 { break; }
+        let dll = read_cstr_at(mem, image_base + name);
+        let from_file = if is_known_system_dll(&dll) {
+            false
+        } else {
+            ensure_dll_loaded(&dll, mctx, mem, api, logs, depth)
+        };
+        let lookup_rva = if oft != 0 { oft } else { ft };
+        let mut i = 0u32;
+        loop {
+            let thunk = mem.read_u32(image_base + lookup_rva + i * 4).unwrap_or(0);
+            if thunk == 0 { break; }
+            let (func_name, ordinal) = if thunk & 0x8000_0000 != 0 {
+                (format!("#{}", thunk & 0xFFFF), Some(thunk & 0xFFFF))
+            } else {
+                (mem.read_cstr(image_base + (thunk & 0x7FFF_FFFF) + 2), None)
+            };
+            let mut addr = 0u32;
+            if from_file {
+                if let Some(Some(exp)) = mctx.loaded.get(&dll.to_ascii_uppercase()) {
+                    addr = ordinal.and_then(|o| exp.by_ord.get(&o).copied())
+                        .or_else(|| exp.by_name.get(&func_name).copied())
+                        .unwrap_or(0);
+                }
+            }
+            if addr == 0 {
+                addr = api.resolve_trampoline(&dll, &func_name);
+            }
+            let _ = mem.write_u32(image_base + ft + i * 4, addr);
+            i += 1;
+        }
+        desc_va += DESC_SIZE;
+    }
+    Ok(0)
+}
+
+/// Apply base relocations to a freshly-mapped image. delta = actual - preferred.
+fn apply_relocations(pe: &PE, base: u32, preferred: u32, mem: &mut GuestMemory) {
+    let delta = base.wrapping_sub(preferred);
+    if delta == 0 {
+        return;
+    }
+    let Some(oh) = pe.header.optional_header else { return };
+    let reloc = match oh.data_directories.get_base_relocation_table() {
+        Some(d) if d.virtual_address != 0 => *d,
+        _ => return,
+    };
+    let mut p = base + reloc.virtual_address;
+    let end = p + reloc.size;
+    while p + 8 <= end {
+        let page_rva = mem.read_u32(p).unwrap_or(0);
+        let block_size = mem.read_u32(p + 4).unwrap_or(0);
+        if block_size < 8 { break; }
+        let entries = (block_size - 8) / 2;
+        for k in 0..entries {
+            let e = mem.read_u16(p + 8 + k * 2).unwrap_or(0);
+            let typ = e >> 12;
+            let off = (e & 0x0FFF) as u32;
+            if typ == 3 {
+                // IMAGE_REL_BASED_HIGHLOW: patch a 32-bit address in place.
+                let at = base + page_rva + off;
+                let v = mem.read_u32(at).unwrap_or(0);
+                let _ = mem.write_u32(at, v.wrapping_add(delta));
+            }
+            // type 0 (ABSOLUTE) is padding; other types are rare on x86.
+        }
+        p += block_size;
+    }
+}
+
+/// Parse a mapped DLL's export directory into name/ordinal -> VA maps. Forwarded
+/// exports (RVA inside the export dir) are skipped here; they resolve to a stub
+/// trampoline at import time instead.
+fn parse_exports(pe: &PE, base: u32, mem: &GuestMemory) -> DllExports {
+    let mut out = DllExports { by_name: HashMap::new(), by_ord: HashMap::new() };
+    let Some(oh) = pe.header.optional_header else { return out };
+    let dir = match oh.data_directories.get_export_table() {
+        Some(d) if d.virtual_address != 0 => *d,
+        _ => return out,
+    };
+    let exp = base + dir.virtual_address;
+    let exp_end = exp + dir.size;
+    let ord_base = mem.read_u32(exp + 16).unwrap_or(0);
+    let num_funcs = mem.read_u32(exp + 20).unwrap_or(0);
+    let num_names = mem.read_u32(exp + 24).unwrap_or(0);
+    let funcs_rva = mem.read_u32(exp + 28).unwrap_or(0);
+    let names_rva = mem.read_u32(exp + 32).unwrap_or(0);
+    let ords_rva  = mem.read_u32(exp + 36).unwrap_or(0);
+
+    let is_forwarder = |va: u32| va >= exp && va < exp_end;
+
+    // Ordinal -> VA (skip empty and forwarded slots).
+    for i in 0..num_funcs.min(0x10000) {
+        let frva = mem.read_u32(base + funcs_rva + i * 4).unwrap_or(0);
+        if frva == 0 { continue; }
+        let va = base + frva;
+        if is_forwarder(va) { continue; }
+        out.by_ord.insert(ord_base + i, va);
+    }
+    // Name -> VA via the name-ordinal table.
+    for i in 0..num_names.min(0x10000) {
+        let name_rva = mem.read_u32(base + names_rva + i * 4).unwrap_or(0);
+        if name_rva == 0 { continue; }
+        let name = mem.read_cstr(base + name_rva);
+        let oi = mem.read_u16(base + ords_rva + i * 2).unwrap_or(0) as u32;
+        let frva = mem.read_u32(base + funcs_rva + oi * 4).unwrap_or(0);
+        if frva == 0 { continue; }
+        let va = base + frva;
+        if is_forwarder(va) { continue; }
+        out.by_name.insert(name, va);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -457,8 +785,9 @@ mod tests {
 
         let mut api  = WinApiRegistry::new();
         let mut logs = LogBuffer::default();
+        let fs = VirtualFileSystem::new();
 
-        let proc = load_pe(&bytes, path, 1, &mut api, &mut logs).expect("load PE");
+        let proc = load_pe(&bytes, path, 1, &mut api, &fs, &mut logs).expect("load PE");
 
         assert_eq!(proc.pid, 1);
         assert!(proc.image_base > 0);

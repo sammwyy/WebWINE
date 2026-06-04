@@ -122,7 +122,7 @@ impl WebWineVm {
             return Ok(pid);
         }
 
-        let mut proc = load_pe(&bytes, guest_path, pid, &mut self.api, &mut self.logs)?;
+        let mut proc = load_pe(&bytes, guest_path, pid, &mut self.api, &self.fs, &mut self.logs)?;
         proc.cmdline = cmdline;
         self.processes.insert(proc);
         Ok(pid)
