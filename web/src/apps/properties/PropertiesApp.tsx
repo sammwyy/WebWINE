@@ -2,12 +2,16 @@ import { useMemo, useState } from "react";
 import { useWindowStore } from "@/state/windowStore";
 
 import type { DirectoryEntry } from "@/core/wasm/worker";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import { formatSize } from "@/shared/lib/utils";
+import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 
 type PropertiesTab = "general" | "details";
 
-export function openProperties(entry: DirectoryEntry) {
+export async function openProperties(entry: DirectoryEntry, runtime: RuntimeBridge) {
   let winId = "";
+
+  const icon = await resolveIcon(entry, runtime);
 
   const close = () => {
     if (winId) {
@@ -17,19 +21,21 @@ export function openProperties(entry: DirectoryEntry) {
 
   winId = useWindowStore.getState().openWindow({
     title: `${entry.name} Properties`,
-    icon: iconForEntry(entry),
+    icon: icon.src,
     variant: "dialog",
     width: 420,
     height: 480,
-    content: <PropertiesApp entry={entry} onClose={close} />,
+    content: <PropertiesApp entry={entry} iconSrc={icon.src} onClose={close} />,
   });
 }
 
 function PropertiesApp({
   entry,
+  iconSrc,
   onClose,
 }: {
   entry: DirectoryEntry;
+  iconSrc: string;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<PropertiesTab>("general");
@@ -47,7 +53,7 @@ function PropertiesApp({
         </div>
 
         <div className="border border-[#555] bg-[#202020] h-[calc(100%-30px)] overflow-auto px-4 pt-4 pb-3">
-          {tab === "general" && <GeneralTab entry={entry} />}
+          {tab === "general" && <GeneralTab entry={entry} iconSrc={iconSrc} />}
           {tab === "details" && <DetailsTab entry={entry} />}
         </div>
       </div>
@@ -69,14 +75,14 @@ function PropertiesApp({
   );
 }
 
-function GeneralTab({ entry }: { entry: DirectoryEntry }) {
+function GeneralTab({ entry, iconSrc }: { entry: DirectoryEntry; iconSrc: string }) {
   const info = useMemo(() => getEntryInfo(entry), [entry]);
 
   return (
     <div>
       <div className="flex items-center gap-4 pb-4">
         <img
-          src={iconForEntry(entry)}
+          src={iconSrc}
           alt=""
           className="w-8 h-8 object-contain flex-none"
           draggable={false}
@@ -337,19 +343,4 @@ function roundUpCluster(size: number): number {
 
   return Math.ceil(size / cluster) * cluster;
 }
-
-function iconForEntry(entry: DirectoryEntry): string {
-  if (entry.kind === "directory") {
-    return `/theme/icons/shell/folder.webp`;
-  }
-
-  const ext = extensionOf(entry.name);
-
-  if (ext === "exe") return `/theme/icons/shell/default_executable.webp`;
-  if (ext === "lnk") return `/theme/icons/shell/shortcut.webp`;
-  if (ext === "txt" || ext === "log" || ext === "ini") {
-    return `/theme/icons/shell/text.webp`;
-  }
-
-  return `/theme/icons/shell/file.webp`;
-}
+

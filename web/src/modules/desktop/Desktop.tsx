@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRuntimeStore } from "@/state/runtimeStore";
-import { useDesktopStore } from "@/state/desktopStore";
+import { useDesktopStore, DESKTOP_ICON_LAYOUTS } from "@/state/desktopStore";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { log } from "@/state/logStore";
 import {
@@ -16,6 +16,7 @@ import {
   mountFiles,
   pasteShortcut,
   performPaste,
+  parentPath,
 } from "@/shared/lib/clipboard";
 import { DesktopIcon } from "./DesktopIcon";
 import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu";
@@ -356,19 +357,61 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       }}
       onDragOver={(e) => {
         e.preventDefault();
-        setDragOver(true);
+        if (e.dataTransfer.types.includes("application/x-webwine-desktop-drag")) {
+          e.dataTransfer.dropEffect = e.ctrlKey ? "copy" : "move";
+        } else {
+          setDragOver(true);
+        }
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={async (e) => {
         e.preventDefault();
         setDragOver(false);
         const payload = decodeDragPayload(e.dataTransfer.getData("application/x-webwine-paths"));
+        const offsetRaw = e.dataTransfer.getData("application/x-webwine-drag-offset");
+        const offsets = offsetRaw ? JSON.parse(offsetRaw) : null;
+
         if (runtime && payload.length > 0) {
-          try {
-            await copyPayloadToDir(payload, DESKTOP_PATH, runtime, !e.ctrlKey);
-            doRefresh();
-          } catch (err) {
-            log("fs", `drop failed: ${err}`, "error");
+          const isFromDesktop = payload.every((p) => {
+            return parentPath(p.path).toLowerCase() === DESKTOP_PATH.toLowerCase();
+          });
+
+          if (isFromDesktop) {
+            const gridEl = gridRef.current;
+            if (gridEl) {
+              const layout = DESKTOP_ICON_LAYOUTS[iconSize];
+              const gridRect = gridEl.getBoundingClientRect();
+              
+              if (offsets && offsets.path) {
+                const grabbedPath = offsets.path;
+                const oldGrabbedPos = positions[grabbedPath] ?? { col: 0, row: 0 };
+                const newCol = Math.max(0, Math.round((e.clientX - offsets.x - gridRect.left - 10) / layout.cellWidth));
+                const newRow = Math.max(0, Math.round((e.clientY - offsets.y - gridRect.top - 10) / layout.cellHeight));
+                const dCol = newCol - oldGrabbedPos.col;
+                const dRow = newRow - oldGrabbedPos.row;
+
+                payload.forEach((p) => {
+                  const oldPos = positions[p.path] ?? { col: 0, row: 0 };
+                  setPosition(p.path, {
+                    col: Math.max(0, oldPos.col + dCol),
+                    row: Math.max(0, oldPos.row + dRow),
+                  });
+                });
+              } else {
+                payload.forEach((p) => {
+                  const col = Math.max(0, Math.round((e.clientX - gridRect.left - 10) / layout.cellWidth));
+                  const row = Math.max(0, Math.round((e.clientY - gridRect.top - 10) / layout.cellHeight));
+                  setPosition(p.path, { col, row });
+                });
+              }
+            }
+          } else {
+            try {
+              await copyPayloadToDir(payload, DESKTOP_PATH, runtime, !e.ctrlKey);
+              doRefresh();
+            } catch (err) {
+              log("fs", `drop failed: ${err}`, "error");
+            }
           }
           return;
         }

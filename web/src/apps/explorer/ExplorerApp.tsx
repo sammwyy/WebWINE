@@ -631,7 +631,7 @@ function ExplorerApp({
         items.push(SEPARATOR);
         items.push({
           label: "Properties",
-          action: () => void openProperties(entry),
+          action: () => void openProperties(entry, runtime!),
         });
         return items;
       }
@@ -1179,7 +1179,7 @@ function ExplorerRow({
     >
       {isMosaic ? (
         <>
-          <img src={imgSrc} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
+          <img src={imgSrc || undefined} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
           <div className="flex flex-col min-w-0">
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
             <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
@@ -1188,7 +1188,7 @@ function ExplorerRow({
       ) : (
         <>
           <span className="min-w-0 flex items-center gap-[9px]">
-            <img src={imgSrc} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
+            <img src={imgSrc || undefined} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
           </span>
           <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap max-[720px]:hidden"></span>

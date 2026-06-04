@@ -131,58 +131,6 @@ export function DesktopIcon({
     [handleOpen, path, selectIcon],
   );
 
-  // Pointer-based drag.
-  const iconRef = useRef<HTMLDivElement>(null);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      const el = iconRef.current;
-      if (!el || !gridEl) return;
-
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startLeft = el.offsetLeft;
-      const startTop = el.offsetTop;
-      let isDragging = false;
-
-      el.setPointerCapture(e.pointerId);
-
-      const onMove = (ev: PointerEvent) => {
-        const dx = ev.clientX - startX;
-        const dy = ev.clientY - startY;
-        if (!isDragging && Math.hypot(dx, dy) < 5) return;
-        isDragging = true;
-        setDragging(true);
-        el.style.left = `${clampV(startLeft + dx, ICON_PAD, Math.max(ICON_PAD, gridEl.clientWidth - layout.cellWidth))}px`;
-        el.style.top = `${clampV(startTop + dy, ICON_PAD, Math.max(ICON_PAD, gridEl.clientHeight - layout.cellHeight))}px`;
-      };
-
-      const onUp = (ev: PointerEvent) => {
-        el.releasePointerCapture(ev.pointerId);
-        el.removeEventListener("pointermove", onMove);
-        el.removeEventListener("pointerup", onUp);
-
-        setDragging(false);
-        if (!isDragging) return;
-
-        const newPos = {
-          col: Math.max(0, Math.round((el.offsetLeft - ICON_PAD) / layout.cellWidth)),
-          row: Math.max(0, Math.round((el.offsetTop - ICON_PAD) / layout.cellHeight)),
-        };
-        setPosition(entry.path, newPos);
-
-        suppressRef.current = true;
-        setTimeout(() => {
-          suppressRef.current = false;
-        }, 80);
-      };
-
-      el.addEventListener("pointermove", onMove);
-      el.addEventListener("pointerup", onUp);
-    },
-    [entry.path, gridEl, layout.cellHeight, layout.cellWidth, setPosition],
-  );
 
   const buildContextMenu = useCallback((): MenuItem[] => {
     const isExe = entry.name.toLowerCase().endsWith(".exe");
@@ -287,7 +235,7 @@ export function DesktopIcon({
     items.push({
       label: "Properties",
       action: () => {
-        void openProperties(entry);
+        void openProperties(entry, runtime!);
       },
     });
 
@@ -296,7 +244,7 @@ export function DesktopIcon({
   return (
     <>
       <div
-        ref={iconRef}
+
         className={[
           "absolute",
           "w-[var(--desktop-icon-cell-w,82px)] h-[var(--desktop-icon-cell-h,92px)]",
@@ -317,11 +265,55 @@ export function DesktopIcon({
         style={style}
         draggable
         onClick={handleClick}
-        onPointerDown={handlePointerDown}
         onDragStart={(e) => {
-          const payload = selectedEntries().map(toPayloadEntry);
+          let payload = selectedEntries().map(toPayloadEntry);
+          if (!payload.find(p => p.path === entry.path)) {
+            selectIcon(path);
+            payload = [toPayloadEntry(entry)];
+          }
           e.dataTransfer.setData("application/x-webwine-paths", encodeDragPayload(payload));
+          
+          const rect = e.currentTarget.getBoundingClientRect();
+          const offsetX = e.clientX - rect.left;
+          const offsetY = e.clientY - rect.top;
+          
+          const offset = {
+             x: offsetX,
+             y: offsetY,
+             path: entry.path
+          };
+          e.dataTransfer.setData("application/x-webwine-drag-offset", JSON.stringify(offset));
+          e.dataTransfer.setData("application/x-webwine-desktop-drag", "1");
           e.dataTransfer.effectAllowed = "copyMove";
+
+          // Hide default ghost image to do manual smooth repositioning
+          const img = new Image();
+          img.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+          e.dataTransfer.setDragImage(img, 0, 0);
+
+          setDragging(true);
+          
+          // Store start info for onDrag
+          e.currentTarget.dataset.dragStartX = offsetX.toString();
+          e.currentTarget.dataset.dragStartY = offsetY.toString();
+        }}
+        onDrag={(e) => {
+          if (e.clientX === 0 && e.clientY === 0) return;
+          const el = e.currentTarget;
+          if (!gridEl) return;
+          
+          const offsetX = parseFloat(el.dataset.dragStartX || "0");
+          const offsetY = parseFloat(el.dataset.dragStartY || "0");
+          const gridRect = gridEl.getBoundingClientRect();
+          
+          const newLeft = e.clientX - gridRect.left - offsetX;
+          const newTop = e.clientY - gridRect.top - offsetY;
+          
+          el.style.left = `${clampV(newLeft, ICON_PAD, Math.max(ICON_PAD, gridEl.clientWidth - layout.cellWidth))}px`;
+          el.style.top = `${clampV(newTop, ICON_PAD, Math.max(ICON_PAD, gridEl.clientHeight - layout.cellHeight))}px`;
+        }}
+        onDragEnd={() => {
+          setDragging(false);
         }}
         onDragOver={(e) => {
           if (entry.kind !== "directory") return;
@@ -352,14 +344,14 @@ export function DesktopIcon({
       >
         <div className="relative w-[var(--icon-size)] h-[var(--icon-size)] flex-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]">
           <img
-            src={imgSrc}
+            src={imgSrc || undefined}
             alt=""
             className="w-full h-full object-contain"
             draggable={false}
           />
           {overlaySrc && (
             <img
-              src={overlaySrc}
+              src={overlaySrc || undefined}
               alt="Shortcut overlay"
               className="absolute bottom-0 left-0 w-1/2 h-1/2 object-contain"
               draggable={false}

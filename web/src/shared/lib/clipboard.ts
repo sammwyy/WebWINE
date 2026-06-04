@@ -206,7 +206,7 @@ function normalizePath(path: string): string {
   return trimmed.replace(/\\+$/g, "");
 }
 
-function parentPath(path: string): string {
+export function parentPath(path: string): string {
   const normalized = normalizePath(path);
   const idx = normalized.lastIndexOf("\\");
   if (idx <= 2) return `${normalized[0].toUpperCase()}:\\`;
