@@ -149,6 +149,7 @@ fn handle_trampoline(
             exe_path: proc.path.as_str(),
             cwd: &mut proc.cwd,
             cmdline: proc.cmdline.as_str(),
+            messages: &proc.messages,
             proc_addr: api.proc_addr_map(),
         };
         api.dispatch(va, &mut ctx)
@@ -322,7 +323,99 @@ fn try_seh(
     while node != 0xFFFF_FFFF && node != 0 && depth < 32 {
         depth += 1;
         let handler = proc.memory.read_u32(node + 4).unwrap_or(0);
-        if handler == 0 || handler >= TRAMPOLINE_BASE {
+        if handler == 0 {
+            node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
+            continue;
+        }
+
+        let mut resolved_handler = handler;
+        
+        if handler != 0 && handler < TRAMPOLINE_BASE {
+            // Check if it's an IAT thunk: jmp dword ptr [iat_addr] (FF 25 xx xx xx xx)
+            let bytes = proc.memory.read_bytes(handler, 6).unwrap_or_default();
+            if bytes.len() == 6 && bytes[0] == 0xFF && bytes[1] == 0x25 {
+                let iat_addr = u32::from_le_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
+                let dest = proc.memory.read_u32(iat_addr).unwrap_or(0);
+                resolved_handler = dest;
+            }
+        }
+
+        if resolved_handler >= TRAMPOLINE_BASE {
+            // Check if it resolves to _except_handler3. If so, handle it natively.
+            let mut is_eh3 = false;
+            if let Some((_, name)) = api.lookup_name(resolved_handler) {
+                if name == "_except_handler3" {
+                    is_eh3 = true;
+                }
+            }
+
+            if is_eh3 {
+                let scopetable = proc.memory.read_u32(node + 8).unwrap_or(0);
+                let trylevel = proc.memory.read_u32(node + 12).unwrap_or(0xFFFF_FFFF);
+                let _ebp = proc.memory.read_u32(node + 16).unwrap_or(0);
+
+                let mut level = trylevel as i32;
+                let mut absorbed = false;
+                
+                while level != -1 {
+                    let entry = scopetable + (level as u32) * 12;
+                    let enclosing = proc.memory.read_u32(entry).unwrap_or(0xFFFF_FFFF) as i32;
+                    let filter = proc.memory.read_u32(entry + 4).unwrap_or(0);
+                    let specific_handler = proc.memory.read_u32(entry + 8).unwrap_or(0);
+                    
+                    let mut filter_action = 1; // EXCEPTION_EXECUTE_HANDLER if filter is null
+                    if filter != 0 {
+                        // evaluate filter
+                        let saved_ebp = proc.cpu.ebp;
+                        let saved_eip = proc.cpu.eip;
+                        let saved_esp = proc.cpu.esp;
+                        
+                        proc.cpu.ebp = _ebp; // MSVC filters expect EBP = _ebp
+                        let flow = call_guest_fn_args(proc, api, fs, logs, filter, &[], depth + 1);
+                        
+                        // We must restore CPU registers that shouldn't be clobbered
+                        let action = proc.cpu.eax as i32;
+                        proc.cpu.ebp = saved_ebp;
+                        proc.cpu.eip = saved_eip;
+                        proc.cpu.esp = saved_esp;
+                        
+                        if let Flow::Continue = flow {
+                            filter_action = action;
+                        } else {
+                            // If filter faulted, ignore and keep searching
+                            level = enclosing;
+                            continue;
+                        }
+                    }
+                    
+                    if filter_action == 1 { // EXCEPTION_EXECUTE_HANDLER
+                        logs.log(LogLevel::Info, "seh", &format!("_except_handler3 executing handler at 0x{:08X}", specific_handler), Some(proc.pid));
+                        // Jump to handler.
+                        // MSVC specific_handler expects EBP = _ebp, and ESP is usually restored.
+                        // To be safe, we set EBP = _ebp, and leave ESP at the fault_esp (or maybe the node?).
+                        // Usually local variables are accessed via EBP. We will restore EBP and jump.
+                        proc.cpu.ebp = _ebp;
+                        // ESP must be valid. The handler might assume ESP is below its locals.
+                        // We'll set ESP to the node itself (the registration frame), minus a little buffer, 
+                        // as it's safe. But fault_esp is also fine. Let's use fault_esp.
+                        proc.cpu.esp = fault_esp;
+                        proc.cpu.eip = specific_handler;
+                        return true;
+                    } else if filter_action == -1 { // EXCEPTION_CONTINUE_EXECUTION
+                        logs.log(LogLevel::Info, "seh", &format!("_except_handler3 continuing execution"), Some(proc.pid));
+                        proc.cpu.esp = fault_esp;
+                        return true;
+                    }
+                    
+                    level = enclosing;
+                }
+                
+                // If we get here, no handler in the scopetable caught it.
+                // Move to next node.
+                node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
+                continue;
+            }
+
             // Skip invalid / trampoline "handlers" — not real SEH handlers.
             node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
             continue;

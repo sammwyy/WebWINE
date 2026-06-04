@@ -163,6 +163,9 @@ pub struct GuestProcess {
     // Full command line, e.g. `"C:\...\doom.exe" -iwad doom1.wad`. Returned by
     // GetCommandLine and parsed into argv by the CRT startup.
     pub cmdline:     String,
+    // Message-table resource (id -> text) for FormatMessage(FROM_HMODULE), used by
+    // cmd.exe and other system apps for their banner/messages.
+    pub messages:    std::collections::HashMap<u32, String>,
     // Managed (.NET/CLI) image bytes, set when this is a managed process. Such a
     // process has no meaningful x86 CPU state; it runs via the CLR interpreter.
     pub managed:     Option<Vec<u8>>,
@@ -209,6 +212,7 @@ impl GuestProcess {
             state: ProcessState::Created,
             cwd: parent_dir(path),
             cmdline: format!("\"{path}\""),
+            messages: std::collections::HashMap::new(),
             managed: Some(bytes),
         }
     }

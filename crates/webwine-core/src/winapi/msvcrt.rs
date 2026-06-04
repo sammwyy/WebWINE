@@ -40,6 +40,18 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "wcscmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
         ("msvcrt.dll", "_wcsicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
         ("msvcrt.dll", "wcschr", wcschr_fn),
+        ("msvcrt.dll", "wcsrchr", wcsrchr_fn),
+        ("msvcrt.dll", "wcsstr", wcsstr_fn),
+        ("msvcrt.dll", "wcsncmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
+        ("msvcrt.dll", "_wcsnicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
+        ("msvcrt.dll", "towupper", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_uppercase() as u32).unwrap_or(v)); Handled::Ok }),
+        ("msvcrt.dll", "towlower", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_lowercase() as u32).unwrap_or(v)); Handled::Ok }),
+        ("msvcrt.dll", "iswalpha", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_alphabetic() as u32).unwrap_or(0)); Handled::Ok }),
+        ("msvcrt.dll", "iswdigit", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_numeric() as u32).unwrap_or(0)); Handled::Ok }),
+        ("msvcrt.dll", "iswspace", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_whitespace() as u32).unwrap_or(0)); Handled::Ok }),
+        ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = 1_577_836_800u32; if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
+        ("msvcrt.dll", "srand", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcrt.dll", "rand", |c| { c.ret_cdecl(0x41); Handled::Ok }),
         ("msvcrt.dll", "strchr", strchr),
         ("msvcrt.dll", "strrchr", strrchr),
         ("msvcrt.dll", "strstr", strstr),
@@ -290,7 +302,8 @@ pub fn register(r: &mut WinApiRegistry) {
             "__current_exception_context",
             stub_zero_cdecl_0,
         ),
-        ("msvcrt.dll", "_except_handler4_common", stub_zero_cdecl_4),
+        ("msvcrt.dll", "_except_handler3", stub_one_cdecl_4),
+        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),
         // ucrtbase / vcruntime aliases
         ("ucrtbase.dll", "exit", exit),
         ("ucrtbase.dll", "_exit", exit),
@@ -580,6 +593,30 @@ fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
     let s = ctx.wstr(p);
     let pos = s.encode_utf16().position(|c| c == needle);
     let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
+    ctx.ret_cdecl(r);
+    Handled::Ok
+}
+
+fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let needle = ctx.arg(1) as u16;
+    let s = ctx.wstr(p);
+    let pos = s.encode_utf16().enumerate().filter(|&(_, c)| c == needle).last().map(|(i, _)| i);
+    let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
+    ctx.ret_cdecl(r);
+    Handled::Ok
+}
+
+fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let hay: Vec<u16> = ctx.wstr(p).encode_utf16().collect();
+    let needle: Vec<u16> = ctx.wstr(ctx.arg(1)).encode_utf16().collect();
+    let r = if needle.is_empty() {
+        p
+    } else {
+        hay.windows(needle.len()).position(|w| w == needle.as_slice())
+            .map(|i| p + (i as u32) * 2).unwrap_or(0)
+    };
     ctx.ret_cdecl(r);
     Handled::Ok
 }
@@ -1480,8 +1517,8 @@ fn stub_zero_cdecl_3(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_zero_cdecl_4(c: &mut ApiContext) -> Handled {
-    c.ret_cdecl(0);
+fn stub_one_cdecl_4(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(1); // EXCEPTION_CONTINUE_SEARCH
     Handled::Ok
 }
 fn stub_void_1_cdecl(c: &mut ApiContext) -> Handled {

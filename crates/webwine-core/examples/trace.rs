@@ -124,7 +124,8 @@ fn main() {
                 let apis: Vec<String> = vm.drain_logs().into_iter()
                     .filter(|e| e.target == "api").map(|e| e.message).collect();
                 println!("--- last api ---");
-                for m in apis.iter().rev().take(25).rev() { println!("  {m}"); }
+                let take = std::env::var("APITAIL").ok().and_then(|s| s.parse().ok()).unwrap_or(25);
+                for m in apis.iter().rev().take(take).rev() { println!("  {m}"); }
                 return;
             }
             ProcessState::Crashed { reason } => {

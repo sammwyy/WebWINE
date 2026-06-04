@@ -8,6 +8,100 @@ use crate::vm::memory::{GuestMemory, PageProt};
 use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState};
 use crate::winapi::WinApiRegistry;
 
+/// Extract the message-table resource (RT_MESSAGETABLE) into an id->text map.
+/// cmd.exe and other system apps load their banner/messages/output templates
+/// from here via FormatMessage(FROM_HMODULE).
+pub fn extract_message_table(pe: &PE, bytes: &[u8]) -> std::collections::HashMap<u32, String> {
+    use std::collections::HashMap;
+    let mut out = HashMap::new();
+
+    let Some(oh) = pe.header.optional_header else { return out };
+    let Some(res) = oh.data_directories.get_resource_table() else { return out };
+    if res.virtual_address == 0 {
+        return out;
+    }
+    let rsrc_rva = res.virtual_address;
+
+    let rva_to_off = |rva: u32| -> Option<usize> {
+        for s in &pe.sections {
+            let size = s.virtual_size.max(s.size_of_raw_data);
+            if rva >= s.virtual_address && rva < s.virtual_address + size {
+                return Some((s.pointer_to_raw_data + (rva - s.virtual_address)) as usize);
+            }
+        }
+        None
+    };
+    let rd_u32 = |o: usize| -> u32 {
+        bytes.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).unwrap_or(0)
+    };
+    let rd_u16 = |o: usize| -> u16 {
+        bytes.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).unwrap_or(0)
+    };
+
+    // Walk a resource directory's entries, calling `f(id_or_name, offset, is_dir)`.
+    let dir_entries = |dir_rva: u32| -> Vec<(u32, u32, bool)> {
+        let mut v = Vec::new();
+        let Some(base) = rva_to_off(dir_rva) else { return v };
+        let named = rd_u16(base + 12) as usize;
+        let ids = rd_u16(base + 14) as usize;
+        for i in 0..(named + ids) {
+            let e = base + 16 + i * 8;
+            let name = rd_u32(e);
+            let off = rd_u32(e + 4);
+            v.push((name, off & 0x7FFF_FFFF, off & 0x8000_0000 != 0));
+        }
+        v
+    };
+
+    // Level 1: find type == 11 (RT_MESSAGETABLE).
+    let Some(type_entry) = dir_entries(rsrc_rva).into_iter().find(|(id, _, is_dir)| *id == 11 && *is_dir) else {
+        return out;
+    };
+    // Level 2: name/id entries -> Level 3: language entries -> data entry.
+    for (_, l2_off, l2_dir) in dir_entries(rsrc_rva + type_entry.1) {
+        if !l2_dir { continue; }
+        for (_, l3_off, l3_dir) in dir_entries(rsrc_rva + l2_off) {
+            if l3_dir { continue; }
+            // l3_off points to an IMAGE_RESOURCE_DATA_ENTRY (relative to rsrc base).
+            let Some(de) = rva_to_off(rsrc_rva + l3_off) else { continue };
+            let data_rva = rd_u32(de);
+            let Some(data_off) = rva_to_off(data_rva) else { continue };
+            parse_message_data(bytes, data_off, &mut out);
+        }
+    }
+    out
+}
+
+// Parse a MESSAGE_RESOURCE_DATA block at `base` into id->text.
+fn parse_message_data(bytes: &[u8], base: usize, out: &mut std::collections::HashMap<u32, String>) {
+    let rd_u32 = |o: usize| bytes.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).unwrap_or(0);
+    let rd_u16 = |o: usize| bytes.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).unwrap_or(0);
+
+    let n_blocks = rd_u32(base) as usize;
+    for b in 0..n_blocks {
+        let blk = base + 4 + b * 12;
+        let low = rd_u32(blk);
+        let high = rd_u32(blk + 4);
+        let entries_off = rd_u32(blk + 8) as usize;
+        let mut o = base + entries_off;
+        for id in low..=high {
+            let len = rd_u16(o) as usize;
+            if len < 4 { break; }
+            let flags = rd_u16(o + 2);
+            let text_bytes = bytes.get(o + 4..o + len).unwrap_or(&[]);
+            let text = if flags & 1 != 0 {
+                let units: Vec<u16> = text_bytes.chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+                String::from_utf16_lossy(&units)
+            } else {
+                String::from_utf8_lossy(text_bytes).into_owned()
+            };
+            out.insert(id, text.trim_end_matches('\0').to_string());
+            o += len;
+        }
+    }
+}
+
 // Fixed virtual address layout
 const HEAP_BASE:   u32 = 0x1000_0000;
 const HEAP_SIZE:   u32 = 0x0040_0000; // 4 MB
@@ -244,6 +338,7 @@ pub fn load_pe(
         state: ProcessState::Created,
         cwd: crate::vm::process::parent_dir(path),
         cmdline: format!("\"{path}\""),
+        messages: extract_message_table(&pe, bytes),
         managed: None,
     })
 }

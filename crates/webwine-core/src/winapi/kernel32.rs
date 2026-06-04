@@ -167,6 +167,32 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "FindNextFileW", find_next_file_w),
         ("kernel32.dll", "FindNextFileA", find_next_file_a),
         ("kernel32.dll", "FindClose", find_close),
+        ("kernel32.dll", "GetVolumeInformationW", get_volume_information_w),
+        ("kernel32.dll", "GetVolumeInformationA", get_volume_information_a),
+        ("kernel32.dll", "FileTimeToSystemTime", file_time_to_system_time),
+        ("kernel32.dll", "FileTimeToLocalFileTime", file_time_to_local_file_time),
+        ("kernel32.dll", "SystemTimeToFileTime", system_time_to_file_time),
+        ("kernel32.dll", "LocalFileTimeToFileTime", file_time_to_local_file_time),
+        ("kernel32.dll", "GetDateFormatW", |c| date_time_format(c, true, true)),
+        ("kernel32.dll", "GetDateFormatA", |c| date_time_format(c, false, true)),
+        ("kernel32.dll", "GetTimeFormatW", |c| date_time_format(c, true, false)),
+        ("kernel32.dll", "GetTimeFormatA", |c| date_time_format(c, false, false)),
+        ("kernel32.dll", "GetDiskFreeSpaceW", |c| {
+            // (root, *sectorsPerCluster, *bytesPerSector, *freeClusters, *totalClusters)
+            if c.arg(1) != 0 { let _ = c.memory.write_u32(c.arg(1), 8); }
+            if c.arg(2) != 0 { let _ = c.memory.write_u32(c.arg(2), 512); }
+            if c.arg(3) != 0 { let _ = c.memory.write_u32(c.arg(3), 0x10000); }
+            if c.arg(4) != 0 { let _ = c.memory.write_u32(c.arg(4), 0x20000); }
+            c.ret_stdcall(1, 5); Handled::Ok
+        }),
+        ("kernel32.dll", "GetDiskFreeSpaceExW", |c| {
+            // (dir, *freeAvail(u64), *total(u64), *totalFree(u64))
+            for a in [1u32, 2, 3] {
+                let p = c.arg(a);
+                if p != 0 { let _ = c.memory.write_u32(p, 0x4000_0000); let _ = c.memory.write_u32(p + 4, 0); }
+            }
+            c.ret_stdcall(1, 4); Handled::Ok
+        }),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteConsoleW", write_console_w),
         ("kernel32.dll", "GetEnvironmentStringsW", |c| { let p = env_block(c, true); c.ret_stdcall(p, 0); Handled::Ok }),
@@ -321,6 +347,17 @@ pub fn register(r: &mut WinApiRegistry) {
         // FormatMessageW forwarded through the localization API set.
         ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageW", format_message_w_fwd),
         ("api-ms-win-core-localization-l1-2-0.dll", "FormatMessageA", format_message_a_fwd),
+        // ── MFC42U.DLL Stubs ───────────────────────────────────────────────
+        // Paint (mspaint.exe) imports ordinal 1165 from MFC42U.DLL.
+        // It's likely AfxGetModuleState() or AfxGetApp() which returns a pointer
+        // to a large CWinApp / AFX_MODULE_STATE structure.
+        // Returning 0 crashes because it tries to write to [EAX+0x14].
+        // We return a dummy heap pointer so the writes succeed.
+        ("mfc42u.dll", "#1165", |c| {
+            let ptr = c.heap_alloc(256); // give it a nice 256 byte chunk to write to
+            c.ret_stdcall(ptr, 1);       // guess: 1 arg? The log said "cleaned 1 args"
+            Handled::Ok
+        }),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -863,6 +900,142 @@ fn find_close(ctx: &mut ApiContext) -> Handled {
     let handle = ctx.arg(0);
     ctx.handles.remove(handle);
     ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+// GetVolumeInformation(root, volNameBuf, volNameSize, *serial, *maxComp,
+//                      *fsFlags, fsNameBuf, fsNameSize) — 8 args.
+fn get_volume_info(ctx: &mut ApiContext, wide: bool) -> Handled {
+    let vol_buf = ctx.arg(1);
+    let serial = ctx.arg(3);
+    let max_comp = ctx.arg(4);
+    let fs_flags = ctx.arg(5);
+    let fs_buf = ctx.arg(6);
+    let write = |ctx: &mut ApiContext, p: u32, s: &str| {
+        if p == 0 { return; }
+        if wide {
+            let mut b: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+            b.extend_from_slice(&[0, 0]);
+            let _ = ctx.memory.write_bytes(p, &b);
+        } else {
+            let mut b = s.as_bytes().to_vec();
+            b.push(0);
+            let _ = ctx.memory.write_bytes(p, &b);
+        }
+    };
+    write(ctx, vol_buf, "WEBWINE");
+    write(ctx, fs_buf, "NTFS");
+    if serial != 0 { let _ = ctx.memory.write_u32(serial, 0x1234_ABCD); }
+    if max_comp != 0 { let _ = ctx.memory.write_u32(max_comp, 255); }
+    if fs_flags != 0 { let _ = ctx.memory.write_u32(fs_flags, 0); }
+    ctx.ret_stdcall(1, 8);
+    Handled::Ok
+}
+
+fn get_volume_information_w(ctx: &mut ApiContext) -> Handled { get_volume_info(ctx, true) }
+fn get_volume_information_a(ctx: &mut ApiContext) -> Handled { get_volume_info(ctx, false) }
+
+// Convert a FILETIME (100ns since 1601) to civil (year, month, day, dow, h, m, s).
+fn filetime_to_civil(ft: u64) -> (u16, u16, u16, u16, u16, u16, u16) {
+    let secs = (ft / 10_000_000) as i64;
+    let days_1601 = secs.div_euclid(86400);
+    let tod = secs.rem_euclid(86400);
+    let (h, mi, s) = ((tod / 3600) as u16, ((tod % 3600) / 60) as u16, (tod % 60) as u16);
+    // days since 1970-01-01 (1601->1970 = 134774 days)
+    let days = days_1601 - 134774;
+    let dow = (days.rem_euclid(7) + 4) % 7; // 1970-01-01 was Thursday (4)
+    // Howard Hinnant's civil_from_days
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    (year as u16, m as u16, d as u16, dow as u16, h, mi, s)
+}
+
+fn read_filetime(ctx: &ApiContext, p: u32) -> u64 {
+    let lo = ctx.memory.read_u32(p).unwrap_or(0) as u64;
+    let hi = ctx.memory.read_u32(p + 4).unwrap_or(0) as u64;
+    (hi << 32) | lo
+}
+
+// FileTimeToSystemTime(lpFileTime, lpSystemTime). SYSTEMTIME: 8 u16s.
+fn file_time_to_system_time(ctx: &mut ApiContext) -> Handled {
+    let ft = read_filetime(ctx, ctx.arg(0));
+    let st = ctx.arg(1);
+    let (y, mo, d, dow, h, mi, s) = filetime_to_civil(ft);
+    if st != 0 {
+        for (i, v) in [y, mo, dow, d, h, mi, s, 0].iter().enumerate() {
+            let _ = ctx.memory.write_u16(st + (i as u32) * 2, *v);
+        }
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+// FileTimeToLocalFileTime(lpFileTime, lpLocalFileTime): no timezone — copy.
+fn file_time_to_local_file_time(ctx: &mut ApiContext) -> Handled {
+    let ft = read_filetime(ctx, ctx.arg(0));
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, ft as u32);
+        let _ = ctx.memory.write_u32(out + 4, (ft >> 32) as u32);
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+// SystemTimeToFileTime(lpSystemTime, lpFileTime): approximate (fixed epoch ok
+// for display). We just emit a constant recent FILETIME.
+fn system_time_to_file_time(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    let ft: u64 = 133_000_000_000_000_000; // ~2022
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, ft as u32);
+        let _ = ctx.memory.write_u32(out + 4, (ft >> 32) as u32);
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+// GetDateFormat/GetTimeFormat(locale, flags, lpDate(SYSTEMTIME), lpFormat,
+// lpStr, cchStr) -> chars written. We produce MM/dd/yyyy and hh:mm.
+fn date_time_format(ctx: &mut ApiContext, wide: bool, is_date: bool) -> Handled {
+    let st = ctx.arg(2);
+    let buf = ctx.arg(4);
+    let cch = ctx.arg(5);
+    let rd = |ctx: &ApiContext, off: u32| ctx.memory.read_u16(st + off).unwrap_or(0);
+    let text = if is_date {
+        format!("{:02}/{:02}/{:04}", rd(ctx, 2), rd(ctx, 6), rd(ctx, 0)) // MM/dd/yyyy
+    } else {
+        let h = rd(ctx, 8);
+        let (h12, ap) = if h == 0 { (12, "AM") } else if h < 12 { (h, "AM") } else if h == 12 { (12, "PM") } else { (h - 12, "PM") };
+        format!("{:02}:{:02} {}", h12, rd(ctx, 10), ap)
+    };
+    let n = if wide {
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let w = if cch > 0 { units.len().min(cch as usize - 1) } else { units.len() };
+        if buf != 0 {
+            let mut b: Vec<u8> = units[..w].iter().flat_map(|u| u.to_le_bytes()).collect();
+            b.extend_from_slice(&[0, 0]);
+            let _ = ctx.memory.write_bytes(buf, &b);
+        }
+        w + 1
+    } else {
+        let bytes = text.as_bytes();
+        let w = if cch > 0 { bytes.len().min(cch as usize - 1) } else { bytes.len() };
+        if buf != 0 {
+            let _ = ctx.memory.write_bytes(buf, &bytes[..w]);
+            let _ = ctx.memory.write_u8(buf + w as u32, 0);
+        }
+        w + 1
+    };
+    ctx.ret_stdcall(n as u32, 6);
     Handled::Ok
 }
 
@@ -1656,6 +1829,7 @@ fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
 
 const FORMAT_MESSAGE_ALLOCATE_BUFFER: u32 = 0x0000_0100;
 const FORMAT_MESSAGE_IGNORE_INSERTS:  u32 = 0x0000_0200;
+const FORMAT_MESSAGE_FROM_HMODULE:    u32 = 0x0000_0800;
 const FORMAT_MESSAGE_FROM_STRING:     u32 = 0x0000_0400;
 const FORMAT_MESSAGE_FROM_SYSTEM:     u32 = 0x0000_1000;
 
@@ -1709,42 +1883,58 @@ fn win32_error_string(code: u32) -> Option<&'static str> {
 /// We read at most 9 dword-wide pointers (each a pointer to a C string) and
 /// substitute %1..%9.  If IGNORE_INSERTS is set, or Arguments is NULL, we just
 /// pass the template through unchanged.
-fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext) -> String {
-    if flags & FORMAT_MESSAGE_IGNORE_INSERTS != 0 || arg_ptr == 0 {
-        return template.to_string();
-    }
-    let mut args: Vec<String> = Vec::new();
-    for i in 0u32..9 {
-        let p = ctx.memory.read_u32(arg_ptr + i * 4).unwrap_or(0);
-        if p == 0 { break; }
-        args.push(ctx.memory.read_cstr(p));
-    }
+fn apply_inserts(template: &str, flags: u32, arg_ptr: u32, ctx: &ApiContext, wide: bool) -> String {
+    let ignore = flags & FORMAT_MESSAGE_IGNORE_INSERTS != 0;
+    // Read the insert argument array (up to 9 DWORDs). Each may be an integer
+    // value (for %n!d!) or a pointer to a string (for %n!s! / bare %n).
+    let raw: Vec<u32> = (0..9)
+        .map(|i| ctx.memory.read_u32(arg_ptr + i * 4).unwrap_or(0))
+        .collect();
 
+    let chars: Vec<char> = template.chars().collect();
     let mut out = String::with_capacity(template.len());
-    let bytes = template.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 1 < bytes.len() {
-            let next = bytes[i + 1];
-            if next >= b'1' && next <= b'9' {
-                let idx = (next - b'1') as usize;
-                if idx < args.len() {
-                    out.push_str(&args[idx]);
+    while i < chars.len() {
+        if chars[i] != '%' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        // Escape/control sequences (always processed).
+        match chars.get(i + 1).copied() {
+            Some('%') => { out.push('%'); i += 2; continue; }
+            Some('n') | Some('r') => { out.push_str("\r\n"); i += 2; continue; }
+            Some('t') => { out.push('\t'); i += 2; continue; }
+            Some('b') => { out.push(' '); i += 2; continue; }
+            Some('0') => break, // %0: end of message, no trailing newline
+            Some(d) if d.is_ascii_digit() => {
+                let n = (d as u8 - b'1') as usize; // %1 -> index 0
+                i += 2;
+                // Optional !printf-spec! (e.g. !d!, !u!, !s!, !x!).
+                let mut spec = String::new();
+                if chars.get(i) == Some(&'!') {
+                    i += 1;
+                    while i < chars.len() && chars[i] != '!' { spec.push(chars[i]); i += 1; }
+                    if i < chars.len() { i += 1; } // closing !
                 }
-                i += 2;
-                continue;
-            } else if next == b'%' {
-                out.push('%');
-                i += 2;
-                continue;
-            } else if next == b'n' || next == b'r' {
-                out.push('\n');
-                i += 2;
+                if ignore { continue; }
+                let val = raw.get(n).copied().unwrap_or(0);
+                let kind = spec.chars().rev().find(|c| c.is_ascii_alphabetic());
+                match kind {
+                    Some('d') | Some('i') => out.push_str(&(val as i32).to_string()),
+                    Some('u') => out.push_str(&val.to_string()),
+                    Some('x') => out.push_str(&format!("{val:x}")),
+                    Some('X') => out.push_str(&format!("{val:X}")),
+                    Some('c') => out.push(val as u8 as char),
+                    _ => {
+                        // string insert: val is a pointer
+                        out.push_str(&if wide { ctx.memory.read_wstr(val) } else { ctx.memory.read_cstr(val) });
+                    }
+                }
                 continue;
             }
+            _ => { out.push('%'); i += 1; continue; }
         }
-        out.push(bytes[i] as char);
-        i += 1;
     }
     out
 }
@@ -1763,12 +1953,16 @@ fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
     let text: String = if flags & FORMAT_MESSAGE_FROM_STRING != 0 {
         // lpSource is a pointer to the format string.
         let template = if wide { ctx.memory.read_wstr(source) } else { ctx.memory.read_cstr(source) };
-        apply_inserts(&template, flags, arg_ptr, ctx)
+        apply_inserts(&template, flags, arg_ptr, ctx, wide)
+    } else if flags & FORMAT_MESSAGE_FROM_HMODULE != 0 && ctx.messages.contains_key(&msg_id) {
+        // Module message-table resource (cmd.exe banner/messages/output).
+        let template = ctx.messages.get(&msg_id).cloned().unwrap_or_default();
+        apply_inserts(&template, flags, arg_ptr, ctx, wide)
     } else if flags & FORMAT_MESSAGE_FROM_SYSTEM != 0 {
         let raw = win32_error_string(msg_id)
             .unwrap_or("Unknown error.")
             .to_string();
-        let with_ins = apply_inserts(&raw, flags, arg_ptr, ctx);
+        let with_ins = apply_inserts(&raw, flags, arg_ptr, ctx, wide);
         // Windows appends "\r\n" to system messages.
         format!("{}\r\n", with_ins.trim_end_matches(|c| c == '\r' || c == '\n'))
     } else {

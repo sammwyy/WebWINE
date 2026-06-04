@@ -48,6 +48,8 @@ pub struct ApiContext<'a> {
     pub cwd:       &'a mut String,
     /// Full command line (argv[0] is the quoted image path).
     pub cmdline:   &'a str,
+    /// Message-table resource (id -> text) for FormatMessage(FROM_HMODULE).
+    pub messages:  &'a std::collections::HashMap<u32, String>,
     /// Function-name → trampoline VA, for GetProcAddress (0 = not available).
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
 }
