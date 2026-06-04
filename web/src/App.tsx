@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Button } from "@fluentui/react-components";
 import { useRuntimeStore } from "./state/runtimeStore";
 import { useLogStore } from "./state/logStore";
 import { Desktop } from "./modules/desktop/Desktop";
@@ -41,9 +42,9 @@ function LogPanel() {
     <div id="log-panel">
       <div id="log-panel-header">
         <span>System Log</span>
-        <button id="log-clear-btn" type="button" onClick={clear}>
+        <Button id="log-clear-btn" appearance="subtle" type="button" onClick={clear}>
           Clear
-        </button>
+        </Button>
       </div>
       <div id="log-output" ref={outputRef}>
         {entries.map((entry) => (
