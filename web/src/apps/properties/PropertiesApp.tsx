@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { useWindowStore } from "../../state/windowStore";
+import { useWindowStore } from "@/state/windowStore";
 
-import type { DirectoryEntry } from "../../core/wasm/worker";
-import { formatSize } from "../../shared/lib/utils";
+import type { DirectoryEntry } from "@/core/wasm/worker";
+import { formatSize } from "@/shared/lib/utils";
 
 type PropertiesTab = "general" | "details";
 

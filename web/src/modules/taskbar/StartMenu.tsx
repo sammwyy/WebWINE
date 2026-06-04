@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRuntimeStore } from "../../state/runtimeStore";
+import { useRuntimeStore } from "@/state/runtimeStore";
 
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import type { DirectoryEntry } from "../../core/wasm/worker";
-import { ICON_PLACEHOLDER, resolveIcon } from "../../shared/lib/icon-resolver";
-import { launchGuestPath } from "../../shared/lib/guest-launch";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import type { DirectoryEntry } from "@/core/wasm/worker";
+import { ICON_PLACEHOLDER, resolveIcon } from "@/shared/lib/icons/icon-resolver";
+import { launchGuestPath } from "@/shared/lib/guest-launch";
 
 const START_MENU_PROGRAMS_ROOT =
   "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";

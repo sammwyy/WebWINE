@@ -1,7 +1,7 @@
 import { openExplorer } from "../../apps/explorer/ExplorerApp";
 import { launchProcessHidden } from "../../apps/process-console/ProcessConsoleApp";
 import { openTextReader } from "../../apps/text-reader/TextReaderApp";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import {
   parseShortcutTarget,
   shortcutActionForName,

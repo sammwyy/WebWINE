@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useWindowStore } from "../../state/windowStore";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import { basename } from "../../shared/lib/utils";
-import { resolveIcon } from "../../shared/lib/icon-resolver";
+import { useWindowStore } from "@/state/windowStore";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import { basename } from "@/shared/lib/utils";
+import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 
 export async function openTextReader(path: string, runtime: RuntimeBridge) {
   const name = basename(path);

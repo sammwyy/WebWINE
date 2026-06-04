@@ -1,253 +1,5 @@
-/**
- * icon-resolver.ts
- *
- * Resolves desktop-entry icons to normalised PNG data-URIs (48 CSS px,
- * rendered at 2× for HiDPI).  All icons pass through a canvas so the
- * calling code always gets a plain `src` string — no onerror chains.
- *
- * Resolution order (fallbacks come from the active icon theme, not inline):
- *   directory (known place) → places/<key>.webp → shell/folder.webp
- *   directory (generic)     → shell/folder.webp
- *   .lnk shortcut          → read target path from file → resolve target
- *                             icon + shell/lnk.webp overlay
- *   .exe / .dll (PE)        → extract embedded RT_GROUP_ICON → decode
- *                             best image → shell/default_executable.webp
- *   other file              → exts/<ext>.webp → exts/default.webp
- *
- * Theme icon layout  (under /theme/icons/):
- *   exts/<ext>.webp          per-extension icon
- *   exts/default.webp        catch-all file icon
- *   shell/folder.webp
- *   shell/default_executable.webp
- *   shell/lnk.webp           overlay badge for shortcuts
- *   places/documents.webp
- *   places/music.webp
- *   places/pictures.webp
- *   places/recycle.webp
- *   places/thispc.webp
- *   places/video.webp
- */
-
-import type { DirectoryEntry } from "../../core/wasm/worker";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-
-import { parseShortcutTarget, shortcutActionForName, shellActionForPath } from "./shortcut-target";
-
-// Public API
-
-export interface ResolvedIcon {
-  /** Normalised PNG data-URI, ready to set as <img>.src */
-  src: string;
-  /** Optional overlay (lnk badge), same format */
-  overlay?: string;
-}
-
-/** Transparent 1×1 GIF — placeholder while icons load asynchronously */
-export const ICON_PLACEHOLDER =
-  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-
-/**
- * Resolve an icon for a desktop entry.
- * Results are cached per path — call invalidateIconCache() on theme change.
- */
-export function resolveIcon(
-  entry: DirectoryEntry,
-  runtime: RuntimeBridge,
-): Promise<ResolvedIcon> {
-
-  const key = entry.path;
-  if (!iconCache.has(key)) {
-    iconCache.set(key, doResolve(entry, runtime, 0));
-  }
-  return iconCache.get(key)!;
-}
-
-/** Wipe all caches. Must be called before switching theme. */
-export function invalidateIconCache(): void {
-  iconCache.clear();
-  assetCache.clear();
-}
-
-// Constants
-
-/** CSS size of the icon element (px) */
-const ICON_CSS_PX = 48;
-
-/** Canvas resolution: 2× for crisp HiDPI rendering */
-const ICON_CANVAS_PX = ICON_CSS_PX * Math.min(Math.ceil(window.devicePixelRatio ?? 1), 3);
-
-/** Guest user profile root (matches the VM's path conventions) */
-const GUEST_PROFILE = "C:\\Users\\guest";
-
-/** Maps absolute directory paths to place icon keys */
-const PLACE_MAP: Record<string, string> = {
-  [`${GUEST_PROFILE}\\Documents`]: "documents",
-  [`${GUEST_PROFILE}\\Music`]: "music",
-  [`${GUEST_PROFILE}\\Pictures`]: "pictures",
-  [`${GUEST_PROFILE}\\Videos`]: "video",
-  "C:\\$Recycle.Bin": "recycle",
-};
-
-// Caches
-
-/** Per path resolved icon */
-const iconCache = new Map<string, Promise<ResolvedIcon>>();
-
-/** Per theme-asset-URL normalised data-URI (or null if 404/error) */
-const assetCache = new Map<string, Promise<string | null>>();
-
-// Resolution
-
-async function doResolve(
-  entry: DirectoryEntry,
-  runtime: RuntimeBridge,
-  depth: number,
-): Promise<ResolvedIcon> {
-  const name = entry.name.toLowerCase();
-
-  // Shortcut (.lnk)
-  if (entry.kind === "file" && name.endsWith(".lnk")) {
-    return resolveLnk(entry, runtime);
-  }
-
-  // Directory
-  if (entry.kind === "directory") {
-    const placeKey = PLACE_MAP[entry.path];
-    const src =
-      (placeKey ? await themeAsset(`places/${placeKey}.webp`) : null) ??
-      (await themeAsset("shell/folder.webp")) ??
-      "";
-    return { src };
-  }
-
-  // PE executable (.exe / .dll)
-  if (name.endsWith(".exe") || name.endsWith(".dll")) {
-    const special = shellActionForPath(entry.path);
-    if (special) {
-      return { src: await shortcutActionIcon(special) };
-    }
-    const peIcon = await extractPeIcon(entry.path, runtime);
-    const src =
-      peIcon ??
-      (await themeAsset("shell/default_executable.webp")) ??
-      "";
-    return { src };
-  }
-
-  // Generic file
-  const dot = entry.name.lastIndexOf(".");
-  const ext = dot !== -1 ? entry.name.slice(dot + 1).toLowerCase() : "";
-  const src =
-    (ext ? await themeAsset(`exts/${ext}.webp`) : null) ??
-    (await themeAsset("exts/default.webp")) ??
-    "";
-  return { src };
-}
-
-async function resolveLnk(
-  entry: DirectoryEntry,
-  runtime: RuntimeBridge,
-): Promise<ResolvedIcon> {
-  // Fetch overlay badge in parallel with target resolution
-  const overlayPromise = themeAsset("shell/lnk.webp");
-
-  try {
-    const bytes = await runtime.readRawFile(entry.path);
-    const target = parseShortcutTarget(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
-
-    if (target) {
-      if (target.kind === "action") {
-        const src = await shortcutActionIcon(target.action);
-        const overlay = (await overlayPromise) ?? undefined;
-        return { src, overlay };
-      }
-
-      const special = shellActionForPath(target.path);
-      if (special) {
-        const src = await shortcutActionIcon(special);
-        const overlay = (await overlayPromise) ?? undefined;
-        return { src, overlay };
-      }
-
-      const targetPath = target.path;
-      // Infer kind from path: no dot in last segment → directory
-      const lastName = targetPath.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "";
-      const synthetic: DirectoryEntry = {
-        name: lastName || targetPath,
-        path: targetPath,
-        kind: lastName.includes(".") ? "file" : "directory",
-        size: 0,
-      };
-      // depth=1 to prevent lnk→lnk recursion
-      const base = await doResolve(synthetic, runtime, 1);
-      const overlay = (await overlayPromise) ?? undefined;
-      return { src: base.src, overlay };
-    }
-  } catch {
-    const fallback = shortcutActionForName(entry.name);
-    if (fallback) {
-      const src = await shortcutActionIcon(fallback);
-      const overlay = (await overlayPromise) ?? undefined;
-      return { src, overlay };
-    }
-  }
-
-  const fallback = shortcutActionForName(entry.name);
-  if (fallback) {
-    const src = await shortcutActionIcon(fallback);
-    const overlay = (await overlayPromise) ?? undefined;
-    return { src, overlay };
-  }
-
-  const src =
-    (await themeAsset("exts/default.webp")) ?? "";
-  const overlay = (await overlayPromise) ?? undefined;
-  return { src, overlay };
-}
-
-async function shortcutActionIcon(action: string): Promise<string> {
-  switch (action) {
-    case "this-pc":
-      return (await themeAsset("places/thispc.webp")) ?? "";
-    case "documents":
-      return (await themeAsset("places/documents.webp")) ?? "";
-    case "pictures":
-      return (await themeAsset("places/pictures.webp")) ?? "";
-    case "music":
-      return (await themeAsset("places/music.webp")) ?? "";
-    case "videos":
-      return (await themeAsset("places/video.webp")) ?? "";
-    case "explorer":
-      return (await themeAsset("apps/explorer.webp")) ?? "";
-    case "upload-file":
-      return (await themeAsset("apps/upload-file.webp")) ?? "";
-    case "upload-folder":
-      return (await themeAsset("apps/upload-folder.webp")) ?? "";
-    default:
-      return "";
-  }
-}
-
-// Theme asset loading
-
-function themeAsset(relPath: string): Promise<string | null> {
-  const url = `/theme/icons/${relPath}`;
-  if (!assetCache.has(url)) {
-    assetCache.set(url, fetchAndNormalise(url));
-  }
-  return assetCache.get(url)!;
-}
-
-async function fetchAndNormalise(url: string): Promise<string | null> {
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const raw = new Uint8Array(await resp.arrayBuffer());
-    return normaliseImageBytes(raw, ICON_CANVAS_PX);
-  } catch {
-    return null;
-  }
-}
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import { ICON_CANVAS_PX, ICON_CSS_PX } from "./icon-registry";
 
 // Image normalisation (any format → 48px PNG data-URI via canvas) 
 
@@ -255,7 +7,7 @@ async function fetchAndNormalise(url: string): Promise<string | null> {
  * Convert raw image bytes (ICO container, PNG, BMP…) to a normalised
  * `size`×`size` PNG data-URI.  Returns null on any failure.
  */
-async function normaliseImageBytes(
+export async function normaliseImageBytes(
   raw: Uint8Array,
   size: number,
 ): Promise<string | null> {
@@ -435,7 +187,7 @@ function blobToDataUri(blob: Blob): Promise<string> {
 const RT_ICON = 3;
 const RT_GROUP_ICON = 14;
 
-async function extractPeIcon(
+export async function extractPeIcon(
   path: string,
   runtime: RuntimeBridge,
 ): Promise<string | null> {
@@ -545,9 +297,6 @@ async function doParsePeIcon(raw: Uint8Array): Promise<string | null> {
   if (!grpData || grpData.fileOff + 6 > raw.length) return null;
 
   // Parse GRPICONDIR
-  //  WORD reserved, WORD type, WORD count
-  //  GRPICONDIRENTRY[count]: BYTE w, BYTE h, BYTE cc, BYTE res, WORD planes,
-  //                          WORD bitCount, DWORD bytesInRes, WORD id
   const gb = grpData.fileOff;
   const grpCount = v.getUint16(gb + 4, true);
   if (grpCount === 0) return null;

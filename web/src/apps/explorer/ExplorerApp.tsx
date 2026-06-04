@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useWindowStore } from "../../state/windowStore";
-import { useClipboardStore } from "../../state/clipboardStore";
-import { log } from "../../state/logStore";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import type { DirectoryEntry } from "../../core/wasm/worker";
-import { formatSize } from "../../shared/lib/utils";
+import { ArrowLeftFilled, ArrowRightFilled, ArrowUpFilled } from "@fluentui/react-icons";
 
-import { launchGuestPath } from "../../shared/lib/guest-launch";
+import { useWindowStore } from "@/state/windowStore";
+import { useClipboardStore } from "@/state/clipboardStore";
+import { log } from "@/state/logStore";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import type { DirectoryEntry } from "@/core/wasm/worker";
+import { formatSize } from "@/shared/lib/utils";
+import { launchGuestPath } from "@/shared/lib/guest-launch";
 import { openProcessConsole } from "../process-console/ProcessConsoleApp";
 import { openPeInspector } from "../pe-inspector/PeInspectorApp";
 import { openProperties } from "../properties/PropertiesApp";
 import { openTextReader } from "../text-reader/TextReaderApp";
-import { ContextMenu, SEPARATOR, type MenuItem } from "../../modules/desktop/ContextMenu";
-import { MenuBar, type MenuBarItem } from "../../shared/components/MenuBar";
+import { ContextMenu, SEPARATOR, type MenuItem } from "@/modules/desktop/ContextMenu";
+import { MenuBar, type MenuBarItem } from "@/shared/components/MenuBar";
 import {
   copyPayloadToDir,
   createShortcut,
@@ -22,7 +23,8 @@ import {
   pasteShortcut,
   performPaste,
   toPayloadEntry,
-} from "../../shared/lib/clipboard";
+} from "@/shared/lib/clipboard";
+import { resolveIcon, ICON_PLACEHOLDER } from "@/shared/lib/icons/icon-resolver";
 
 const ROOT_PATH = "";
 const DRIVE_PATH = "C:\\";
@@ -52,7 +54,7 @@ type SidebarSection = {
 };
 
 type ExplorerSortKey = "name" | "date" | "type" | "size";
-type ExplorerViewSize = "small" | "medium" | "large";
+type ExplorerViewSize = "small" | "medium" | "large" | "mosaic";
 
 export function openExplorer(initialPath = ROOT_PATH, runtime: RuntimeBridge) {
 
@@ -124,7 +126,7 @@ function ExplorerApp({
       {
         section: "Drives",
         items: [
-          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `/theme/icons/places/thispc.webp` },
+          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `/theme/icons/shell/drive_main.webp` },
         ],
       },
     ],
@@ -480,6 +482,7 @@ function ExplorerApp({
           { label: "Small", checked: viewSize === "small", action: () => setViewSize("small") },
           { label: "Medium", checked: viewSize === "medium", action: () => setViewSize("medium") },
           { label: "Large", checked: viewSize === "large", action: () => setViewSize("large") },
+          { label: "Mosaic", checked: viewSize === "mosaic", action: () => setViewSize("mosaic") },
         ],
       },
       {
@@ -697,9 +700,9 @@ function ExplorerApp({
       <MenuBar items={menuBarItems} />
 
       <div className="flex-none flex items-center gap-1 px-2 py-1 border-b border-[var(--window-border)] bg-[#191919]">
-        <NavButton label="<" disabled={!canGoBack} title="Back" onClick={goBack} />
-        <NavButton label=">" disabled={!canGoForward} title="Forward" onClick={goForward} />
-        <NavButton label="^" disabled={!parent} title="Up" onClick={() => parent && navigate(parent)} />
+        <NavButton label={<ArrowLeftFilled />} disabled={!canGoBack} title="Back" onClick={goBack} />
+        <NavButton label={<ArrowRightFilled />} disabled={!canGoForward} title="Forward" onClick={goForward} />
+        <NavButton label={<ArrowUpFilled />} disabled={!parent} title="Up" onClick={() => parent && navigate(parent)} />
 
         <form
           className="flex-1 min-w-[220px]"
@@ -742,165 +745,232 @@ function ExplorerApp({
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-[208px_minmax(0,1fr)] max-[620px]:grid-cols-1">
-      <aside
-        className="min-w-0 min-h-0 py-2 px-0 overflow-y-auto border-r border-[#2b2b2b] bg-[#191919] max-[620px]:hidden"
-        aria-label="Explorer shortcuts">
-        {sections.map((section) => (
-          <div key={section.section} className="mt-3 first:mt-0">
-            <div className="px-3 pb-1.5 text-[#a6a6a6] text-[11px] font-normal">
-              {section.section}
+        <aside
+          className="min-w-0 min-h-0 py-2 px-0 overflow-y-auto border-r border-[#2b2b2b] bg-[#191919] max-[620px]:hidden"
+          aria-label="Explorer shortcuts">
+          {sections.map((section) => (
+            <div key={section.section} className="mt-3 first:mt-0">
+              <div className="px-3 pb-1.5 text-[#a6a6a6] text-[11px] font-normal">
+                {section.section}
+              </div>
+              {section.items.map((item) => {
+                const isActive = normalizePath(item.path) === path;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className={[
+                      "w-full min-h-[32px] flex items-center gap-[9px]",
+                      "py-[5px] px-3 rounded-none cursor-default",
+                      "text-[12px] text-left text-[#f2f2f2]",
+                      "border border-transparent",
+                      "hover:bg-[rgba(255,255,255,0.09)]",
+                      isActive
+                        ? "bg-[rgba(255,255,255,0.13)] border-[rgba(255,255,255,0.08)]"
+                        : "bg-transparent",
+                    ].join(" ")}
+                    onClick={() => navigate(item.path)}>
+                    <img src={item.icon} alt="" className="w-5 h-5 object-contain flex-none" draggable={false} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
-            {section.items.map((item) => {
-              const isActive = normalizePath(item.path) === path;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={[
-                    "w-full min-h-[32px] flex items-center gap-[9px]",
-                    "py-[5px] px-3 rounded-none cursor-default",
-                    "text-[12px] text-left text-[#f2f2f2]",
-                    "border border-transparent",
-                    "hover:bg-[rgba(255,255,255,0.09)]",
-                    isActive
-                      ? "bg-[rgba(255,255,255,0.13)] border-[rgba(255,255,255,0.08)]"
-                      : "bg-transparent",
-                  ].join(" ")}
-                  onClick={() => navigate(item.path)}>
-                  <img src={item.icon} alt="" className="w-5 h-5 object-contain flex-none" draggable={false} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+          ))}
+        </aside>
+
+        <section className="min-w-0 min-h-0 flex flex-col bg-[var(--window-bg)]">
+          <div className="hidden">
+            <button
+              type="button"
+              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
+              disabled={!canGoBack}
+              title="Back"
+              onClick={goBack}
+            >
+              ‹
+            </button>
+
+            <button
+              type="button"
+              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
+              disabled={!canGoForward}
+              title="Forward"
+              onClick={goForward}
+            >
+              ›
+            </button>
+
+            <button
+              type="button"
+              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[15px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
+              disabled={!parent}
+              title="Up"
+              onClick={() => parent && navigate(parent)}
+            >
+              ↑
+            </button>
+
+            <form
+              className="flex-1 min-w-0 ml-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                navigate(address);
+              }}
+            >
+              <input
+                className="w-full h-[30px] px-[9px] border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                aria-label="Path"
+                spellCheck={false}
+              />
+            </form>
           </div>
-        ))}
-      </aside>
 
-      <section className="min-w-0 min-h-0 flex flex-col bg-[var(--window-bg)]">
-        <div className="hidden">
-          <button
-            type="button"
-            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-            disabled={!canGoBack}
-            title="Back"
-            onClick={goBack}
-          >
-            ‹
-          </button>
-
-          <button
-            type="button"
-            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-            disabled={!canGoForward}
-            title="Forward"
-            onClick={goForward}
-          >
-            ›
-          </button>
-
-          <button
-            type="button"
-            className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[15px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-            disabled={!parent}
-            title="Up"
-            onClick={() => parent && navigate(parent)}
-          >
-            ↑
-          </button>
-
-          <form
-            className="flex-1 min-w-0 ml-1"
-            onSubmit={(e) => {
+          <div
+            className={`flex-1 min-h-0 overflow-auto pb-2 ${dragOver ? "outline-2 outline-dashed outline-[var(--accent)] outline-offset-[-3px]" : ""}`}
+            role="table"
+            aria-label="Folder contents"
+            onContextMenu={(e) => {
+              if ((e.target as HTMLElement).closest("[data-explorer-row='true']")) return;
               e.preventDefault();
-              navigate(address);
+              e.stopPropagation();
+              setCtx({ x: e.clientX, y: e.clientY, entry: null });
+            }}
+            onDragOver={(e) => {
+              if (!canMutateCurrent) return;
+              e.preventDefault();
+              setDragOver(true);
+              e.dataTransfer.dropEffect = e.ctrlKey ? "copy" : "move";
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={async (e) => {
+              if (!canMutateCurrent) return;
+              e.preventDefault();
+              setDragOver(false);
+              await dropInto(path, e);
+            }}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("[data-explorer-row='true']")) return;
+              setSelectedPaths([]);
             }}
           >
-            <input
-              className="w-full h-[30px] px-[9px] border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              aria-label="Path"
-              spellCheck={false}
-            />
-          </form>
-        </div>
+            {!(viewSize === "mosaic" || path === ROOT_PATH) && (
+              <div
+                className="sticky top-0 z-10 h-[30px] px-3 text-[#a6a6a6] border-b border-[#2b2b2b] bg-[#111111] text-[11px] grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px]"
+                role="row"
+              >
+                <span>Name</span>
+                <span className="max-[720px]:hidden">Date modified</span>
+                <span>Type</span>
+                <span className="text-right">Size</span>
+              </div>
+            )}
 
-        <div
-          className={`flex-1 min-h-0 overflow-auto pb-2 ${dragOver ? "outline-2 outline-dashed outline-[var(--accent)] outline-offset-[-3px]" : ""}`}
-          role="table"
-          aria-label="Folder contents"
-          onContextMenu={(e) => {
-            if ((e.target as HTMLElement).closest("[data-explorer-row='true']")) return;
-            e.preventDefault();
-            e.stopPropagation();
-            setCtx({ x: e.clientX, y: e.clientY, entry: null });
-          }}
-          onDragOver={(e) => {
-            if (!canMutateCurrent) return;
-            e.preventDefault();
-            setDragOver(true);
-            e.dataTransfer.dropEffect = e.ctrlKey ? "copy" : "move";
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={async (e) => {
-            if (!canMutateCurrent) return;
-            e.preventDefault();
-            setDragOver(false);
-            await dropInto(path, e);
-          }}
-          onClick={(e) => {
-            if ((e.target as HTMLElement).closest("[data-explorer-row='true']")) return;
-            setSelectedPaths([]);
-          }}
-        >
-          <div
-            className="sticky top-0 z-10 h-[30px] px-3 text-[#a6a6a6] border-b border-[#2b2b2b] bg-[#111111] text-[11px] grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px]"
-            role="row"
-          >
-            <span>Name</span>
-            <span className="max-[720px]:hidden">Date modified</span>
-            <span>Type</span>
-            <span className="text-right">Size</span>
+            {error && <div className="text-[#d13438] py-[18px] px-[14px] text-[12px]">Error: {error}</div>}
+            {!error && visibleEntries.length === 0 && (
+              <div className="text-[var(--shell-muted)] py-[18px] px-[14px] text-[12px]">
+                {search.trim() ? "No items match your search." : "This folder is empty."}
+              </div>
+            )}
+
+            {!error && path === ROOT_PATH && (
+              <div className="flex flex-col p-2">
+                {[
+                  {
+                    title: "Folders",
+                    items: visibleEntries.filter((e) => USER_FOLDERS.some((f) => f.path === e.path)),
+                  },
+                  {
+                    title: "Devices and drives",
+                    items: visibleEntries.filter((e) => e.path === DRIVE_PATH || /^[a-zA-Z]:\\$/.test(e.path)),
+                  },
+                  {
+                    title: "Other",
+                    items: visibleEntries.filter(
+                      (e) =>
+                        !USER_FOLDERS.some((f) => f.path === e.path) &&
+                        e.path !== DRIVE_PATH &&
+                        !/^[a-zA-Z]:\\$/.test(e.path),
+                    ),
+                  },
+                ]
+                  .filter((group) => group.items.length > 0)
+                  .map((group) => (
+                    <div key={group.title} className="mb-4">
+                      <div className="text-[13px] text-[#f2f2f2] font-semibold mb-2 px-1 border-b border-[rgba(255,255,255,0.1)] pb-1">
+                        {group.title} ({group.items.length})
+                      </div>
+                      <div className="flex flex-wrap">
+                        {group.items.map((entry) => (
+                          <ExplorerRow
+                            key={entry.path}
+                            entry={entry}
+                            selected={selectedPaths.includes(entry.path)}
+                            selectedEntries={selectedEntries()}
+                            hideExtension={hideExtensions}
+                            viewSize="mosaic"
+                            onNavigate={navigate}
+                            runtime={runtime}
+                            onSelect={(event) => {
+                              setSelectedPaths((current) => {
+                                if (event.ctrlKey || event.metaKey) {
+                                  return current.includes(entry.path)
+                                    ? current.filter((p) => p !== entry.path)
+                                    : [...current, entry.path];
+                                }
+                                return [entry.path];
+                              });
+                            }}
+                            onContextMenu={(event) => {
+                              if (!selectedPaths.includes(entry.path)) setSelectedPaths([entry.path]);
+                              setCtx({ x: event.clientX, y: event.clientY, entry });
+                            }}
+                            onDropInto={dropInto}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {!error && path !== ROOT_PATH && (
+              <div className={viewSize === "mosaic" ? "flex flex-wrap p-2" : ""}>
+                {visibleEntries.map((entry) => (
+                  <ExplorerRow
+                    key={entry.path}
+                    entry={entry}
+                    selected={selectedPaths.includes(entry.path)}
+                    selectedEntries={selectedEntries()}
+                    hideExtension={hideExtensions}
+                    viewSize={viewSize}
+                    onNavigate={navigate}
+                    runtime={runtime}
+                    onSelect={(event) => {
+                      setSelectedPaths((current) => {
+                        if (event.ctrlKey || event.metaKey) {
+                          return current.includes(entry.path)
+                            ? current.filter((path) => path !== entry.path)
+                            : [...current, entry.path];
+                        }
+                        return [entry.path];
+                      });
+                    }}
+                    onContextMenu={(event) => {
+                      if (!selectedPaths.includes(entry.path)) {
+                        setSelectedPaths([entry.path]);
+                      }
+                      setCtx({ x: event.clientX, y: event.clientY, entry });
+                    }}
+                    onDropInto={dropInto}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-
-          {error && <div className="text-[#d13438] py-[18px] px-[14px] text-[12px]">Error: {error}</div>}
-          {!error && visibleEntries.length === 0 && (
-            <div className="text-[var(--shell-muted)] py-[18px] px-[14px] text-[12px]">
-              {search.trim() ? "No items match your search." : "This folder is empty."}
-            </div>
-          )}
-          {!error &&
-            visibleEntries.map((entry) => (
-              <ExplorerRow
-                key={entry.path}
-                entry={entry}
-                selected={selectedPaths.includes(entry.path)}
-                selectedEntries={selectedEntries()}
-                hideExtension={hideExtensions}
-                viewSize={viewSize}
-                onNavigate={navigate}
-                runtime={runtime}
-                onSelect={(event) => {
-                  setSelectedPaths((current) => {
-                    if (event.ctrlKey || event.metaKey) {
-                      return current.includes(entry.path)
-                        ? current.filter((path) => path !== entry.path)
-                        : [...current, entry.path];
-                    }
-                    return [entry.path];
-                  });
-                }}
-                onContextMenu={(event) => {
-                  if (!selectedPaths.includes(entry.path)) {
-                    setSelectedPaths([entry.path]);
-                  }
-                  setCtx({ x: event.clientX, y: event.clientY, entry });
-                }}
-                onDropInto={dropInto}
-              />
-            ))}
-        </div>
-      </section>
+        </section>
       </div>
       {ctx && (
         <ContextMenu
@@ -929,7 +999,7 @@ function NavButton({
   title,
   onClick,
 }: {
-  label: string;
+  label: string | React.ReactNode;
   disabled?: boolean;
   title: string;
   onClick: () => void;
@@ -1036,6 +1106,14 @@ function ExplorerRow({
   onContextMenu: (event: React.MouseEvent) => void;
   onDropInto: (path: string, event: React.DragEvent) => Promise<void>;
 }) {
+  const [imgSrc, setImgSrc] = useState(ICON_PLACEHOLDER);
+
+  useEffect(() => {
+    resolveIcon(entry, runtime)
+      .then((resolved) => setImgSrc(resolved.src))
+      .catch(() => { });
+  }, [entry, runtime]);
+
   const isDir = entry.kind === "directory";
   const lowerName = entry.name.toLowerCase();
   const type = isDir
@@ -1051,14 +1129,14 @@ function ExplorerRow({
         : lowerName.endsWith(".txt") || lowerName.endsWith(".log")
           ? "Text document"
           : "File";
-  const iconSize = viewSize === "large" ? 30 : viewSize === "small" ? 18 : 22;
-  const rowHeight = viewSize === "large" ? 42 : viewSize === "small" ? 28 : 34;
+  const isMosaic = viewSize === "mosaic";
+  const iconSize = isMosaic ? 42 : viewSize === "large" ? 30 : viewSize === "small" ? 18 : 22;
+  const rowHeight = isMosaic ? 60 : viewSize === "large" ? 42 : viewSize === "small" ? 28 : 34;
   const display = hideExtension && entry.kind === "file" ? nameWithoutExtension(entry.name) : entry.name;
-
 
   return (
     <button
-      className={`w-[calc(100%-8px)] mx-1 my-px px-2 border rounded-[var(--row-radius)] text-inherit cursor-default text-[12px] text-left grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] outline-none ${selected ? "bg-[var(--icon-selected-bg)] border-[var(--icon-selected-border)]" : "bg-transparent border-transparent"}`}
+      className={isMosaic ? `w-[240px] m-1 px-3 py-2 flex flex-row items-center gap-4 border rounded-[var(--row-radius)] text-inherit cursor-default text-[12px] text-left hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] outline-none ${selected ? "bg-[var(--icon-selected-bg)] border-[var(--icon-selected-border)]" : "bg-transparent border-transparent"}` : `w-[calc(100%-8px)] mx-1 my-px px-2 border rounded-[var(--row-radius)] text-inherit cursor-default text-[12px] text-left grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] outline-none ${selected ? "bg-[var(--icon-selected-bg)] border-[var(--icon-selected-border)]" : "bg-transparent border-transparent"}`}
       style={{ minHeight: rowHeight }}
       type="button"
       data-explorer-row="true"
@@ -1099,14 +1177,25 @@ function ExplorerRow({
         }
       }}
     >
-      <span className="min-w-0 flex items-center gap-[9px]">
-        <img src={iconForEntry(entry)} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
-      </span>
-      <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap max-[720px]:hidden"></span>
-      <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
-      <span className="text-[var(--shell-muted)] text-[11px] text-right min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{isDir ? "" : formatSize(entry.size)}</span>
-    </button>
+      {isMosaic ? (
+        <>
+          <img src={imgSrc} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
+          <div className="flex flex-col min-w-0">
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
+            <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <span className="min-w-0 flex items-center gap-[9px]">
+            <img src={imgSrc} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
+          </span>
+          <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap max-[720px]:hidden"></span>
+          <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
+          <span className="text-[var(--shell-muted)] text-[11px] text-right min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{isDir ? "" : formatSize(entry.size)}</span>
+        </>
+      )}    </button>
   );
 }
 
@@ -1190,19 +1279,4 @@ function breadcrumbParts(path: string): { label: string; path: string }[] {
     parts.push({ label: segment, path: current });
   }
   return parts;
-}
-
-function iconForEntry(entry: DirectoryEntry): string {
-  if (entry.path === DRIVE_PATH) return `/theme/icons/places/thispc.webp`;
-
-  const place = USER_FOLDERS.find((f) => f.path === entry.path);
-  if (place) return `/theme/icons/places/${place.place}.webp`;
-
-  if (entry.kind === "directory") return `/theme/icons/shell/folder.webp`;
-  const lowerName = entry.name.toLowerCase();
-  if (lowerName.endsWith(".exe") || lowerName.endsWith(".dll")) {
-    return `/theme/icons/shell/default_executable.webp`;
-  }
-  if (lowerName.endsWith(".txt")) return `/theme/icons/exts/txt.webp`;
-  return `/theme/icons/exts/default.webp`;
 }

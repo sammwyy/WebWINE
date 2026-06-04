@@ -7,9 +7,9 @@
 
 import { useRef, useCallback } from "react";
 
-import { clamp } from "../../shared/lib/utils";
-import { useWindowStore } from "../../state/windowStore";
-import type { WindowRecord } from "../../state/windowStore";
+import { clamp } from "@/shared/lib/utils";
+import { useWindowStore } from "@/state/windowStore";
+import type { WindowRecord } from "@/state/windowStore";
 
 interface WindowFrameProps {
   record: WindowRecord;

@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import { useWindowStore } from "../../state/windowStore";
+import { useWindowStore } from "@/state/windowStore";
 
 import { showMessageBox } from "../message-box/MessageBoxApp";
-import { beep } from "../../shared/lib/beep";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import type { UiEvent } from "../../core/wasm/worker";
+import { beep } from "@/shared/lib/beep";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import type { UiEvent } from "@/core/wasm/worker";
 
 const WM_CLOSE = 0x0010;
 
@@ -167,7 +167,7 @@ function createGuestWindow(
   const k = key(pid, ev.hwnd);
   if (guestWindows.has(k)) return;
 
-  
+
   const winId = useWindowStore.getState().openWindow({
     title: ev.title || "Window",
     icon: `/theme/icons/shell/default_executable.webp`,

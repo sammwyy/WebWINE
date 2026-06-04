@@ -6,17 +6,17 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useRuntimeStore } from "../../state/runtimeStore";
-import { useDesktopStore } from "../../state/desktopStore";
-import { useClipboardStore } from "../../state/clipboardStore";
-import { log } from "../../state/logStore";
+import { useRuntimeStore } from "@/state/runtimeStore";
+import { useDesktopStore } from "@/state/desktopStore";
+import { useClipboardStore } from "@/state/clipboardStore";
+import { log } from "@/state/logStore";
 import {
   copyPayloadToDir,
   decodeDragPayload,
   mountFiles,
   pasteShortcut,
   performPaste,
-} from "../../shared/lib/clipboard";
+} from "@/shared/lib/clipboard";
 import { DesktopIcon } from "./DesktopIcon";
 import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu";
 import { WindowLayer } from "../windows/WindowManager";
@@ -43,7 +43,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
-  const [renameEntry, setRenameEntry] = useState<import("../../core/wasm/worker").DirectoryEntry | null>(null);
+  const [renameEntry, setRenameEntry] = useState<import("@/core/wasm/worker").DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   const doRefresh = useCallback(() => {

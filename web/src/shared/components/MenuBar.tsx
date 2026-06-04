@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ContextMenu, type MenuItem } from "../../modules/desktop/ContextMenu";
+import { ContextMenu, type MenuItem } from "@/modules/desktop/ContextMenu";
 
 export interface MenuBarItem {
   label: string;

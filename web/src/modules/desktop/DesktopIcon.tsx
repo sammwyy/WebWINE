@@ -7,29 +7,29 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-import { useRuntimeStore } from "../../state/runtimeStore";
-import { useClipboardStore } from "../../state/clipboardStore";
-import { useDesktopStore } from "../../state/desktopStore";
+import { useRuntimeStore } from "@/state/runtimeStore";
+import { useClipboardStore } from "@/state/clipboardStore";
+import { useDesktopStore } from "@/state/desktopStore";
 import { openProcessConsole } from "../../apps/process-console/ProcessConsoleApp";
 import { openPeInspector } from "../../apps/pe-inspector/PeInspectorApp";
 import { openProperties } from "../../apps/properties/PropertiesApp";
 import {
   resolveIcon,
   ICON_PLACEHOLDER,
-} from "../../shared/lib/icon-resolver";
+} from "@/shared/lib/icons/icon-resolver";
 import { ContextMenu, SEPARATOR } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
-import { log } from "../../state/logStore";
-import type { DirectoryEntry } from "../../core/bridge/runtime-bridge";
-import { DESKTOP_ICON_LAYOUTS } from "../../state/desktopStore";
-import { launchGuestPath } from "../../shared/lib/guest-launch";
+import { log } from "@/state/logStore";
+import type { DirectoryEntry } from "@/core/bridge/runtime-bridge";
+import { DESKTOP_ICON_LAYOUTS } from "@/state/desktopStore";
+import { launchGuestPath } from "@/shared/lib/guest-launch";
 import {
   copyPayloadToDir,
   createShortcut,
   decodeDragPayload,
   encodeDragPayload,
   toPayloadEntry,
-} from "../../shared/lib/clipboard";
+} from "@/shared/lib/clipboard";
 
 const ICON_PAD = 12;
 

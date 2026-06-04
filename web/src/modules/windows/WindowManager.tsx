@@ -5,7 +5,7 @@
  * independent WindowFrame component; pointer events only reach children.
  */
 
-import { useWindowStore } from "../../state/windowStore";
+import { useWindowStore } from "@/state/windowStore";
 import { WindowFrame } from "./WindowFrame";
 
 export function WindowLayer() {

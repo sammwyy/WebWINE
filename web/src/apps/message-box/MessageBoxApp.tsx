@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useWindowStore } from "../../state/windowStore";
+import { useWindowStore } from "@/state/windowStore";
 
-import type { UiEvent } from "../../core/wasm/worker";
+import type { UiEvent } from "@/core/wasm/worker";
 
 // MB button groups
 const MB_OK = 0x00000000;

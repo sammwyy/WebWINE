@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useWindowStore } from "../../state/windowStore";
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import type { LogEvent, UiEvent } from "../../core/wasm/worker";
+import { useWindowStore } from "@/state/windowStore";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import type { LogEvent, UiEvent } from "@/core/wasm/worker";
 import { handleUiEvents } from "../guest-window/GuestWindowApp";
-import { basename } from "../../shared/lib/utils";
+import { basename } from "@/shared/lib/utils";
 
-import { resolveIcon } from "../../shared/lib/icon-resolver";
+import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 
 export interface ConsoleOptions {
   debug?: boolean;
@@ -55,8 +55,8 @@ export async function launchProcessHidden(
     : await runtime.launchProcess(path);
 
   runtime.onProcessOutput(launched.pid, {
-    stdout: () => {},
-    stderr: () => {},
+    stdout: () => { },
+    stderr: () => { },
     ui: (events: UiEvent[]) => {
       handleUiEvents(launched.pid, events, runtime);
     },
@@ -153,15 +153,15 @@ function ProcessConsoleApp({
     const ready =
       opts.attachPid !== undefined
         ? Promise.resolve({
-            pid: opts.attachPid,
-            launchLogs: [] as LogEvent[],
-            attached: true,
-          })
+          pid: opts.attachPid,
+          launchLogs: [] as LogEvent[],
+          attached: true,
+        })
         : opts.args
-        ? runtime
+          ? runtime
             .launchProcessWithArgs(path, opts.args)
             .then((r) => ({ ...r, attached: false }))
-        : runtime
+          : runtime
             .launchProcess(path)
             .then((r) => ({ ...r, attached: false }));
 
@@ -208,9 +208,9 @@ function ProcessConsoleApp({
           },
           log: debug
             ? (events) => {
-                if (!active) return;
-                events.forEach(writeLog);
-              }
+              if (!active) return;
+              events.forEach(writeLog);
+            }
             : undefined,
           exited: (code) => {
             if (!active) return;
@@ -257,10 +257,10 @@ function ProcessConsoleApp({
         setSpans((prev) => {
           const newSpans = [...prev];
           for (let i = newSpans.length - 1; i >= 0; i--) {
-             if (newSpans[i].text.length > 0) {
-                 newSpans[i] = { ...newSpans[i], text: newSpans[i].text.slice(0, -1) };
-                 break;
-             }
+            if (newSpans[i].text.length > 0) {
+              newSpans[i] = { ...newSpans[i], text: newSpans[i].text.slice(0, -1) };
+              break;
+            }
           }
           return newSpans;
         });

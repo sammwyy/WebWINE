@@ -3,13 +3,13 @@
  */
 
 import { useState, useEffect } from "react";
-import { useWindowStore } from "../../state/windowStore";
+import { useWindowStore } from "@/state/windowStore";
 
 import { StartMenu } from "./StartMenu";
 import { TrayMenu } from "./TrayMenu";
 import { Clock } from "./Clock";
-import { SHELL_ACTION_EVENT } from "../../shared/lib/guest-launch";
-import type { ShellActionDetail } from "../../shared/lib/shortcut-target";
+import { SHELL_ACTION_EVENT } from "@/shared/lib/guest-launch";
+import type { ShellActionDetail } from "@/shared/lib/shortcut-target";
 
 interface TaskbarProps {
   /** Hidden file inputs managed by the parent (Desktop) for uploads. */

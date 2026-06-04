@@ -1,5 +1,5 @@
-import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
-import type { DirectoryEntry } from "../../core/wasm/worker";
+import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import type { DirectoryEntry } from "@/core/wasm/worker";
 
 export type ClipboardOp = "copy" | "cut";
 
