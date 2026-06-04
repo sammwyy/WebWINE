@@ -1,5 +1,5 @@
 import { openExplorer } from "../../apps/explorer/ExplorerApp";
-import { openProcessConsole } from "../../apps/process-console/ProcessConsoleApp";
+import { launchProcessHidden } from "../../apps/process-console/ProcessConsoleApp";
 import { openTextReader } from "../../apps/text-reader/TextReaderApp";
 import type { RuntimeBridge } from "../../core/bridge/runtime-bridge";
 import {
@@ -70,7 +70,7 @@ export async function launchGuestPath(path: string, runtime: RuntimeBridge): Pro
   }
 
   if (lower.endsWith(".exe") || lower.endsWith(".dll")) {
-    await openProcessConsole(normalized, runtime);
+    await launchProcessHidden(normalized, runtime);
     return;
   }
 

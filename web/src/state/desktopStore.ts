@@ -113,7 +113,11 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
   selectIcon: (path, multi) => {
     set((state) => {
       if (multi) {
-        return { selectedIds: state.selectedIds.includes(path) ? state.selectedIds : [...state.selectedIds, path] };
+        return {
+          selectedIds: state.selectedIds.includes(path)
+            ? state.selectedIds.filter((id) => id !== path)
+            : [...state.selectedIds, path],
+        };
       }
       return { selectedIds: [path] };
     });

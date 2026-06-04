@@ -104,6 +104,9 @@ export function WindowFrame({ record }: WindowFrameProps) {
       className={windowClasses}
       style={style}
       onMouseDownCapture={() => focusWindow(record.id)}
+      onContextMenu={(e) => {
+        e.stopPropagation();
+      }}
     >
       <div
         className="flex items-center gap-[7px] bg-[var(--window-titlebar-bg)] pl-[10px] pr-[6px] h-[30px] cursor-move select-none flex-shrink-0 border-b border-[var(--window-titlebar-border)]"

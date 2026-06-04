@@ -7,7 +7,7 @@ import { basename } from "../../shared/lib/utils";
 
 import { resolveIcon } from "../../shared/lib/icon-resolver";
 
-interface ConsoleOptions {
+export interface ConsoleOptions {
   debug?: boolean;
   attachPid?: number;
   /** Extra command-line arguments appended after argv[0] (the image path). */
@@ -43,6 +43,32 @@ export async function openProcessConsole(
       />
     ),
   });
+}
+
+export async function launchProcessHidden(
+  path: string,
+  runtime: RuntimeBridge,
+  opts: Pick<ConsoleOptions, "args"> = {},
+): Promise<void> {
+  const launched = opts.args
+    ? await runtime.launchProcessWithArgs(path, opts.args)
+    : await runtime.launchProcess(path);
+
+  runtime.onProcessOutput(launched.pid, {
+    stdout: () => {},
+    stderr: () => {},
+    ui: (events: UiEvent[]) => {
+      handleUiEvents(launched.pid, events, runtime);
+    },
+    exited: () => {
+      window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
+    },
+    crashed: () => {
+      window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
+    },
+  });
+
+  runtime.runProcess(launched.pid);
 }
 
 // Split text into lines, marking which ended with a newline — so the debug

@@ -1,7 +1,7 @@
 /**
- * useClipboardStore — single-entry file clipboard for copy/cut/paste operations.
+ * useClipboardStore — file clipboard for copy/cut/paste operations.
  *
- * Holds at most one file at a time (matching classic Windows clipboard behaviour).
+ * Holds one or more filesystem nodes, matching multi-select shell behavior.
  */
 
 import { create } from "zustand";
@@ -15,21 +15,32 @@ export interface ClipboardEntry {
 }
 
 interface ClipboardStore {
+  entries: ClipboardEntry[];
   entry: ClipboardEntry | null;
   set: (path: string, name: string, op: ClipboardOp) => void;
+  setMany: (entries: Omit<ClipboardEntry, "op">[], op: ClipboardOp) => void;
   clear: () => void;
   has: () => boolean;
   isCut: () => boolean;
 }
 
 export const useClipboardStore = create<ClipboardStore>((set, get) => ({
+  entries: [],
   entry: null,
 
-  set: (path, name, op) => set({ entry: { path, name, op } }),
+  set: (path, name, op) => {
+    const entry = { path, name, op };
+    set({ entry, entries: [entry] });
+  },
 
-  clear: () => set({ entry: null }),
+  setMany: (entries, op) => {
+    const next = entries.map((entry) => ({ ...entry, op }));
+    set({ entry: next[0] ?? null, entries: next });
+  },
 
-  has: () => get().entry !== null,
+  clear: () => set({ entry: null, entries: [] }),
 
-  isCut: () => get().entry?.op === "cut",
+  has: () => get().entries.length > 0,
+
+  isCut: () => get().entries.some((entry) => entry.op === "cut"),
 }));

@@ -10,7 +10,13 @@ import { useRuntimeStore } from "../../state/runtimeStore";
 import { useDesktopStore } from "../../state/desktopStore";
 import { useClipboardStore } from "../../state/clipboardStore";
 import { log } from "../../state/logStore";
-import { mountFiles, performPaste } from "../../shared/lib/clipboard";
+import {
+  copyPayloadToDir,
+  decodeDragPayload,
+  mountFiles,
+  pasteShortcut,
+  performPaste,
+} from "../../shared/lib/clipboard";
 import { DesktopIcon } from "./DesktopIcon";
 import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu";
 import { WindowLayer } from "../windows/WindowManager";
@@ -31,6 +37,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     clearSelection,
     iconSize,
     setIconSize,
+    selectedIds,
   } = useDesktopStore();
   const clipboard = useClipboardStore();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -93,22 +100,44 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     [runtime, doRefresh],
   );
 
+  const selectedClipboardEntries = useCallback(
+    () =>
+      entries
+        .filter((entry) => selectedIds.includes(entry.path))
+        .map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          kind: entry.kind,
+        })),
+    [entries, selectedIds],
+  );
+
   const buildDesktopMenu = useCallback((): MenuItem[] => {
     const pasteDisabled = !runtime || !clipboard.has();
 
     const pasteAction = async () => {
-      if (!runtime || !clipboard.entry) return;
+      if (!runtime || !clipboard.has()) return;
 
       try {
-        await performPaste(clipboard.entry, DESKTOP_PATH, runtime);
+        await performPaste(clipboard.entries, DESKTOP_PATH, runtime);
 
-        if (clipboard.entry.op === "cut") {
+        if (clipboard.isCut()) {
           clipboard.clear();
         }
 
         doRefresh();
       } catch (err) {
         log("fs", `paste failed: ${err}`, "error");
+      }
+    };
+
+    const pasteShortcutAction = async () => {
+      if (!runtime || !clipboard.has()) return;
+      try {
+        await pasteShortcut(clipboard.entries, DESKTOP_PATH, runtime);
+        doRefresh();
+      } catch (err) {
+        log("fs", `paste shortcut failed: ${err}`, "error");
       }
     };
 
@@ -175,6 +204,16 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
         disabled: !runtime,
         action: doRefresh,
       },
+      {
+        label: "Upload file here",
+        disabled: !runtime,
+        action: () => fileInputRef.current?.click(),
+      },
+      {
+        label: "Upload folder here",
+        disabled: !runtime,
+        action: () => folderInputRef.current?.click(),
+      },
       SEPARATOR,
       {
         label: "Paste",
@@ -183,7 +222,8 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       },
       {
         label: "Paste shortcut",
-        disabled: true,
+        disabled: pasteDisabled,
+        action: pasteShortcutAction,
       },
       SEPARATOR,
       {
@@ -240,7 +280,46 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     doRefresh,
     iconSize,
     setIconSize,
+    fileInputRef,
+    folderInputRef,
   ]);
+
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      if (!runtime || !(e.ctrlKey || e.metaKey)) return;
+      if (document.activeElement instanceof HTMLInputElement) return;
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.closest("#window-layer")
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (!["x", "c", "v"].includes(key)) return;
+
+      const selected = selectedClipboardEntries();
+      if ((key === "x" || key === "c") && selected.length === 0) return;
+
+      e.preventDefault();
+      try {
+        if (key === "x") {
+          clipboard.setMany(selected, "cut");
+        } else if (key === "c") {
+          clipboard.setMany(selected, "copy");
+        } else if (clipboard.has()) {
+          await performPaste(clipboard.entries, DESKTOP_PATH, runtime);
+          if (clipboard.isCut()) clipboard.clear();
+          doRefresh();
+        }
+      } catch (err) {
+        log("fs", `clipboard operation failed: ${err}`, "error");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clipboard, doRefresh, runtime, selectedClipboardEntries]);
 
   const confirmRename = useCallback(async () => {
     if (!runtime || !renameEntry || !renameValue.trim()) return;
@@ -283,6 +362,16 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       onDrop={async (e) => {
         e.preventDefault();
         setDragOver(false);
+        const payload = decodeDragPayload(e.dataTransfer.getData("application/x-webwine-paths"));
+        if (runtime && payload.length > 0) {
+          try {
+            await copyPayloadToDir(payload, DESKTOP_PATH, runtime, !e.ctrlKey);
+            doRefresh();
+          } catch (err) {
+            log("fs", `drop failed: ${err}`, "error");
+          }
+          return;
+        }
         const files = e.dataTransfer?.files;
         if (files) await handleFilesUploaded(Array.from(files));
       }}

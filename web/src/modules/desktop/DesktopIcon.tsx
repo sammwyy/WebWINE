@@ -10,7 +10,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRuntimeStore } from "../../state/runtimeStore";
 import { useClipboardStore } from "../../state/clipboardStore";
 import { useDesktopStore } from "../../state/desktopStore";
-import { useWindowStore } from "../../state/windowStore";
 import { openProcessConsole } from "../../apps/process-console/ProcessConsoleApp";
 import { openPeInspector } from "../../apps/pe-inspector/PeInspectorApp";
 import { openProperties } from "../../apps/properties/PropertiesApp";
@@ -24,6 +23,13 @@ import { log } from "../../state/logStore";
 import type { DirectoryEntry } from "../../core/bridge/runtime-bridge";
 import { DESKTOP_ICON_LAYOUTS } from "../../state/desktopStore";
 import { launchGuestPath } from "../../shared/lib/guest-launch";
+import {
+  copyPayloadToDir,
+  createShortcut,
+  decodeDragPayload,
+  encodeDragPayload,
+  toPayloadEntry,
+} from "../../shared/lib/clipboard";
 
 const ICON_PAD = 12;
 
@@ -45,7 +51,6 @@ export function DesktopIcon({
   const { runtime } = useRuntimeStore();
   const clipboard = useClipboardStore();
   const { setPosition, selectedIds, selectIcon, iconSize } = useDesktopStore();
-  const { openWindow } = useWindowStore();
 
   const layout = DESKTOP_ICON_LAYOUTS[iconSize];
 
@@ -97,6 +102,13 @@ export function DesktopIcon({
     if (!runtime) return;
     void launchGuestPath(entry.path, runtime);
   }, [entry, runtime]);
+
+  const selectedEntries = useCallback(() => {
+    const state = useDesktopStore.getState();
+    const paths = state.selectedIds.includes(entry.path) ? state.selectedIds : [entry.path];
+    const selected = state.entries.filter((item) => paths.includes(item.path));
+    return selected.length > 0 ? selected : [entry];
+  }, [entry]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -186,10 +198,21 @@ export function DesktopIcon({
 
     if (isExe && runtime) {
       items.push({
-        label: "Run as debug",
-        action: () => {
-          void openProcessConsole(entry.path, runtime, { debug: true });
-        },
+        label: "Run with mode...",
+        children: [
+          {
+            label: "Keep terminal open",
+            action: () => {
+              void openProcessConsole(entry.path, runtime);
+            },
+          },
+          {
+            label: "Debug mode",
+            action: () => {
+              void openProcessConsole(entry.path, runtime, { debug: true });
+            },
+          },
+        ],
       });
 
       items.push({
@@ -206,7 +229,7 @@ export function DesktopIcon({
       label: "Cut",
       disabled: !isFile && !isDirectory,
       action: () => {
-        clipboard.set(entry.path, entry.name, "cut");
+        clipboard.setMany(selectedEntries().map(toPayloadEntry), "cut");
       },
     });
 
@@ -214,13 +237,29 @@ export function DesktopIcon({
       label: "Copy",
       disabled: !isFile && !isDirectory,
       action: () => {
-        clipboard.set(entry.path, entry.name, "copy");
+        clipboard.setMany(selectedEntries().map(toPayloadEntry), "copy");
       },
     });
 
     items.push({
       label: "Create shortcut",
-      disabled: true,
+      disabled: !runtime,
+      action: async () => {
+        if (!runtime) return;
+        try {
+          for (const selectedEntry of selectedEntries()) {
+            await createShortcut(
+              selectedEntry.path,
+              selectedEntry.name,
+              parentPath(selectedEntry.path),
+              runtime,
+            );
+          }
+          onRefresh();
+        } catch (err) {
+          log("fs", `create shortcut failed: ${err}`, "error");
+        }
+      },
     });
 
     items.push({
@@ -253,7 +292,7 @@ export function DesktopIcon({
     });
 
     return items;
-  }, [entry, runtime, clipboard, handleOpen, onRefresh, onRename]);
+  }, [entry, runtime, clipboard, handleOpen, onRefresh, onRename, selectedEntries]);
   return (
     <>
       <div
@@ -276,8 +315,32 @@ export function DesktopIcon({
         ].join(" ")}
         data-path={entry.path}
         style={style}
+        draggable
         onClick={handleClick}
         onPointerDown={handlePointerDown}
+        onDragStart={(e) => {
+          const payload = selectedEntries().map(toPayloadEntry);
+          e.dataTransfer.setData("application/x-webwine-paths", encodeDragPayload(payload));
+          e.dataTransfer.effectAllowed = "copyMove";
+        }}
+        onDragOver={(e) => {
+          if (entry.kind !== "directory") return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = e.ctrlKey ? "copy" : "move";
+        }}
+        onDrop={async (e) => {
+          if (entry.kind !== "directory" || !runtime) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const payload = decodeDragPayload(e.dataTransfer.getData("application/x-webwine-paths"));
+          if (payload.length === 0) return;
+          try {
+            await copyPayloadToDir(payload, entry.path, runtime, !e.ctrlKey);
+            onRefresh();
+          } catch (err) {
+            log("fs", `drop failed: ${err}`, "error");
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -323,4 +386,10 @@ export function DesktopIcon({
 
 function displayName(name: string): string {
   return name.toLowerCase().endsWith(".lnk") ? name.slice(0, -4) : name;
+}
+
+function parentPath(path: string): string {
+  const idx = path.lastIndexOf("\\");
+  if (idx <= 2) return `${path[0].toUpperCase()}:\\`;
+  return path.slice(0, idx);
 }

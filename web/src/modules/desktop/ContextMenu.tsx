@@ -81,7 +81,16 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         left: position.left,
         top: position.top,
       }}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+      }}
     >
       <ContextMenuLevel items={items} onClose={onClose} depth={0} />
     </div>
