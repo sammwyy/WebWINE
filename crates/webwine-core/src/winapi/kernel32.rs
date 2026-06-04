@@ -22,6 +22,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("advapi32.dll", "RegOpenKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
         ("advapi32.dll", "RegQueryValueExA", reg_query_value),
         ("advapi32.dll", "RegQueryValueExW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("advapi32.dll", "RegCreateKeyA", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
+        ("advapi32.dll", "RegCreateKeyW", |c| { let o = c.arg(2); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 3); Handled::Ok }),
         ("advapi32.dll", "RegCreateKeyExA", |c| { let o = c.arg(7); if o != 0 { let _ = c.memory.write_u32(o, 0); } c.ret_stdcall(2, 9); Handled::Ok }),
         ("advapi32.dll", "RegSetValueExA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
         ("advapi32.dll", "RegSetValueExW", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
@@ -36,6 +38,38 @@ pub fn register(r: &mut WinApiRegistry) {
         ("advapi32.dll", "RegQueryValueW", |c| { c.ret_stdcall(2, 4); Handled::Ok }),
         ("advapi32.dll", "RegNotifyChangeKeyValue", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
         ("advapi32.dll", "RegFlushKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "SHGetValueA", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("shlwapi.dll", "SHGetValueW", |c| { c.ret_stdcall(2, 6); Handled::Ok }),
+        ("shlwapi.dll", "SHSetValueA", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
+        ("shlwapi.dll", "SHSetValueW", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
+        ("shlwapi.dll", "SHRegGetBoolUSValueA", sh_reg_get_bool_us_value),
+        ("shlwapi.dll", "SHRegGetBoolUSValueW", sh_reg_get_bool_us_value),
+        ("shlwapi.dll", "SHRegGetUSValueA", |c| { c.ret_stdcall(2, 8); Handled::Ok }),
+        ("shlwapi.dll", "SHRegGetUSValueW", |c| { c.ret_stdcall(2, 8); Handled::Ok }),
+        ("shlwapi.dll", "SHRegCreateUSKeyA", sh_reg_create_us_key),
+        ("shlwapi.dll", "SHRegCreateUSKeyW", sh_reg_create_us_key),
+        ("shlwapi.dll", "SHRegWriteUSValueA", |c| { c.ret_stdcall(0, 7); Handled::Ok }),
+        ("shlwapi.dll", "SHRegWriteUSValueW", |c| { c.ret_stdcall(0, 7); Handled::Ok }),
+        ("shlwapi.dll", "SHRegCloseUSKey", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "PathFindFileNameA", path_find_file_name_a),
+        ("shlwapi.dll", "PathFindFileNameW", path_find_file_name_w),
+        ("shlwapi.dll", "PathRemoveArgsA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "PathRemoveArgsW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "PathRemoveBlanksA", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "PathRemoveBlanksW", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "StrCmpNIA", strcmp_ni_a),
+        ("shlwapi.dll", "StrCmpNIW", strcmp_ni_w),
+        ("shlwapi.dll", "#241", |c| { c.ret_stdcall(0, 6); Handled::Ok }),
+        ("shlwapi.dll", "#433", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("shlwapi.dll", "#437", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "#563", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("shlwapi.dll", "#618", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "#16", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
+        ("shlwapi.dll", "SHCreateThreadRef", sh_create_thread_ref),
+        ("shlwapi.dll", "SHSetThreadRef", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("shlwapi.dll", "SHGetThreadRef", |c| { let out = c.arg(0); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0x8000_4005, 1); Handled::Ok }),
+        ("shlwapi.dll", "SHReleaseThreadRef", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("comctl32.dll", "InitCommonControlsEx", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
 
         ("kernel32.dll", "ExitProcess", exit_process),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
@@ -64,6 +98,12 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetCurrentDirectoryA", set_current_directory_a),
         ("kernel32.dll", "SetCurrentDirectoryW", set_current_directory_w),
         ("kernel32.dll", "GetProcAddress", get_proc_address),
+        ("kernel32.dll", "SetErrorMode", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "lstrlenA", |c| { let n = c.cstr(c.arg(0)).len() as u32; c.ret_stdcall(n, 1); Handled::Ok }),
+        ("kernel32.dll", "lstrlenW", |c| { let n = c.wstr(c.arg(0)).encode_utf16().count() as u32; c.ret_stdcall(n, 1); Handled::Ok }),
+        ("kernel32.dll", "GetPrivateProfileStringA", get_private_profile_string_a),
+        ("kernel32.dll", "GetPrivateProfileStringW", get_private_profile_string_w),
+        ("kernel32.dll", "SetProcessShutdownParameters", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
         // UI language / locale (cmd.exe resolves these via GetProcAddress). 0x409 = en-US.
         ("kernel32.dll", "SetThreadUILanguage", |c| { let l = c.arg(0); c.ret_stdcall(if l == 0 { 0x409 } else { l }, 1); Handled::Ok }),
         ("kernel32.dll", "GetThreadUILanguage", |c| { c.ret_stdcall(0x409, 0); Handled::Ok }),
@@ -151,6 +191,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "GetEnvironmentVariableW", get_env_var_w),
         ("kernel32.dll", "GetEnvironmentVariableA", get_env_var_a),
+        ("kernel32.dll", "ExpandEnvironmentStringsW", expand_env_strings_w),
+        ("kernel32.dll", "ExpandEnvironmentStringsA", expand_env_strings_a),
         ("kernel32.dll", "SetEnvironmentVariableW", r1_2),
         ("kernel32.dll", "SetEnvironmentVariableA", r1_2),
         (
@@ -308,10 +350,10 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "Sleep", r0_1),
         ("kernel32.dll", "WaitForSingleObject", r0_2), // WAIT_OBJECT_0
-        ("kernel32.dll", "CreateEventA", r0_4),
-        ("kernel32.dll", "CreateEventW", r0_4),
-        ("kernel32.dll", "CreateMutexA", r0_3),
-        ("kernel32.dll", "CreateMutexW", r0_3),
+        ("kernel32.dll", "CreateEventA", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
+        ("kernel32.dll", "CreateEventW", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexA", |c| { c.ret_stdcall(0xE700_0002, 3); Handled::Ok }),
+        ("kernel32.dll", "CreateMutexW", |c| { c.ret_stdcall(0xE700_0002, 3); Handled::Ok }),
         ("kernel32.dll", "ReleaseMutex", r1_1),
         ("kernel32.dll", "SetEvent", r1_1),
         ("kernel32.dll", "ResetEvent", r1_1),
@@ -335,6 +377,23 @@ pub fn register(r: &mut WinApiRegistry) {
         // GlobalAlloc / GlobalFree / GlobalLock / GlobalUnlock — thin wrappers
         // around the process heap; we just forward to our heap routines.
         ("kernel32.dll",                         "GlobalAlloc",  global_alloc),
+        // LocalAlloc(uFlags, uBytes) — same as GlobalAlloc in our model.
+        ("kernel32.dll",                         "LocalAlloc",   global_alloc),
+        ("kernel32.dll",                         "LocalFree",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll",                         "LocalLock",    |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
+        ("kernel32.dll",                         "LocalUnlock",  |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll",                         "LocalReAlloc", |c| { let p = c.arg(0); let n = c.arg(1); let r = c.heap_realloc(p, n); c.ret_stdcall(r, 3); Handled::Ok }),
+        ("kernel32.dll",                         "LocalSize",    |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll",                         "SetPriorityClass", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("kernel32.dll",                         "GetPriorityClass", |c| { c.ret_stdcall(0x20, 1); Handled::Ok }),
+        // Activation contexts (theming/manifests): no-op stubs so explorer's
+        // dynamic resolve + calls succeed instead of returning NULL.
+        ("kernel32.dll", "CreateActCtxW", |c| { c.ret_stdcall(0xAC70_0001, 1); Handled::Ok }),
+        ("kernel32.dll", "CreateActCtxA", |c| { c.ret_stdcall(0xAC70_0001, 1); Handled::Ok }),
+        ("kernel32.dll", "ActivateActCtx", |c| { let o = c.arg(1); if o != 0 { let _ = c.memory.write_u32(o, 1); } c.ret_stdcall(1, 2); Handled::Ok }),
+        ("kernel32.dll", "DeactivateActCtx", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("kernel32.dll", "ReleaseActCtx", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("kernel32.dll", "AddRefActCtx", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
         ("kernel32.dll",                         "GlobalFree",   |c| { c.ret_stdcall(0, 1); Handled::Ok }),
         ("kernel32.dll",                         "GlobalLock",   |c| { let p = c.arg(0); c.ret_stdcall(p, 1); Handled::Ok }),
         ("kernel32.dll",                         "GlobalUnlock", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
@@ -353,6 +412,28 @@ pub fn register(r: &mut WinApiRegistry) {
         // to a large CWinApp / AFX_MODULE_STATE structure.
         // Returning 0 crashes because it tries to write to [EAX+0x14].
         // We return a dummy heap pointer so the writes succeed.
+        ("shell32.dll", "#68", |c| { c.ret_stdcall(0, 6); Handled::Ok }),   // RunFileDlg (6 args)
+        ("shell32.dll", "#188", |c| { c.ret_stdcall(0, 3); Handled::Ok }), // SHGetSetSettings (3 args, void)
+        ("shell32.dll", "#100", |c| { let out = c.arg(2); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0x8000_4005, 3); Handled::Ok }), // SHCreateStdEnumFmtEtc (3 args)
+        ("shell32.dll", "#245", |c| { c.ret_stdcall(0, 2); Handled::Ok }), // SHTestTokenMembership (2 args)
+        ("shell32.dll", "#660", |c| { c.ret_stdcall(0, 3); Handled::Ok }), // SHWaitForFileToOpen (3 args)
+        ("shell32.dll", "#723", |c| { let out = c.arg(1); if out != 0 { let _ = c.memory.write_u32(out, 0); } c.ret_stdcall(0, 2); Handled::Ok }),
+        ("shell32.dll", "SHGetSpecialFolderPathW", sh_get_special_folder_path_w),
+        ("shell32.dll", "SHGetSpecialFolderPathA", sh_get_special_folder_path_a),
+        ("shdocvw.dll", "#110", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // WinList_Init — S_OK
+        ("shdocvw.dll", "#111", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // WinList_Terminate
+        ("shdocvw.dll", "#125", |c| { c.ret_stdcall(0, 0); Handled::Ok }),  // SHCreateFromDesktop
+        ("shdocvw.dll", "DllInstall", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("ole32.dll", "CoCreateInstance", |c| {
+            let out = c.arg(4);
+            if out != 0 {
+                let _ = c.memory.write_u32(out, 0);
+            }
+            c.ret_stdcall(0x8004_0154, 5);
+            Handled::Ok
+        }),
+        ("ole32.dll", "OleUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ole32.dll", "CoUninitialize", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("mfc42u.dll", "#1165", |c| {
             let ptr = c.heap_alloc(256); // give it a nice 256 byte chunk to write to
             c.ret_stdcall(ptr, 1);       // guess: 1 arg? The log said "cleaned 1 args"
@@ -362,6 +443,119 @@ pub fn register(r: &mut WinApiRegistry) {
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
+}
+
+fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let s = ctx.cstr(p);
+    let off = s.rfind(['\\', '/']).map(|i| i + 1).unwrap_or(0) as u32;
+    ctx.ret_stdcall(p.wrapping_add(off), 1);
+    Handled::Ok
+}
+
+fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let s = ctx.wstr(p);
+    let off = s
+        .rfind(['\\', '/'])
+        .map(|i| s[..i + 1].encode_utf16().count())
+        .unwrap_or(0) as u32;
+    ctx.ret_stdcall(p.wrapping_add(off * 2), 1);
+    Handled::Ok
+}
+
+fn strcmp_ni_a(ctx: &mut ApiContext) -> Handled {
+    let n = ctx.arg(2) as usize;
+    let a = ctx.cstr(ctx.arg(0)).chars().take(n).collect::<String>().to_lowercase();
+    let b = ctx.cstr(ctx.arg(1)).chars().take(n).collect::<String>().to_lowercase();
+    ctx.ret_stdcall(a.cmp(&b) as i32 as u32, 3);
+    Handled::Ok
+}
+
+fn strcmp_ni_w(ctx: &mut ApiContext) -> Handled {
+    let n = ctx.arg(2) as usize;
+    let a = ctx.wstr(ctx.arg(0)).chars().take(n).collect::<String>().to_lowercase();
+    let b = ctx.wstr(ctx.arg(1)).chars().take(n).collect::<String>().to_lowercase();
+    ctx.ret_stdcall(a.cmp(&b) as i32 as u32, 3);
+    Handled::Ok
+}
+
+fn get_private_profile_string_a(ctx: &mut ApiContext) -> Handled {
+    let default = ctx.cstr(ctx.arg(2));
+    let out = ctx.arg(3);
+    let max = ctx.arg(4) as usize;
+    let n = default.len().min(max.saturating_sub(1));
+    if out != 0 && max > 0 {
+        let _ = ctx.memory.write_bytes(out, &default.as_bytes()[..n]);
+        let _ = ctx.memory.write_u8(out + n as u32, 0);
+    }
+    ctx.ret_stdcall(n as u32, 6);
+    Handled::Ok
+}
+
+fn get_private_profile_string_w(ctx: &mut ApiContext) -> Handled {
+    let default = ctx.wstr(ctx.arg(2));
+    let out = ctx.arg(3);
+    let max = ctx.arg(4) as usize;
+    let wide: Vec<u16> = default.encode_utf16().collect();
+    let n = wide.len().min(max.saturating_sub(1));
+    if out != 0 && max > 0 {
+        for (i, &ch) in wide.iter().take(n).enumerate() {
+            let _ = ctx.memory.write_u16(out + (i as u32) * 2, ch);
+        }
+        let _ = ctx.memory.write_u16(out + (n as u32) * 2, 0);
+    }
+    ctx.ret_stdcall(n as u32, 6);
+    Handled::Ok
+}
+
+fn sh_reg_get_bool_us_value(ctx: &mut ApiContext) -> Handled {
+    let default = ctx.arg(3);
+    ctx.ret_stdcall(default, 4);
+    Handled::Ok
+}
+
+fn sh_reg_create_us_key(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(3);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0x5A5A_0001);
+    }
+    ctx.ret_stdcall(0, 5);
+    Handled::Ok
+}
+
+fn sh_create_thread_ref(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(0x8000_4005, 2);
+    Handled::Ok
+}
+
+fn sh_get_special_folder_path_a(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    let path = b"C:\\Users\\guest";
+    if out != 0 {
+        let _ = ctx.memory.write_bytes(out, path);
+        let _ = ctx.memory.write_u8(out + path.len() as u32, 0);
+    }
+    ctx.ret_stdcall(1, 4);
+    Handled::Ok
+}
+
+fn sh_get_special_folder_path_w(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let mut len = 0u32;
+        for ch in "C:\\Users\\guest".encode_utf16() {
+            let _ = ctx.memory.write_u16(out + len * 2, ch);
+            len += 1;
+        }
+        let _ = ctx.memory.write_u16(out + len * 2, 0);
+    }
+    ctx.ret_stdcall(1, 4);
+    Handled::Ok
 }
 
 /// FormatMessageW forwarded from the localization API set DLL.
@@ -1052,7 +1246,7 @@ fn create_process(ctx: &mut ApiContext, app: String, cmd: String) -> Handled {
     };
     let path = ctx.resolve_path(&target);
 
-    if !ctx.fs.node_exists(&path) {
+    if ctx.fs.read_file(&path).is_err() {
         ctx.cpu.last_error = ERROR_FILE_NOT_FOUND;
         ctx.ret_stdcall(0, 10); // FALSE
         return Handled::Ok;
@@ -1438,6 +1632,61 @@ fn env_lookup(name: &str) -> Option<&'static str> {
         let (k, val) = v.split_once('=')?;
         if k.eq_ignore_ascii_case(name) { Some(val) } else { None }
     })
+}
+
+fn expand_env_text(src: &str) -> String {
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('%') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let name = &after_start[..end];
+        if let Some(value) = env_lookup(name) {
+            out.push_str(value);
+        } else {
+            out.push('%');
+            out.push_str(name);
+            out.push('%');
+        }
+        rest = &after_start[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn expand_env_strings_a(ctx: &mut ApiContext) -> Handled {
+    let expanded = expand_env_text(&ctx.cstr(ctx.arg(0)));
+    let out = ctx.arg(1);
+    let size = ctx.arg(2);
+    let needed = expanded.len() as u32 + 1;
+    if out != 0 && size > 0 {
+        let n = expanded.len().min(size.saturating_sub(1) as usize);
+        let _ = ctx.memory.write_bytes(out, &expanded.as_bytes()[..n]);
+        let _ = ctx.memory.write_u8(out + n as u32, 0);
+    }
+    ctx.ret_stdcall(needed, 3);
+    Handled::Ok
+}
+
+fn expand_env_strings_w(ctx: &mut ApiContext) -> Handled {
+    let expanded = expand_env_text(&ctx.wstr(ctx.arg(0)));
+    let out = ctx.arg(1);
+    let size = ctx.arg(2);
+    let units: Vec<u16> = expanded.encode_utf16().collect();
+    let needed = units.len() as u32 + 1;
+    if out != 0 && size > 0 {
+        let n = units.len().min(size.saturating_sub(1) as usize);
+        for (i, &ch) in units.iter().take(n).enumerate() {
+            let _ = ctx.memory.write_u16(out + (i as u32) * 2, ch);
+        }
+        let _ = ctx.memory.write_u16(out + (n as u32) * 2, 0);
+    }
+    ctx.ret_stdcall(needed, 3);
+    Handled::Ok
 }
 
 // ERROR_ENVVAR_NOT_FOUND

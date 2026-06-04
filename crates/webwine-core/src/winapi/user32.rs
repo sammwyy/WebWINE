@@ -58,6 +58,10 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 4);
             Handled::Ok
         }),
+        ("user32.dll", "PostMessageW", |c| {
+            c.ret_stdcall(1, 4);
+            Handled::Ok
+        }),
         ("user32.dll", "SendMessageA", |c| {
             c.ret_stdcall(0, 4);
             Handled::Ok
@@ -79,6 +83,24 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
+        ("user32.dll", "LoadStringA", |c| {
+            let out = c.arg(2);
+            let max = c.arg(3);
+            if out != 0 && max > 0 {
+                let _ = c.memory.write_u8(out, 0);
+            }
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadStringW", |c| {
+            let out = c.arg(2);
+            let max = c.arg(3);
+            if out != 0 && max > 0 {
+                let _ = c.memory.write_u16(out, 0);
+            }
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
         ("user32.dll", "GetSystemMetrics", |c| {
             // SM_CXSCREEN=0, SM_CYSCREEN=1, SM_CXFULLSCREEN=16, SM_CYFULLSCREEN=17.
             let v = match c.arg(0) {
@@ -89,30 +111,49 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(v, 1);
             Handled::Ok
         }),
+        ("user32.dll", "EnumDisplayDevicesA", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "EnumDisplayDevicesW", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
         ("user32.dll", "GetDC", |c| {
             let h = c.arg(0);
             c.ret_stdcall(h, 1);
             Handled::Ok
         }),
+        ("user32.dll", "GetShellWindow", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("user32.dll", "FindWindowA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "FindWindowW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "GetDoubleClickTime", |c| { c.ret_stdcall(500, 0); Handled::Ok }),
+        ("user32.dll", "GetCaretBlinkTime", |c| { c.ret_stdcall(500, 0); Handled::Ok }),
+        // RegisterWindowMessage: hand out unique IDs in the 0xC000-0xFFFF range
+        // (0 means failure, which makes apps that register many messages misbehave).
+        ("user32.dll", "RegisterWindowMessageW", register_window_message),
+        ("user32.dll", "RegisterWindowMessageA", register_window_message),
+        ("user32.dll", "SystemParametersInfoW", system_parameters_info),
+        ("user32.dll", "SystemParametersInfoA", system_parameters_info),
         ("user32.dll", "ReleaseDC", |c| {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
         // shell32 — return > 32 (success) with correct stdcall arg counts.
         ("shell32.dll", "ShellExecuteA", |c| {
-            c.ret_stdcall(42, 6);
+            c.ret_stdcall(5, 6);
             Handled::Ok
         }),
         ("shell32.dll", "ShellExecuteW", |c| {
-            c.ret_stdcall(42, 6);
+            c.ret_stdcall(5, 6);
             Handled::Ok
         }),
         ("shell32.dll", "ShellExecuteExA", |c| {
-            c.ret_stdcall(1, 1);
+            c.ret_stdcall(0, 1);
             Handled::Ok
         }),
         ("shell32.dll", "ShellExecuteExW", |c| {
-            c.ret_stdcall(1, 1);
+            c.ret_stdcall(0, 1);
             Handled::Ok
         }),
         ("shell32.dll", "SHGetFolderPathA", |c| {
@@ -192,7 +233,7 @@ fn msgbox_a(ctx: &mut ApiContext) -> Handled {
     let style = ctx.arg(3);
     ctx.ui_events
         .push(UiEvent::MessageBox { title, text, style });
-    ctx.ret_stdcall(1, 4);
+    ctx.ret_stdcall(message_box_result(style), 4);
     Handled::Ok
 }
 
@@ -202,6 +243,24 @@ fn msgbox_w(ctx: &mut ApiContext) -> Handled {
     let style = ctx.arg(3);
     ctx.ui_events
         .push(UiEvent::MessageBox { title, text, style });
+    ctx.ret_stdcall(message_box_result(style), 4);
+    Handled::Ok
+}
+
+fn message_box_result(style: u32) -> u32 {
+    match style & 0xF {
+        0x1 | 0x3 | 0x5 => 2, // IDCANCEL
+        0x4 => 7,             // IDNO
+        _ => 1,               // IDOK
+    }
+}
+
+fn register_window_message(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(0xC000, 1);
+    Handled::Ok
+}
+
+fn system_parameters_info(ctx: &mut ApiContext) -> Handled {
     ctx.ret_stdcall(1, 4);
     Handled::Ok
 }
