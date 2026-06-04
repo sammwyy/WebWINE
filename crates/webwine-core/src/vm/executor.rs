@@ -169,6 +169,9 @@ fn handle_trampoline(
             cmdline: proc.cmdline.as_str(),
             messages: &proc.messages,
             proc_addr: api.proc_addr_map(),
+            tls_slots: &mut proc.tls_slots,
+            next_tls: &mut proc.next_tls,
+            rand_seed: &mut proc.rand_seed,
         };
         api.dispatch(va, &mut ctx)
     };

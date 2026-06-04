@@ -50,8 +50,10 @@ pub struct ApiContext<'a> {
     pub cmdline:   &'a str,
     /// Message-table resource (id -> text) for FormatMessage(FROM_HMODULE).
     pub messages:  &'a std::collections::HashMap<u32, String>,
-    /// Function-name → trampoline VA, for GetProcAddress (0 = not available).
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
+    pub tls_slots: &'a mut std::collections::HashMap<u32, u32>,
+    pub next_tls:  &'a mut u32,
+    pub rand_seed: &'a mut u32,
 }
 
 impl<'a> ApiContext<'a> {

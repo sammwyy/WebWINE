@@ -50,8 +50,18 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "iswdigit", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_numeric() as u32).unwrap_or(0)); Handled::Ok }),
         ("msvcrt.dll", "iswspace", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_whitespace() as u32).unwrap_or(0)); Handled::Ok }),
         ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = 1_577_836_800u32; if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
-        ("msvcrt.dll", "srand", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcrt.dll", "rand", |c| { c.ret_cdecl(0x41); Handled::Ok }),
+        ("msvcrt.dll", "srand", |c| {
+            *c.rand_seed = c.arg(0);
+            c.ret_cdecl(0);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "rand", |c| {
+            // Simple LCG from MSVC: rand_seed = rand_seed * 214013 + 2531011; return (rand_seed >> 16) & 0x7FFF;
+            *c.rand_seed = c.rand_seed.wrapping_mul(214013).wrapping_add(2531011);
+            let result = (*c.rand_seed >> 16) & 0x7FFF;
+            c.ret_cdecl(result);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "strchr", strchr),
         ("msvcrt.dll", "strrchr", strrchr),
         ("msvcrt.dll", "strstr", strstr),

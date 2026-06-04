@@ -169,6 +169,11 @@ pub struct GuestProcess {
     // Managed (.NET/CLI) image bytes, set when this is a managed process. Such a
     // process has no meaningful x86 CPU state; it runs via the CLR interpreter.
     pub managed:     Option<Vec<u8>>,
+    // TLS slots: slot index -> value
+    pub tls_slots:   std::collections::HashMap<u32, u32>,
+    pub next_tls:    u32,
+    // PRNG state for msvcrt rand()
+    pub rand_seed:   u32,
 }
 
 /// Directory portion of a guest path, e.g. `C:\a\b\foo.exe` -> `C:\a\b`.
@@ -214,6 +219,9 @@ impl GuestProcess {
             cmdline: format!("\"{path}\""),
             messages: std::collections::HashMap::new(),
             managed: Some(bytes),
+            tls_slots: std::collections::HashMap::new(),
+            next_tls: 1,
+            rand_seed: 1,
         }
     }
 }

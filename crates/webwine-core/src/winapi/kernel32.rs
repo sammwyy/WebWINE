@@ -158,7 +158,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "ReleaseSRWLockShared", r0_1),
         ("kernel32.dll", "TryAcquireSRWLockExclusive", r1_1),
         ("kernel32.dll", "InitializeSRWLock", r0_1),
-        ("kernel32.dll", "FlsAlloc", r0_1),
+        ("kernel32.dll", "FlsAlloc", fls_alloc),
         ("kernel32.dll", "FlsSetValue", tls_set),
         ("kernel32.dll", "FlsGetValue", tls_get),
         ("kernel32.dll", "FlsFree", r1_1),
@@ -251,7 +251,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ws2_32.dll", "inet_pton", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
         // comctl32 — common controls (putty's config dialog uses drag lists etc.)
         ("comctl32.dll", "InitCommonControls", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("comctl32.dll", "InitCommonControlsEx", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+
         ("comctl32.dll", "DrawInsert", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
         ("comctl32.dll", "LBItemFromPt", |c| { c.ret_stdcall(0xFFFF_FFFF, 4); Handled::Ok }),
         ("comctl32.dll", "MakeDragList", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
@@ -388,15 +388,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetCPInfo", r0_2),
         ("kernel32.dll", "LCMapStringW", r0_6),
         ("kernel32.dll", "LCMapStringEx", r0_8),
-        ("kernel32.dll", "FindFirstFileA", |c| {
-            c.ret_stdcall(INVALID_HANDLE, 2);
-            Handled::Ok
-        }),
-        ("kernel32.dll", "FindClose", r1_1),
         ("kernel32.dll", "CreateFileA", create_file_a),
         ("kernel32.dll", "CreateFileW", create_file_w),
-        ("kernel32.dll", "ReadFile", read_file),
-        ("kernel32.dll", "WriteFile", write_file),
         ("kernel32.dll", "GetFileSize", get_file_size),
         ("kernel32.dll", "GetFileSizeEx", get_file_size),
         ("kernel32.dll", "SetFilePointer", set_file_pointer),
@@ -404,7 +397,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "CreateDirectoryW", create_directory_w),
         ("kernel32.dll", "DeleteFileA", delete_file_a),
         ("kernel32.dll", "DeleteFileW", delete_file_w),
-        ("kernel32.dll", "GetFileAttributesA", get_file_attributes_a),
         ("kernel32.dll", "GetFileType", get_file_type),
         ("kernel32.dll", "SetHandleInformation", r1_3),
         ("kernel32.dll", "DuplicateHandle", dup_handle),
@@ -435,9 +427,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("kernel32.dll", "CreateEventA", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
         ("kernel32.dll", "CreateEventW", |c| { c.ret_stdcall(0xE700_0001, 4); Handled::Ok }),
-        ("kernel32.dll", "CreateMutexA", |c| { c.ret_stdcall(0xE700_0002, 3); Handled::Ok }),
-        ("kernel32.dll", "CreateMutexW", |c| { c.ret_stdcall(0xE700_0002, 3); Handled::Ok }),
-        ("kernel32.dll", "ReleaseMutex", r1_1),
         ("kernel32.dll", "SetEvent", r1_1),
         ("kernel32.dll", "ResetEvent", r1_1),
         ("kernel32.dll", "CreateProcessA", create_process_a),
@@ -573,20 +562,36 @@ pub fn register(r: &mut WinApiRegistry) {
 
 fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
-    let s = ctx.cstr(p);
-    let off = s.rfind(['\\', '/']).map(|i| i + 1).unwrap_or(0) as u32;
-    ctx.ret_stdcall(p.wrapping_add(off), 1);
+    let mut last_slash = 0;
+    let mut curr = p;
+    while let Ok(b) = ctx.memory.read_u8(curr) {
+        if b == 0 { break; }
+        if b == b'\\' || b == b'/' {
+            last_slash = curr + 1;
+        }
+        curr += 1;
+    }
+    let res = if last_slash == 0 { p } else { last_slash };
+    ctx.ret_stdcall(res, 1);
     Handled::Ok
 }
 
 fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
-    let s = ctx.wstr(p);
-    let off = s
-        .rfind(['\\', '/'])
-        .map(|i| s[..i + 1].encode_utf16().count())
-        .unwrap_or(0) as u32;
-    ctx.ret_stdcall(p.wrapping_add(off * 2), 1);
+    let mut last_slash = 0;
+    let mut curr = p;
+    loop {
+        let low = ctx.memory.read_u8(curr).unwrap_or(0);
+        let high = ctx.memory.read_u8(curr + 1).unwrap_or(0);
+        let w = u16::from_le_bytes([low, high]);
+        if w == 0 { break; }
+        if w == '\\' as u16 || w == '/' as u16 {
+            last_slash = curr + 2;
+        }
+        curr += 2;
+    }
+    let res = if last_slash == 0 { p } else { last_slash };
+    ctx.ret_stdcall(res, 1);
     Handled::Ok
 }
 
@@ -787,9 +792,11 @@ fn write_console_w(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(1);
     let count = ctx.arg(2);
     let out = ctx.arg(3);
-    let s = ctx.memory.read_wstr(buf);
-    // truncate to count chars
-    let s: String = s.chars().take(count as usize).collect();
+    
+    let bytes = ctx.memory.read_bytes(buf, (count * 2) as usize).unwrap_or_default();
+    let u16s: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let s = String::from_utf16_lossy(&u16s);
+    
     route_output(handle, s.as_bytes(), ctx);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, count);
@@ -2087,17 +2094,33 @@ fn output_debug_string_a(ctx: &mut ApiContext) -> Handled {
 }
 
 fn tls_alloc(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(0, 0);
+    let slot = *ctx.next_tls;
+    *ctx.next_tls += 1;
+    ctx.tls_slots.insert(slot, 0);
+    ctx.ret_stdcall(slot, 0);
+    Handled::Ok
+}
+
+fn fls_alloc(ctx: &mut ApiContext) -> Handled {
+    let slot = *ctx.next_tls;
+    *ctx.next_tls += 1;
+    ctx.tls_slots.insert(slot, 0);
+    ctx.ret_stdcall(slot, 1);
     Handled::Ok
 }
 
 fn tls_set(ctx: &mut ApiContext) -> Handled {
+    let slot = ctx.arg(0);
+    let value = ctx.arg(1);
+    ctx.tls_slots.insert(slot, value);
     ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
 
 fn tls_get(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(0, 1);
+    let slot = ctx.arg(0);
+    let value = ctx.tls_slots.get(&slot).copied().unwrap_or(0);
+    ctx.ret_stdcall(value, 1);
     Handled::Ok
 }
 

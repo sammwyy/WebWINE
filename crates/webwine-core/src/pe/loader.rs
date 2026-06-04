@@ -340,6 +340,9 @@ pub fn load_pe(
         cmdline: format!("\"{path}\""),
         messages: extract_message_table(&pe, bytes),
         managed: None,
+        tls_slots: std::collections::HashMap::new(),
+        next_tls: 1,
+        rand_seed: 1,
     })
 }
 
