@@ -247,7 +247,7 @@ export class RuntimeBridge {
     });
   }
 
-  async runProcessSlice(pid: number): Promise<void> {
+  runProcess(pid: number): void {
     this.send({ type: "run_process", pid });
   }
 
