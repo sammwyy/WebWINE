@@ -118,6 +118,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "_initterm_e", initterm_e),
         ("msvcrt.dll", "__p___argc", p_argc),
         ("msvcrt.dll", "__p___argv", p_argv),
+        ("msvcrt.dll", "__p__acmdln", p_acmdln),
+        ("msvcrt.dll", "__p__wcmdln", p_wcmdln),
         ("msvcrt.dll", "__getmainargs", getmainargs),
         ("msvcrt.dll", "__wgetmainargs", wgetmainargs),
         ("msvcrt.dll", "__p__environ", |c| {
@@ -1434,6 +1436,32 @@ pub(crate) fn p_commode(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F530u32;
     let _ = ctx.memory.write_u32(va, 0);
     ctx.ret_cdecl(va);
+    Handled::Ok
+}
+
+// __p__acmdln() -> char**: pointer to the `_acmdln` global (a char* holding the
+// raw command line). MinGW's CRT startup reads `*__p__acmdln()` to get the
+// command line, so returning 0 here makes it dereference NULL and crash. We keep
+// the char* in a fixed scratch slot and point it at a fresh cmdline buffer.
+pub(crate) fn p_acmdln(ctx: &mut ApiContext) -> Handled {
+    let slot = 0x7FFD_F550u32;
+    let line = format!("{}\0", ctx.cmdline);
+    let buf = ctx.heap_alloc(line.len() as u32);
+    let _ = ctx.memory.write_bytes(buf, line.as_bytes());
+    let _ = ctx.memory.write_u32(slot, buf);
+    ctx.ret_cdecl(slot);
+    Handled::Ok
+}
+
+// __p__wcmdln() -> wchar_t**: wide-char variant of the above.
+pub(crate) fn p_wcmdln(ctx: &mut ApiContext) -> Handled {
+    let slot = 0x7FFD_F554u32;
+    let mut wide: Vec<u8> = ctx.cmdline.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    wide.extend_from_slice(&[0, 0]);
+    let buf = ctx.heap_alloc(wide.len() as u32);
+    let _ = ctx.memory.write_bytes(buf, &wide);
+    let _ = ctx.memory.write_u32(slot, buf);
+    ctx.ret_cdecl(slot);
     Handled::Ok
 }
 
