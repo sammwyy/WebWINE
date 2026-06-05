@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig(({ mode }) => ({
-  base: mode === "production" ? "/webwine/" : "/",
+  base: mode === "production" ? "/WebWINE/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
