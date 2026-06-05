@@ -3,8 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-export default defineConfig({
-  base: "./",
+export default defineConfig(({ mode }) => ({
+  base: mode === "production" ? "/webwine/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -17,4 +17,4 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
   },
-});
+}));
