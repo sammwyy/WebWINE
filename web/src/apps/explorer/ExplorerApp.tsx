@@ -728,7 +728,7 @@ function ExplorerApp({
               className="w-full h-[30px] px-2 border border-[#4a4a4a] rounded-none bg-[#111111] hover:border-[#666] text-left flex items-center gap-2 overflow-hidden"
               onClick={() => setAddressEditing(true)}
             >
-              <img src=`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp` alt="" className="w-4 h-4 object-contain flex-none" draggable={false} />
+              <img src={`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`} alt="" className="w-4 h-4 object-contain flex-none" draggable={false} />
               <Breadcrumb path={path} onNavigate={navigate} />
             </button>
           )}

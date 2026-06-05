@@ -69,11 +69,11 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     "--icon-size": `${layout.iconSize}px`,
     "--desktop-icon-cell-w": `${layout.cellWidth}px`,
     "--desktop-icon-cell-h": `${layout.cellHeight}px`,
-    "--desktop-wallpaper": `url('${import.meta.env.BASE_URL}theme/wallpaper.webp')`,
   } as React.CSSProperties;
 
   // Initial load and event-based refreshes.
   useEffect(() => {
+    document.documentElement.style.setProperty("--desktop-wallpaper", `url('${import.meta.env.BASE_URL}theme/wallpaper.webp')`);
     doRefresh();
   }, [doRefresh]);
 
