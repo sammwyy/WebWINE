@@ -323,6 +323,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "webwine-cli"
+version = "0.1.0"
+dependencies = [
+ "webwine-core",
+]
+
+[[package]]
 name = "webwine-core"
 version = "0.1.0"
 dependencies = [

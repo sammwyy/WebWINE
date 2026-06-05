@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, VmError};
+use crate::fs::driver::StorageDriver;
 use crate::fs::path::GuestPath;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,18 +57,36 @@ pub enum EntryKind {
     Directory,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VirtualFileSystem {
     root: IndexMap<char, VfsDirectory>,
+    // Drive letters bound to a host storage driver. Every op on such a drive is
+    // delegated to its driver instead of the in-memory `root` tree. Runtime-only:
+    // not serialized (the host re-registers drivers after import).
+    #[serde(skip)]
+    drivers: HashMap<char, Box<dyn StorageDriver>>,
 }
 
 impl VirtualFileSystem {
     pub fn new() -> Self {
         let mut fs = VirtualFileSystem {
             root: IndexMap::new(),
+            drivers: HashMap::new(),
         };
         fs.bootstrap();
         fs
+    }
+
+    /// Bind a drive letter to a host storage driver (e.g. a real-disk
+    /// passthrough in the CLI, or an IndexedDB/OPFS store in the browser). After
+    /// this, all file operations on that drive route to the driver.
+    pub fn register_driver(&mut self, drive: char, driver: Box<dyn StorageDriver>) {
+        self.drivers.insert(drive.to_ascii_uppercase(), driver);
+    }
+
+    /// True if `guest_path`'s drive is backed by a host storage driver.
+    fn driver_drive(guest_path: &str) -> Option<char> {
+        GuestPath::parse(guest_path).ok().map(|p| p.drive.to_ascii_uppercase())
     }
 
     fn bootstrap(&mut self) {
@@ -339,6 +360,9 @@ impl VirtualFileSystem {
     }
 
     pub fn mount_file(&mut self, guest_path: &str, bytes: Vec<u8>) -> Result<()> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get_mut(&dr)) {
+            return d.write(guest_path, &bytes);
+        }
         let path = GuestPath::parse(guest_path)?;
         let file_name = path
             .file_name()
@@ -362,6 +386,9 @@ impl VirtualFileSystem {
     }
 
     pub fn create_dir(&mut self, guest_path: &str) -> Result<()> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get_mut(&dr)) {
+            return d.create_dir(guest_path);
+        }
         let path = GuestPath::parse(guest_path)?;
         let dir_name = path
             .file_name()
@@ -388,6 +415,9 @@ impl VirtualFileSystem {
     }
 
     pub fn list_dir(&self, guest_path: &str) -> Result<Vec<DirEntry>> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.list(guest_path);
+        }
         let path = GuestPath::parse(guest_path)?;
         let drive = self.get_drive(path.drive)?;
         let dir = Self::resolve_dir(drive, &path.components)?;
@@ -423,6 +453,9 @@ impl VirtualFileSystem {
     }
 
     pub fn read_file(&self, guest_path: &str) -> Result<Vec<u8>> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.read(guest_path);
+        }
         self.read_file_internal(guest_path, 0)
     }
 
@@ -479,11 +512,17 @@ impl VirtualFileSystem {
 
     /// Length of a file in bytes.
     pub fn file_len(&self, guest_path: &str) -> Result<usize> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.len(guest_path);
+        }
         Ok(self.file_bytes(guest_path)?.len())
     }
 
     /// Read at most `len` bytes starting at `offset`, cloning only that range.
     pub fn read_range(&self, guest_path: &str, offset: usize, len: usize) -> Result<Vec<u8>> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.read_range(guest_path, offset, len);
+        }
         let bytes = self.file_bytes(guest_path)?;
         let start = offset.min(bytes.len());
         let end = (start + len).min(bytes.len());
@@ -510,6 +549,9 @@ impl VirtualFileSystem {
     }
 
     pub fn delete_node(&mut self, guest_path: &str) -> Result<()> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get_mut(&dr)) {
+            return d.delete(guest_path);
+        }
         let path = GuestPath::parse(guest_path)?;
         let node_name = path
             .file_name()
@@ -531,6 +573,9 @@ impl VirtualFileSystem {
     pub fn rename_node(&mut self, guest_path: &str, new_name: &str) -> Result<()> {
         if new_name.is_empty() || new_name.contains('\\') || new_name.contains('/') {
             return Err(VmError::Path(format!("invalid name: '{new_name}'")));
+        }
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get_mut(&dr)) {
+            return d.rename(guest_path, new_name);
         }
 
         let path = GuestPath::parse(guest_path)?;
@@ -567,6 +612,9 @@ impl VirtualFileSystem {
     }
 
     pub fn node_exists(&self, guest_path: &str) -> bool {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.exists(guest_path);
+        }
         let Ok(path) = GuestPath::parse(guest_path) else {
             return false;
         };

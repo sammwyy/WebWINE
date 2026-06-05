@@ -10,7 +10,7 @@ pub mod dinput;
 
 pub use context::{ApiContext, Handled};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const TRAMPOLINE_BASE: u32 = 0x7FFE_0000;
 
@@ -27,6 +27,10 @@ pub struct WinApiRegistry {
     by_name:  HashMap<(String, String), u32>,
     // function name -> trampoline VA, for GetProcAddress (dynamic linking).
     proc_addr: HashMap<String, u32>,
+    // Upper-cased names of every DLL we provide built-in stubs for. The loader
+    // uses this (not a name heuristic) to tell "we implement this DLL" from
+    // "this is an app/third-party DLL that must come from a file".
+    dll_names: HashSet<String>,
     next:     u32,
 }
 
@@ -38,6 +42,7 @@ impl WinApiRegistry {
             by_va:    HashMap::new(),
             by_name:  HashMap::new(),
             proc_addr: HashMap::new(),
+            dll_names: HashSet::new(),
             next:     TRAMPOLINE_BASE,
         }
     }
@@ -64,11 +69,29 @@ impl WinApiRegistry {
 
     /// Register a handler for a known function. Called during VM init.
     pub fn add(&mut self, dll: &str, name: &str, f: HandlerFn) {
-        let key = (dll.to_ascii_uppercase(), name.to_string());
+        let dll_upper = dll.to_ascii_uppercase();
+        let key = (dll_upper.clone(), name.to_string());
         self.handlers.insert(key, f);
         // First registration of a name wins for the fallback map; explicit
         // (dll, name) matches always take precedence in dispatch anyway.
         self.by_func.entry(name.to_string()).or_insert(f);
+        // Record the DLL as "provided", except the synthetic buckets used for COM
+        // vtable methods (`*.vtbl`) and GetProcAddress trampolines (`PROC`), which
+        // aren't real importable DLL names.
+        if !dll_upper.ends_with(".VTBL") && dll_upper != "PROC" {
+            self.dll_names.insert(dll_upper);
+        }
+    }
+
+    /// True if we provide built-in stubs for this DLL (any function registered
+    /// under its name). Replaces name-prefix heuristics in the loader.
+    pub fn has_stub_dll(&self, dll: &str) -> bool {
+        self.dll_names.contains(&dll.to_ascii_uppercase())
+    }
+
+    /// Every DLL name we stub, e.g. for seeding virtual files into System32.
+    pub fn stub_dll_names(&self) -> impl Iterator<Item = &str> {
+        self.dll_names.iter().map(|s| s.as_str())
     }
 
     /// Allocate (or return existing) trampoline VA for a (dll, name) pair.
@@ -126,41 +149,6 @@ impl WinApiRegistry {
             || self.by_func.contains_key(name)
             || name.strip_prefix("_o_").is_some_and(|n| self.by_func.contains_key(n))
     }
-}
-
-/// True for DLLs WebWINE provides via built-in stubs (kernel32, user32, the CRT,
-/// DirectX, winsock, …). The loader treats these as always-present and never
-/// tries to load a real file for them (our stubs are the intended implementation;
-/// a real system DLL would issue syscalls we don't host). Everything else is an
-/// app/third-party DLL that must come from a file in the search path.
-pub fn is_known_system_dll(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    let n = n.strip_suffix(".dll").unwrap_or(&n);
-    const EXACT: &[&str] = &[
-        "kernel32", "kernelbase", "ntdll", "user32", "gdi32", "gdi32full", "advapi32",
-        "ole32", "oleaut32", "shell32", "shlwapi", "shcore", "comctl32", "comdlg32",
-        "winmm", "ws2_32", "wsock32", "mswsock", "wininet", "winhttp", "iphlpapi",
-        "version", "imm32", "msimg32", "usp10", "uxtheme", "dwmapi", "powrprof",
-        "setupapi", "cfgmgr32", "crypt32", "bcrypt", "ncrypt", "secur32", "rpcrt4",
-        "winspool", "winspool.drv", "gdiplus", "msvcrt", "msvcp60", "msvcp_win",
-        "ucrtbase", "ucrtbased", "normaliz", "psapi", "userenv", "netapi32",
-        "ddraw", "dsound", "dinput", "dinput8", "dplayx", "dxguid", "d3d8", "d3d9",
-        "d3d10", "d3d11", "dwrite", "d2d1", "dxgi", "opengl32", "glu32",
-        "avifil32", "msacm32", "mfplat", "mf", "mfreadwrite", "windowscodecs",
-    ];
-    if EXACT.contains(&n) {
-        return true;
-    }
-    // Versioned CRT/apiset families we stub via the global name fallback. NOTE:
-    // redistributables we do NOT implement (mfc*, d3dx9_*, d3dcompiler_*, xinput)
-    // are deliberately excluded so they go through the file-search path: loaded
-    // for real if the user supplies them, warned-about if genuinely missing.
-    n.starts_with("api-ms-win-")
-        || n.starts_with("ext-ms-win-")
-        || n.starts_with("msvcr")     // msvcr71, msvcr100, msvcr120, …
-        || n.starts_with("msvcp")     // msvcp100, msvcp140, …
-        || n.starts_with("vcruntime") // vcruntime140, …
-        || n.starts_with("concrt")
 }
 
 impl Default for WinApiRegistry {

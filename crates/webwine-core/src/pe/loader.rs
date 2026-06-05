@@ -8,7 +8,7 @@ use crate::vm::cpu::X86Cpu;
 use crate::vm::handles::HandleTable;
 use crate::vm::memory::{GuestMemory, PageProt};
 use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState, UiEvent};
-use crate::winapi::{is_known_system_dll, WinApiRegistry};
+use crate::winapi::WinApiRegistry;
 
 // Region where dependent DLLs are mapped (between the heap top and the stack).
 // Each DLL is placed at the next free, section-aligned slot and base-relocated.
@@ -488,9 +488,10 @@ fn resolve_imports(
 
         let dll = read_cstr_at(mem, image_base + name);
 
-        // Decide where this DLL's exports come from. System DLLs always use our
-        // built-in stubs. Everything else is looked up as a real file.
-        let from_file = if is_known_system_dll(&dll) {
+        // Decide where this DLL's exports come from. DLLs we stub always use our
+        // built-in handlers. Everything else is looked up as a real file.
+        let stub = api.has_stub_dll(&dll);
+        let from_file = if stub {
             false
         } else {
             ensure_dll_loaded(&dll, mctx, mem, api, logs, 0)
@@ -498,6 +499,7 @@ fn resolve_imports(
 
         let lookup_rva = if oft != 0 { oft } else { ft };
         let mut i = 0u32;
+        let mut any_resolved = false; // a real export or an implemented stub
         loop {
             let thunk = mem.read_u32(image_base + lookup_rva + i * 4).unwrap_or(0);
             if thunk == 0 {
@@ -518,17 +520,9 @@ fn resolve_imports(
                         .or_else(|| exp.by_name.get(&func_name).copied())
                         .unwrap_or(0);
                 }
-                if addr == 0 {
-                    mctx.warnings.push(format!(
-                        "{dll}: entry point '{func_name}' not found"));
-                }
-            } else if !is_known_system_dll(&dll) && !api.is_implemented(&dll, &func_name) {
-                // Not a system DLL, no file, no stub -> genuinely missing. Warn
-                // once per DLL (dedup) and fall through to a trampoline.
-                let msg = format!("'{dll}' was not found");
-                if !mctx.warnings.contains(&msg) {
-                    mctx.warnings.push(msg);
-                }
+                any_resolved |= addr != 0;
+            } else if stub || api.is_implemented(&dll, &func_name) {
+                any_resolved = true;
             }
             if addr == 0 {
                 addr = api.resolve_trampoline(&dll, &func_name);
@@ -539,6 +533,17 @@ fn resolve_imports(
                 count += 1;
             }
             i += 1;
+        }
+
+        // Warn (once) only for a DLL we couldn't satisfy at all: not stubbed, no
+        // file loaded, and not one function resolved. Apisets and partially-
+        // implemented system DLLs resolve enough to stay quiet. Per the
+        // warn-and-continue policy the IAT still has trampolines.
+        if !stub && !from_file && i > 0 && !any_resolved {
+            let msg = format!("'{dll}' was not found");
+            if !mctx.warnings.contains(&msg) {
+                mctx.warnings.push(msg);
+            }
         }
 
         logs.log(LogLevel::Debug, "loader",
@@ -657,7 +662,7 @@ fn resolve_imports_recursive(
         let ft = mem.read_u32(desc_va + 16).unwrap_or(0);
         if oft == 0 && name == 0 && ft == 0 { break; }
         let dll = read_cstr_at(mem, image_base + name);
-        let from_file = if is_known_system_dll(&dll) {
+        let from_file = if api.has_stub_dll(&dll) {
             false
         } else {
             ensure_dll_loaded(&dll, mctx, mem, api, logs, depth)

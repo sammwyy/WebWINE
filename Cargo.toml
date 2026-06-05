@@ -2,5 +2,6 @@
 members = [
     "crates/webwine-core",
     "crates/webwine-wasm",
+    "crates/webwine-cli",
 ]
 resolver = "2"

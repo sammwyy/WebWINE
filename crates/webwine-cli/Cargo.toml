@@ -1,0 +1,11 @@
+[package]
+name = "webwine-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "webwine"
+path = "src/main.rs"
+
+[dependencies]
+webwine-core = { path = "../webwine-core" }

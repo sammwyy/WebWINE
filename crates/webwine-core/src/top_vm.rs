@@ -26,8 +26,25 @@ impl WebWineVm {
             api,
             processes: ProcessTable::new(),
         };
+        vm.seed_system_dlls();
         vm.logs.log(LogLevel::Info, "vm", "WebWINE VM initialized", None);
         vm
+    }
+
+    /// Place a virtual placeholder file in C:\Windows\System32 for every DLL we
+    /// provide built-in stubs for, so the guest filesystem looks like Windows
+    /// (apps that probe for a system DLL's existence find it). These are virtual
+    /// markers, never mapped by the loader — imports of a stubbed DLL route to
+    /// trampolines regardless of this file.
+    fn seed_system_dlls(&mut self) {
+        let names: Vec<String> = self.api.stub_dll_names().map(|s| s.to_ascii_lowercase()).collect();
+        for name in names {
+            if !name.ends_with(".dll") {
+                continue;
+            }
+            let path = format!("C:\\Windows\\System32\\{name}");
+            let _ = self.fs.mount_file(&path, b"MZ\0WEBWINE virtual system DLL stub".to_vec());
+        }
     }
 
     pub fn mount_file(&mut self, guest_path: &str, bytes: Vec<u8>) -> Result<()> {
