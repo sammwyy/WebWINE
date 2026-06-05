@@ -45,15 +45,15 @@ type MessageBoxButton = {
 function iconFor(style: number): string {
   switch (style & 0xf0) {
     case MB_ICONHAND:
-      return `/theme/icons/shell/msg_error.webp`;
+      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_error.webp`;
     case MB_ICONQUESTION:
-      return `/theme/icons/shell/msg_question.webp`;
+      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_question.webp`;
     case MB_ICONEXCLAMATION:
-      return `/theme/icons/shell/msg_warning.webp`;
+      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_warning.webp`;
     case MB_ICONASTERISK:
-      return `/theme/icons/shell/msg_inform.webp`;
+      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_inform.webp`;
     default:
-      return `/theme/icons/shell/msg_inform.webp`;
+      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_inform.webp`;
   }
 }
 

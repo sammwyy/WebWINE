@@ -12,7 +12,7 @@ export async function openTextReader(path: string, runtime: RuntimeBridge) {
     runtime,
   );
 
-  const icon = resolved?.src || `/theme/icons/exts/txt.webp`;
+  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/exts/txt.webp`;
 
   let winId = "";
 

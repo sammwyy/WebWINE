@@ -15,7 +15,7 @@ export async function openPeInspector(path: string, runtime: RuntimeBridge) {
     runtime,
   );
 
-  const icon = resolved?.src || `/theme/icons/shell/default_executable.webp`;
+  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
 
   let winId = "";
 

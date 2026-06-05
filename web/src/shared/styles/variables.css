@@ -2,7 +2,6 @@
   /* Windows 10 Dark */
   --bg: #000000;
   --desktop-bg: #0f1014;
-  --desktop-wallpaper: url('/theme/wallpaper.webp');
   --desktop-bg-fallback: #0f1014;
 
   --system-font: "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;

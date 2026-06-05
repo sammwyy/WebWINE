@@ -170,7 +170,7 @@ function createGuestWindow(
 
   const winId = useWindowStore.getState().openWindow({
     title: ev.title || "Window",
-    icon: `/theme/icons/shell/default_executable.webp`,
+    icon: `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`,
     variant: "window",
     width: Math.max(ev.width, 200),
     height: Math.max(ev.height, 120) + 30,

@@ -26,7 +26,7 @@ export async function openProcessConsole(
     { name, path, kind: "file", size: 0 },
     runtime
   );
-  const icon = resolved?.src || `/theme/icons/shell/default_executable.webp`;
+  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
 
   let winId = "";
   winId = useWindowStore.getState().openWindow({

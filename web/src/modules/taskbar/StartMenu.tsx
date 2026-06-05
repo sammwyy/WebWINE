@@ -360,13 +360,13 @@ function ExpandableFolder({
   const [children, setChildren] = useState<DirectoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [iconSrc, setIconSrc] = useState(`/theme/icons/shell/folder.webp`);
+  const [iconSrc, setIconSrc] = useState(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
 
   useEffect(() => {
     let alive = true;
 
     if (!runtime) {
-      setIconSrc(`/theme/icons/shell/folder.webp`);
+      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       return;
     }
 
@@ -377,7 +377,7 @@ function ExpandableFolder({
       })
       .catch(() => {
         if (!alive) return;
-        setIconSrc(`/theme/icons/shell/folder.webp`);
+        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       });
 
     return () => {
@@ -431,7 +431,7 @@ function ExpandableFolder({
           className="flex-none w-6 h-6 object-contain"
           draggable={false}
           onError={(e) => {
-            e.currentTarget.src = `/theme/icons/shell/folder.webp`;
+            e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
           }}
         />
 
@@ -493,7 +493,7 @@ function ShortcutButton({
     let alive = true;
 
     if (!runtime) {
-      setIconSrc(`/theme/icons/shell/folder.webp`);
+      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       return;
     }
 
@@ -504,7 +504,7 @@ function ShortcutButton({
       })
       .catch(() => {
         if (!alive) return;
-        setIconSrc(`/theme/icons/shell/folder.webp`);
+        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       });
 
     return () => {
@@ -528,7 +528,7 @@ function ShortcutButton({
         className="flex-none w-6 h-6 object-contain"
         draggable={false}
         onError={(e) => {
-          e.currentTarget.src = `/theme/icons/shell/folder.webp`;
+          e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
         }}
       />
 
@@ -622,7 +622,7 @@ function ShortcutTile({
     let alive = true;
 
     if (!runtime) {
-      setIconSrc(`/theme/icons/shell/folder.webp`);
+      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       return;
     }
 
@@ -633,7 +633,7 @@ function ShortcutTile({
       })
       .catch(() => {
         if (!alive) return;
-        setIconSrc(`/theme/icons/shell/folder.webp`);
+        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
       });
 
     return () => {
@@ -660,7 +660,7 @@ function ShortcutTile({
         className="w-[34px] h-[34px] object-contain flex-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.32)]"
         draggable={false}
         onError={(e) => {
-          e.currentTarget.src = `/theme/icons/shell/folder.webp`;
+          e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
         }}
       />
 

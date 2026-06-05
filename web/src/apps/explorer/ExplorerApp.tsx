@@ -61,7 +61,7 @@ export function openExplorer(initialPath = ROOT_PATH, runtime: RuntimeBridge) {
   const title = displayPath(normalizePath(initialPath));
   const id = useWindowStore.getState().openWindow({
     title,
-    icon: `/theme/icons/apps/explorer.webp`,
+    icon: `${import.meta.env.BASE_URL}theme/icons/apps/explorer.webp`,
     width: 920,
     height: 560,
     content: <div />,
@@ -115,18 +115,18 @@ function ExplorerApp({
       {
         section: "Quick access",
         items: [
-          { label: "Your PC", path: ROOT_PATH, icon: `/theme/icons/places/thispc.webp` },
+          { label: "Your PC", path: ROOT_PATH, icon: `${import.meta.env.BASE_URL}theme/icons/places/thispc.webp` },
           ...USER_FOLDERS.map((f) => ({
             label: f.label,
             path: f.path,
-            icon: `/theme/icons/places/${f.place}.webp`,
+            icon: `${import.meta.env.BASE_URL}theme/icons/places/${f.place}.webp`,
           })),
         ],
       },
       {
         section: "Drives",
         items: [
-          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `/theme/icons/shell/drive_main.webp` },
+          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `${import.meta.env.BASE_URL}theme/icons/shell/drive_main.webp` },
         ],
       },
     ],
@@ -728,7 +728,7 @@ function ExplorerApp({
               className="w-full h-[30px] px-2 border border-[#4a4a4a] rounded-none bg-[#111111] hover:border-[#666] text-left flex items-center gap-2 overflow-hidden"
               onClick={() => setAddressEditing(true)}
             >
-              <img src="/theme/icons/shell/folder.webp" alt="" className="w-4 h-4 object-contain flex-none" draggable={false} />
+              <img src=`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp` alt="" className="w-4 h-4 object-contain flex-none" draggable={false} />
               <Breadcrumb path={path} onNavigate={navigate} />
             </button>
           )}

@@ -162,7 +162,7 @@ async function shortcutActionIcon(action: string): Promise<string> {
 }
 
 function themeAsset(relPath: string): Promise<string | null> {
-  const url = `/theme/icons/${relPath}`;
+  const url = `${import.meta.env.BASE_URL}theme/icons/${relPath}`;
   if (!assetCache.has(url)) {
     assetCache.set(url, fetchAndNormalise(url));
   }
