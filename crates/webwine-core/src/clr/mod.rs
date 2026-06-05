@@ -9,7 +9,6 @@ pub mod metadata;
 
 pub use interp::ClrRuntime;
 
-use goblin::pe::PE;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, VmError};
@@ -45,7 +44,7 @@ struct SectionMap {
 
 impl ClrImage {
     pub fn parse(bytes: &[u8]) -> Result<ClrImage> {
-        let pe = PE::parse(bytes).map_err(|e| VmError::Pe(e.to_string()))?;
+        let pe = crate::pe::parse_pe(bytes).map_err(|e| VmError::Pe(e.to_string()))?;
         let oh = pe
             .header
             .optional_header
@@ -141,7 +140,7 @@ impl ClrImage {
 /// True if the PE carries a CLI header (data directory 14) — i.e. it is a
 /// managed (.NET) assembly that must run on the CLR path, not the x86 loader.
 pub fn is_managed(bytes: &[u8]) -> bool {
-    PE::parse(bytes)
+    crate::pe::parse_pe(bytes)
         .ok()
         .and_then(|pe| pe.header.optional_header)
         .and_then(|oh| oh.data_directories.get_clr_runtime_header().copied())

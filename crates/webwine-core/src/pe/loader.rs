@@ -139,7 +139,7 @@ pub fn load_pe(
     fs: &VirtualFileSystem,
     logs: &mut LogBuffer,
 ) -> Result<GuestProcess> {
-    let pe = PE::parse(bytes)
+    let pe = crate::pe::parse_pe(bytes)
         .map_err(|e| VmError::Pe(e.to_string()))?;
 
     // We are an x86 (i386) user-mode interpreter. Reject anything else up front
@@ -584,7 +584,7 @@ fn ensure_dll_loaded(
     // Mark in-progress so a circular import returns "loaded" instead of recursing.
     mctx.loaded.insert(key.clone(), None);
 
-    let pe = match PE::parse(&bytes) {
+    let pe = match crate::pe::parse_pe(&bytes) {
         Ok(pe) => pe,
         Err(e) => {
             mctx.warnings.push(format!("{dll}: not a valid PE ({e})"));

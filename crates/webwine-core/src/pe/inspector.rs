@@ -1,4 +1,3 @@
-use goblin::pe::PE;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +36,7 @@ pub struct PeInfo {
 }
 
 pub fn inspect_bytes(bytes: &[u8]) -> Result<PeInfo> {
-    let pe = PE::parse(bytes).map_err(|e| VmError::Pe(e.to_string()))?;
+    let pe = crate::pe::parse_pe(bytes).map_err(|e| VmError::Pe(e.to_string()))?;
 
     let machine_id = pe.header.coff_header.machine;
     let machine = machine_name(machine_id).to_string();
