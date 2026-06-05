@@ -1,4 +1,4 @@
-//! DirectDraw / Direct3D stub for WebWINE.
+﻿//! DirectDraw / Direct3D stub for WebWINE.
 //!
 //! Implements enough of the DDraw COM interface for 2D games that use the
 //! classic "blit-to-primary-surface" rendering loop (Touhou 6, Dune 2000,
@@ -10,8 +10,8 @@
 //!
 //! Every COM object is laid out in guest memory as:
 //!
-//!   [object VA]  → [vtable ptr]  (4 bytes, points at vtable)
-//!   [vtable VA]  → [slot 0 ptr]  (QueryInterface)
+//!   [object VA]  â†’ [vtable ptr]  (4 bytes, points at vtable)
+//!   [vtable VA]  â†’ [slot 0 ptr]  (QueryInterface)
 //!                  [slot 1 ptr]  (AddRef)
 //!                  [slot 2 ptr]  (Release)
 //!                  [slot 3 ptr]  (first real method)
@@ -26,13 +26,13 @@
 //!
 //! ```text
 //! IDirectDraw7 object  (4 bytes: vtable ptr)
-//!   └─ IDirectDraw7 vtable  (N * 4 bytes: trampoline VAs)
+//!   â””â”€ IDirectDraw7 vtable  (N * 4 bytes: trampoline VAs)
 //!
 //! IDirectDrawSurface7 object  (8 bytes: vtable ptr + surface-id u32)
-//!   └─ IDirectDrawSurface7 vtable  (M * 4 bytes: trampoline VAs)
+//!   â””â”€ IDirectDrawSurface7 vtable  (M * 4 bytes: trampoline VAs)
 //!
 //! IDirectDrawClipper object  (4 bytes: vtable ptr)
-//!   └─ IDirectDrawClipper vtable  (K * 4 bytes)
+//!   â””â”€ IDirectDrawClipper vtable  (K * 4 bytes)
 //! ```
 //!
 //! The surface-id stored in the object at +4 is an index into
@@ -40,27 +40,27 @@
 //!
 //! ## Supported operations
 //!
-//! - `DirectDrawCreate` / `DirectDrawCreateEx`  →  IDirectDraw7 object
-//! - `IDirectDraw7::SetCooperativeLevel`         →  S_OK
-//! - `IDirectDraw7::SetDisplayMode`              →  S_OK (records w/h/bpp)
-//! - `IDirectDraw7::CreateSurface`               →  IDirectDrawSurface7
-//!     - DDSCAPS_PRIMARYSURFACE  →  primary (front-buffer)
-//!     - DDSCAPS_OFFSCREENPLAIN  →  offscreen (back-buffer / sprite sheet)
-//!     - With DDSCAPS_FLIP / backBufferCount → automatically creates a back surface
-//! - `IDirectDrawSurface7::Lock` / `Unlock`      →  direct pixel pointer
-//! - `IDirectDrawSurface7::Blt` / `BltFast`      →  surface-to-surface blit
-//! - `IDirectDrawSurface7::Flip`                 →  back→primary, emits Blit event
-//! - `IDirectDrawSurface7::SetColorKey`          →  records transparent colour
-//! - `IDirectDrawSurface7::GetAttachedSurface`   →  back-buffer handle
-//! - `IDirectDrawSurface7::Release`              →  frees surface slot
-//! - `IDirectDraw7::CreateClipper`               →  IDirectDrawClipper (stub)
-//! - `IDirectDrawSurface7::SetClipper`           →  no-op
-//! - `IDirectDraw7::QueryInterface`              →  self (IID ignored, works for
-//!                                                   IDirectDraw → IDirectDraw7 upgrades)
+//! - `DirectDrawCreate` / `DirectDrawCreateEx`  â†’  IDirectDraw7 object
+//! - `IDirectDraw7::SetCooperativeLevel`         â†’  S_OK
+//! - `IDirectDraw7::SetDisplayMode`              â†’  S_OK (records w/h/bpp)
+//! - `IDirectDraw7::CreateSurface`               â†’  IDirectDrawSurface7
+//!     - DDSCAPS_PRIMARYSURFACE  â†’  primary (front-buffer)
+//!     - DDSCAPS_OFFSCREENPLAIN  â†’  offscreen (back-buffer / sprite sheet)
+//!     - With DDSCAPS_FLIP / backBufferCount â†’ automatically creates a back surface
+//! - `IDirectDrawSurface7::Lock` / `Unlock`      â†’  direct pixel pointer
+//! - `IDirectDrawSurface7::Blt` / `BltFast`      â†’  surface-to-surface blit
+//! - `IDirectDrawSurface7::Flip`                 â†’  backâ†’primary, emits Blit event
+//! - `IDirectDrawSurface7::SetColorKey`          â†’  records transparent colour
+//! - `IDirectDrawSurface7::GetAttachedSurface`   â†’  back-buffer handle
+//! - `IDirectDrawSurface7::Release`              â†’  frees surface slot
+//! - `IDirectDraw7::CreateClipper`               â†’  IDirectDrawClipper (stub)
+//! - `IDirectDrawSurface7::SetClipper`           â†’  no-op
+//! - `IDirectDraw7::QueryInterface`              â†’  self (IID ignored, works for
+//!                                                   IDirectDraw â†’ IDirectDraw7 upgrades)
 
-use crate::vm::process::{DDrawSurface, UiEvent};
-use crate::winapi::context::{ApiContext, Handled};
-use crate::winapi::WinApiRegistry;
+use webwine_api::vm::process::{DDrawSurface, UiEvent};
+use webwine_api::winapi::context::{ApiContext, Handled};
+use webwine_api::winapi::WinApiRegistry;
 
 // HRESULT constants
 const S_OK: u32 = 0x0000_0000;
@@ -361,7 +361,7 @@ pub fn register(r: &mut WinApiRegistry) {
 ///
 /// The vtable is an array of trampoline VAs, one per method slot.
 fn alloc_com_object(ctx: &mut ApiContext, method_names: &[&str], extra: u32) -> u32 {
-    // Allocate vtable: N slots × 4 bytes
+    // Allocate vtable: N slots Ã— 4 bytes
     let vtable_size = (method_names.len() * 4) as u32;
     let vtable_va = ctx.heap_alloc(vtable_size);
 
@@ -407,7 +407,7 @@ fn ddraw_create(ctx: &mut ApiContext) -> Handled {
 /// `DirectDrawCreateEx(lpGUID, lplpDD, iid, pUnkOuter) -> HRESULT`
 fn ddraw_create_ex(ctx: &mut ApiContext) -> Handled {
     let out_ptr = ctx.arg(1);
-    // iid (arg 2) is ignored — we always return IDirectDraw7 vtable layout.
+    // iid (arg 2) is ignored â€” we always return IDirectDraw7 vtable layout.
 
     let obj_va = alloc_com_object(ctx, IDDRAW7_METHODS, 0);
     if out_ptr != 0 {
@@ -628,7 +628,7 @@ fn iddraw7_slot(ctx: &ApiContext) -> Option<usize> {
 
 fn iddraw7_query_interface(ctx: &mut ApiContext) -> Handled {
     // QueryInterface(this, riid, ppvObject)
-    // We return `this` for any IID — covers IDirectDraw → IDirectDraw7 upgrades.
+    // We return `this` for any IID â€” covers IDirectDraw â†’ IDirectDraw7 upgrades.
     let this = ctx.arg(0);
     let out = ctx.arg(2);
     if out != 0 {
@@ -668,7 +668,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
         (
             ctx.gui.ddraw_display_w.max(640),
             ctx.gui.ddraw_display_h.max(480),
-            crate::vm::process::DDrawSurfaceKind::Primary,
+            webwine_api::vm::process::DDrawSurfaceKind::Primary,
         )
     } else {
         let dw = if flags & DDSD_WIDTH != 0 {
@@ -681,7 +681,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
         } else {
             ctx.gui.ddraw_display_h.max(480)
         };
-        (dw, dh, crate::vm::process::DDrawSurfaceKind::Offscreen)
+        (dw, dh, webwine_api::vm::process::DDrawSurfaceKind::Offscreen)
     };
 
     // Allocate pixel buffer on the guest heap: 4 bytes per pixel (BGRA8888).
@@ -706,7 +706,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
         },
     );
 
-    // If DDSCAPS_FLIP and backBufferCount ≥ 1, create the back buffer now.
+    // If DDSCAPS_FLIP and backBufferCount â‰¥ 1, create the back buffer now.
     if caps & DDSCAPS_FLIP != 0 && flags & DDSD_BACKBUFFERCOUNT != 0 {
         let back_count = ctx.memory.read_u32(desc_va + DESC_BACK_COUNT).unwrap_or(0);
         if back_count >= 1 {
@@ -716,7 +716,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
             ctx.gui.ddraw_surfaces.insert(
                 back_sid,
                 DDrawSurface {
-                    kind: crate::vm::process::DDrawSurfaceKind::Offscreen,
+                    kind: webwine_api::vm::process::DDrawSurfaceKind::Offscreen,
                     width: w,
                     height: h,
                     stride,
@@ -758,7 +758,7 @@ fn iddraw7_create_clipper(ctx: &mut ApiContext) -> Handled {
 }
 
 fn iddraw7_get_caps(ctx: &mut ApiContext) -> Handled {
-    // GetCaps(this, lpDDDriverCaps, lpDDHELCaps) — fill with generous caps so
+    // GetCaps(this, lpDDDriverCaps, lpDDHELCaps) â€” fill with generous caps so
     // capability checks pass.  DDCAPS is 344 bytes; we only set the key fields.
     for out in [ctx.arg(1), ctx.arg(2)] {
         if out != 0 {
@@ -767,7 +767,7 @@ fn iddraw7_get_caps(ctx: &mut ApiContext) -> Handled {
             let _ = ctx.memory.write_u32(out + 8, 0xFFFF_FFFF); // dwCaps2
             let _ = ctx.memory.write_u32(out + 12, 0xFFFF_FFFF); // dwCKeyCaps
             let _ = ctx.memory.write_u32(out + 16, 0xFFFF_FFFF); // dwFXCaps
-                                                                 // dwVidMemTotal / dwVidMemFree — claim 32 MB available.
+                                                                 // dwVidMemTotal / dwVidMemFree â€” claim 32 MB available.
             let _ = ctx.memory.write_u32(out + 80, 32 * 1024 * 1024);
             let _ = ctx.memory.write_u32(out + 84, 32 * 1024 * 1024);
         }
@@ -855,7 +855,7 @@ fn dispatch_iddsurface7(ctx: &mut ApiContext) -> Handled {
         24 => {
             ctx.ret_stdcall(S_OK, 1);
             Handled::Ok
-        } // IsLost → DD_OK = not lost
+        } // IsLost â†’ DD_OK = not lost
         25 => iddsurface7_lock(ctx),
         27 => {
             ctx.ret_stdcall(S_OK, 1);
@@ -869,7 +869,7 @@ fn dispatch_iddsurface7(ctx: &mut ApiContext) -> Handled {
         32 => iddsurface7_unlock(ctx),
         36 => {
             // GetDDInterface(this, lplpDD)
-            // Return a fresh IDirectDraw7 object — caller just wants to call
+            // Return a fresh IDirectDraw7 object â€” caller just wants to call
             // SetCooperativeLevel on it again.
             let out = ctx.arg(1);
             let obj = alloc_com_object(ctx, IDDRAW7_METHODS, 0);
@@ -933,21 +933,21 @@ fn iddsurface7_lock(ctx: &mut ApiContext) -> Handled {
 }
 
 fn iddsurface7_unlock(ctx: &mut ApiContext) -> Handled {
-    // Unlock(this, lpRect) — just acknowledge; pixels are already in guest mem.
+    // Unlock(this, lpRect) â€” just acknowledge; pixels are already in guest mem.
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
 
 fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
     // Flip(this, lpDDSurfaceTargetOverride, dwFlags)
-    // Copies back-buffer pixels → primary, then emits a Blit event.
+    // Copies back-buffer pixels â†’ primary, then emits a Blit event.
     let this = ctx.arg(0);
     let sid = surface_id_of(ctx, this);
 
     // Gather what we need before any mutable borrow.
     let (primary_id, back_id, w, h) = {
         if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
-            let primary = if matches!(surf.kind, crate::vm::process::DDrawSurfaceKind::Primary) {
+            let primary = if matches!(surf.kind, webwine_api::vm::process::DDrawSurfaceKind::Primary) {
                 sid
             } else {
                 sid // fallback: treat self as primary
@@ -985,7 +985,7 @@ fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
 fn iddsurface7_blt(ctx: &mut ApiContext) -> Handled {
     // Blt(this, lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx)
     let this = ctx.arg(0);
-    let dest_rect = ctx.arg(1); // may be NULL → whole surface
+    let dest_rect = ctx.arg(1); // may be NULL â†’ whole surface
     let src_obj = ctx.arg(2); // IDirectDrawSurface7* (may be NULL for solid fills)
     let src_rect = ctx.arg(3);
 
@@ -1086,10 +1086,10 @@ fn iddsurface7_get_surface_desc(ctx: &mut ApiContext) -> Handled {
     if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
         if desc_va != 0 {
             let caps = match surf.kind {
-                crate::vm::process::DDrawSurfaceKind::Primary => {
+                webwine_api::vm::process::DDrawSurfaceKind::Primary => {
                     DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP
                 }
-                crate::vm::process::DDrawSurfaceKind::Offscreen => DDSCAPS_OFFSCREENPLAIN,
+                webwine_api::vm::process::DDrawSurfaceKind::Offscreen => DDSCAPS_OFFSCREENPLAIN,
             };
             let _ = ctx.memory.write_u32(desc_va + DESC_WIDTH, surf.width);
             let _ = ctx.memory.write_u32(desc_va + DESC_HEIGHT, surf.height);
@@ -1246,7 +1246,7 @@ fn surface_fill(ctx: &mut ApiContext, sid: u32, x: i32, y: i32, w: i32, h: i32, 
     }
 }
 
-/// Read a surface's pixel buffer and convert BGRA8888 → RGBA8888 for the
+/// Read a surface's pixel buffer and convert BGRA8888 â†’ RGBA8888 for the
 /// frontend canvas (`putImageData` expects RGBA).
 fn read_surface_rgba(ctx: &ApiContext, sid: u32) -> Vec<u8> {
     let (pixels_va, w, h, stride) = match ctx.gui.ddraw_surfaces.get(&sid) {

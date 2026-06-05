@@ -1,11 +1,9 @@
 pub mod clr;
-pub mod error;
-pub mod fs;
-pub mod logs;
 pub mod pe;
 pub mod vm;
 pub mod winapi;
 
+pub use webwine_api::{error, fs, logs};
 pub use vm::{ProcessInfo, ProcessState, SliceResult};
 pub use vm::executor::SliceResult as RunResult;
 pub use fs::vfs::{DirEntry, EntryKind};

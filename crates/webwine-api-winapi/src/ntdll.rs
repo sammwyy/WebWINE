@@ -1,5 +1,5 @@
-use super::{ApiContext, Handled, WinApiRegistry};
-use crate::vm::handles::KernelObject;
+﻿use super::{ApiContext, Handled, WinApiRegistry};
+use webwine_api::vm::handles::KernelObject;
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
@@ -28,6 +28,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ntdll.dll", "RtlGetLastWin32Error", |c| { let e = c.cpu.last_error; c.ret_stdcall(e, 0); Handled::Ok }),
         ("ntdll.dll", "RtlSetLastWin32Error", |c| { c.cpu.last_error = c.arg(0); c.ret_stdcall(0, 1); Handled::Ok }),
         ("ntdll.dll", "RtlNtStatusToDosError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
+        ("ntdll.dll", "RtlDllShutdownInProgress", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
         ("ntdll.dll", "RtlCreateUnicodeStringFromAsciiz", rtl_create_unicode_from_ascii),
         ("ntdll.dll", "RtlFreeUnicodeString", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
     ];
@@ -81,7 +83,7 @@ fn rtl_move(ctx: &mut ApiContext) -> Handled {
 }
 
 // NtWriteFile(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock,
-//             Buffer, Length, ByteOffset, Key) — 9 args, stdcall.
+//             Buffer, Length, ByteOffset, Key) â€” 9 args, stdcall.
 // std's File::write goes through here too (not just the console path), so a
 // VFS-backed handle must write to the file. Anything else routes to the
 // process console (the UCRT/std stdout/stderr path).

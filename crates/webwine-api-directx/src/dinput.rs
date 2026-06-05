@@ -1,5 +1,5 @@
-use crate::winapi::context::{ApiContext, Handled};
-use crate::winapi::WinApiRegistry;
+﻿use webwine_api::winapi::context::{ApiContext, Handled};
+use webwine_api::winapi::WinApiRegistry;
 
 const IDIRECTINPUT8_METHODS: &[&str] = &[
     "IDirectInput8::QueryInterface", // 0

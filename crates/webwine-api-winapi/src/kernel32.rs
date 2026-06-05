@@ -1,5 +1,6 @@
 use super::{ApiContext, Handled, WinApiRegistry};
-use crate::vm::handles::{
+use webwine_api::winapi::context::ApiRuntimeEnv;
+use webwine_api::vm::handles::{
     KernelObject, CURRENT_PROCESS, CURRENT_THREAD, INVALID_HANDLE, STD_ERROR_HANDLE,
     STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
@@ -7,6 +8,7 @@ use crate::vm::handles::{
 // Win32 error codes used by the file APIs.
 const ERROR_FILE_NOT_FOUND: u32 = 2;
 const ERROR_FILE_EXISTS: u32 = 80;
+const ERROR_PROC_NOT_FOUND: u32 = 127;
 
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
@@ -14,221 +16,7 @@ const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFF_FFFF;
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
-        // advapi32 registry: we have no registry, so report "key not found" and
-        // clean the exact arg counts (a wrong count corrupts the guest stack).
-        // ERROR_FILE_NOT_FOUND (2) makes apps fall back to defaults.
-        ("advapi32.dll", "RegOpenKeyExA", reg_open_key),
-        ("advapi32.dll", "RegOpenKeyExW", reg_open_key),
-        ("advapi32.dll", "RegOpenKeyA", |c| {
-            let o = c.arg(2);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 3);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegQueryValueExA", reg_query_value),
-        ("advapi32.dll", "RegQueryValueExW", |c| {
-            c.ret_stdcall(2, 6);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegCreateKeyA", |c| {
-            let o = c.arg(2);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 3);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegCreateKeyW", |c| {
-            let o = c.arg(2);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 3);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegCreateKeyExA", |c| {
-            let o = c.arg(7);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 9);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegSetValueExA", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegSetValueExW", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegCloseKey", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegOpenKeyW", |c| {
-            let o = c.arg(2);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 3);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegCreateKeyExW", |c| {
-            let o = c.arg(7);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(2, 9);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegDeleteValueW", |c| {
-            c.ret_stdcall(2, 2);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegDeleteKeyW", |c| {
-            c.ret_stdcall(2, 2);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegEnumValueW", |c| {
-            c.ret_stdcall(0x103, 8);
-            Handled::Ok
-        }), // ERROR_NO_MORE_ITEMS
-        ("advapi32.dll", "RegEnumKeyExW", |c| {
-            c.ret_stdcall(0x103, 8);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegQueryInfoKeyW", |c| {
-            c.ret_stdcall(0, 12);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegQueryValueW", |c| {
-            c.ret_stdcall(2, 4);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegNotifyChangeKeyValue", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("advapi32.dll", "RegFlushKey", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHGetValueA", |c| {
-            c.ret_stdcall(2, 6);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHGetValueW", |c| {
-            c.ret_stdcall(2, 6);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHSetValueA", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHSetValueW", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }),
-        (
-            "shlwapi.dll",
-            "SHRegGetBoolUSValueA",
-            sh_reg_get_bool_us_value,
-        ),
-        (
-            "shlwapi.dll",
-            "SHRegGetBoolUSValueW",
-            sh_reg_get_bool_us_value,
-        ),
-        ("shlwapi.dll", "SHRegGetUSValueA", |c| {
-            c.ret_stdcall(2, 8);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHRegGetUSValueW", |c| {
-            c.ret_stdcall(2, 8);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHRegCreateUSKeyA", sh_reg_create_us_key),
-        ("shlwapi.dll", "SHRegCreateUSKeyW", sh_reg_create_us_key),
-        ("shlwapi.dll", "SHRegWriteUSValueA", |c| {
-            c.ret_stdcall(0, 7);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHRegWriteUSValueW", |c| {
-            c.ret_stdcall(0, 7);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHRegCloseUSKey", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "PathFindFileNameA", path_find_file_name_a),
-        ("shlwapi.dll", "PathFindFileNameW", path_find_file_name_w),
-        ("shlwapi.dll", "PathRemoveArgsA", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "PathRemoveArgsW", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "PathRemoveBlanksA", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "PathRemoveBlanksW", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "StrCmpNIA", strcmp_ni_a),
-        ("shlwapi.dll", "StrCmpNIW", strcmp_ni_w),
-        ("shlwapi.dll", "#241", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "#433", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "#437", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "#563", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "#618", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "#16", |c| {
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHCreateThreadRef", sh_create_thread_ref),
-        ("shlwapi.dll", "SHSetThreadRef", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHGetThreadRef", |c| {
-            let out = c.arg(0);
-            if out != 0 {
-                let _ = c.memory.write_u32(out, 0);
-            }
-            c.ret_stdcall(0x8000_4005, 1);
-            Handled::Ok
-        }),
-        ("shlwapi.dll", "SHReleaseThreadRef", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "InitCommonControlsEx", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
+        // advapi32 registry: we have no registry,
         ("kernel32.dll", "ExitProcess", exit_process),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteFile", write_file),
@@ -411,8 +199,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetLocalTime", get_system_time_struct),
         ("kernel32.dll", "GetComputerNameA", get_computer_name_a),
         ("kernel32.dll", "GetComputerNameW", get_computer_name_w),
-        ("advapi32.dll", "GetUserNameA", get_user_name_a),
-        ("advapi32.dll", "GetUserNameW", get_user_name_w),
         (
             "kernel32.dll",
             "QueryPerformanceCounter",
@@ -456,259 +242,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 1);
             Handled::Ok
         }),
-        // Winsock (ws2_32): present so apps like putty init networking and reach
-        // their UI. Socket ops fail (no real network); init + byte-swap work.
-        ("ws2_32.dll", "WSAStartup", |c| {
-            let d = c.arg(1);
-            if d != 0 {
-                let _ = c.memory.write_u16(d, 0x0202);
-                let _ = c.memory.write_u16(d + 2, 0x0202);
-            }
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSACleanup", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAGetLastError", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSASetLastError", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSACreateEvent", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSACloseEvent", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAAsyncSelect", |c| {
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAEventSelect", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAIoctl", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 9);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAAddressToStringA", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAStringToAddressA", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "socket", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }), // INVALID_SOCKET
-        ("ws2_32.dll", "WSASocketA", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 6);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "closesocket", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "connect", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "bind", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "listen", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "accept", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "send", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 4);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "recv", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 4);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "sendto", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 6);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "recvfrom", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 6);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "shutdown", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "select", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "ioctlsocket", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getsockname", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getpeername", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getsockopt", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "setsockopt", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "gethostname", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "gethostbyname", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getaddrinfo", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 4);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "freeaddrinfo", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getnameinfo", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 7);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "inet_addr", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "inet_ntoa", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "htons", |c| {
-            let v = c.arg(0) as u16;
-            c.ret_stdcall(v.swap_bytes() as u32, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "ntohs", |c| {
-            let v = c.arg(0) as u16;
-            c.ret_stdcall(v.swap_bytes() as u32, 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "htonl", |c| {
-            let v = c.arg(0);
-            c.ret_stdcall(v.swap_bytes(), 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "ntohl", |c| {
-            let v = c.arg(0);
-            c.ret_stdcall(v.swap_bytes(), 1);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "__WSAFDIsSet", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAWaitForMultipleEvents", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAEnumNetworkEvents", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "WSAGetOverlappedResult", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getservbyname", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "getservbyport", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "inet_ntop", |c| {
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
-        ("ws2_32.dll", "inet_pton", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        // comctl32 — common controls (putty's config dialog uses drag lists etc.)
-        ("comctl32.dll", "InitCommonControls", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "DrawInsert", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "LBItemFromPt", |c| {
-            c.ret_stdcall(0xFFFF_FFFF, 4);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "MakeDragList", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "ImageList_Create", |c| {
-            c.ret_stdcall(0x494C_0001, 5);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "ImageList_Destroy", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "ImageList_AddMasked", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "ImageList_ReplaceIcon", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "_TrackMouseEvent", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "CreateUpDownControl", |c| {
-            c.ret_stdcall(0, 12);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "PropertySheetW", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("comctl32.dll", "PropertySheetA", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        // GetSystemDirectory/GetWindowsDirectory(lpBuffer, uSize) — 2 args.
+        // GetSystemDirectory/GetWindowsDirectory(lpBuffer, uSize) â€” 2 args.
         ("kernel32.dll", "GetSystemDirectoryA", |c| {
             sysdir(c, false, "C:\\Windows\\System32")
         }),
@@ -948,10 +482,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "WaitForMultipleObjects", r0_4), // (n, handles, all, ms)
         ("kernel32.dll", "WaitForMultipleObjectsEx", r0_5),
         ("kernel32.dll", "SignalObjectAndWait", r0_4),
-        ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
         ("kernel32.dll", "CreateEventA", |c| {
             c.ret_stdcall(0xE700_0001, 4);
             Handled::Ok
@@ -975,7 +505,7 @@ pub fn register(r: &mut WinApiRegistry) {
             interlocked_cmpxchg,
         ),
         // API-MS-WIN API set forwarders
-        // ApiSetQueryApiSetPresence(ApiSetName, Present*) — checks if an API set
+        // ApiSetQueryApiSetPresence(ApiSetName, Present*) â€” checks if an API set
         // DLL is present.  We say "no" (FALSE) so callers skip optional features.
         (
             "api-ms-win-core-apiquery-l1-1-0.dll",
@@ -989,10 +519,10 @@ pub fn register(r: &mut WinApiRegistry) {
                 Handled::Ok
             },
         ),
-        // GlobalAlloc / GlobalFree / GlobalLock / GlobalUnlock — thin wrappers
+        // GlobalAlloc / GlobalFree / GlobalLock / GlobalUnlock â€” thin wrappers
         // around the process heap; we just forward to our heap routines.
         ("kernel32.dll", "GlobalAlloc", global_alloc),
-        // LocalAlloc(uFlags, uBytes) — same as GlobalAlloc in our model.
+        // LocalAlloc(uFlags, uBytes) â€” same as GlobalAlloc in our model.
         ("kernel32.dll", "LocalAlloc", global_alloc),
         ("kernel32.dll", "LocalFree", |c| {
             c.ret_stdcall(0, 1);
@@ -1144,11 +674,6 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0x5450_0003, 3);
             Handled::Ok
         }),
-        // ntdll bits explorer resolves dynamically; safe no-ops.
-        ("ntdll.dll", "RtlDllShutdownInProgress", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
         ("kernel32.dll", "GetPriorityClass", |c| {
             c.ret_stdcall(0x20, 1);
             Handled::Ok
@@ -1233,145 +758,13 @@ pub fn register(r: &mut WinApiRegistry) {
             "api-ms-win-core-localization-l1-2-0.dll",
             "FormatMessageA",
             format_message_a_fwd,
-        ),
-        // ── MFC42U.DLL Stubs ───────────────────────────────────────────────
-        // Paint (mspaint.exe) imports ordinal 1165 from MFC42U.DLL.
-        // It's likely AfxGetModuleState() or AfxGetApp() which returns a pointer
-        // to a large CWinApp / AFX_MODULE_STATE structure.
-        // Returning 0 crashes because it tries to write to [EAX+0x14].
-        // We return a dummy heap pointer so the writes succeed.
-        ("shell32.dll", "#68", |c| {
-            c.ret_stdcall(0, 6);
-            Handled::Ok
-        }), // RunFileDlg (6 args)
-        ("shell32.dll", "#188", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }), // SHGetSetSettings (3 args, void)
-        ("shell32.dll", "#100", |c| {
-            let out = c.arg(2);
-            if out != 0 {
-                let _ = c.memory.write_u32(out, 0);
-            }
-            c.ret_stdcall(0x8000_4005, 3);
-            Handled::Ok
-        }), // SHCreateStdEnumFmtEtc (3 args)
-        ("shell32.dll", "#245", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }), // SHTestTokenMembership (2 args)
-        ("shell32.dll", "#660", |c| {
-            c.ret_stdcall(0, 3);
-            Handled::Ok
-        }), // SHWaitForFileToOpen (3 args)
-        ("shell32.dll", "#723", |c| {
-            let out = c.arg(1);
-            if out != 0 {
-                let _ = c.memory.write_u32(out, 0);
-            }
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        (
-            "shell32.dll",
-            "SHGetSpecialFolderPathW",
-            sh_get_special_folder_path_w,
-        ),
-        (
-            "shell32.dll",
-            "SHGetSpecialFolderPathA",
-            sh_get_special_folder_path_a,
-        ),
-        ("shdocvw.dll", "#110", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }), // WinList_Init — S_OK
-        ("shdocvw.dll", "#111", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }), // WinList_Terminate
-        ("shdocvw.dll", "#125", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }), // SHCreateFromDesktop
-        ("shdocvw.dll", "DllInstall", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoCreateInstance", |c| {
-            let out = c.arg(4);
-            if out != 0 {
-                let _ = c.memory.write_u32(out, 0);
-            }
-            c.ret_stdcall(0x8004_0154, 5);
-            Handled::Ok
-        }),
-        ("ole32.dll", "OleUninitialize", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoUninitialize", |c| {
-            c.ret_stdcall(0, 0);
-            Handled::Ok
-        }),
-        // COM task allocator — must return real memory or C++ code throws bad_alloc.
-        ("ole32.dll", "CoTaskMemAlloc", |c| {
-            let n = c.arg(0);
-            let p = c.heap_alloc(n);
-            c.ret_stdcall(p, 1);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoTaskMemFree", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoTaskMemRealloc", |c| {
-            let p = c.arg(0);
-            let n = c.arg(1);
-            let r = c.heap_realloc(p, n);
-            c.ret_stdcall(r, 2);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoInitialize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }), // S_OK
-        ("ole32.dll", "CoInitializeEx", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("ole32.dll", "OleInitialize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoCreateGuid", |c| {
-            let p = c.arg(0);
-            if p != 0 {
-                let _ = c.memory.write_bytes(p, &[0u8; 16]);
-            }
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("ole32.dll", "CoGetMalloc", |c| {
-            let o = c.arg(1);
-            if o != 0 {
-                let _ = c.memory.write_u32(o, 0);
-            }
-            c.ret_stdcall(0x8000_4001u32, 2);
-            Handled::Ok
-        }),
-        ("mfc42u.dll", "#1165", |c| {
-            let ptr = c.heap_alloc(256); // give it a nice 256 byte chunk to write to
-            c.ret_stdcall(ptr, 1); // guess: 1 arg? The log said "cleaned 1 args"
-            Handled::Ok
-        }),
-    ];
+        ),    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
 }
 
-fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let mut last_slash = 0;
     let mut curr = p;
@@ -1389,7 +782,7 @@ fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let mut last_slash = 0;
     let mut curr = p;
@@ -1410,7 +803,7 @@ fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strcmp_ni_a(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strcmp_ni_a(ctx: &mut ApiContext) -> Handled {
     let n = ctx.arg(2) as usize;
     let a = ctx
         .cstr(ctx.arg(0))
@@ -1428,7 +821,7 @@ fn strcmp_ni_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strcmp_ni_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strcmp_ni_w(ctx: &mut ApiContext) -> Handled {
     let n = ctx.arg(2) as usize;
     let a = ctx
         .wstr(ctx.arg(0))
@@ -1475,13 +868,13 @@ fn get_private_profile_string_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn sh_reg_get_bool_us_value(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sh_reg_get_bool_us_value(ctx: &mut ApiContext) -> Handled {
     let default = ctx.arg(3);
     ctx.ret_stdcall(default, 4);
     Handled::Ok
 }
 
-fn sh_reg_create_us_key(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sh_reg_create_us_key(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(3);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, 0x5A5A_0001);
@@ -1490,7 +883,7 @@ fn sh_reg_create_us_key(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn sh_create_thread_ref(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sh_create_thread_ref(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(1);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, 0);
@@ -1499,7 +892,7 @@ fn sh_create_thread_ref(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn sh_get_special_folder_path_a(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sh_get_special_folder_path_a(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(1);
     let path = b"C:\\Users\\guest";
     if out != 0 {
@@ -1510,7 +903,7 @@ fn sh_get_special_folder_path_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn sh_get_special_folder_path_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sh_get_special_folder_path_w(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(1);
     if out != 0 {
         let mut len = 0u32;
@@ -1538,7 +931,7 @@ fn format_message_a_fwd(ctx: &mut ApiContext) -> Handled {
 }
 
 fn global_alloc(ctx: &mut ApiContext) -> Handled {
-    // GlobalAlloc(uFlags, dwBytes) — allocate `dwBytes` from the heap.
+    // GlobalAlloc(uFlags, dwBytes) â€” allocate `dwBytes` from the heap.
     // We ignore the flags (GMEM_FIXED, GMEM_ZEROINIT etc.) and just allocate.
     let size = ctx.arg(1);
     let ptr = ctx.heap_alloc(size);
@@ -1730,7 +1123,7 @@ fn read_console_line(ctx: &mut ApiContext, limit: usize) -> Option<Vec<u8>> {
     Some(line)
 }
 
-// ReadConsoleW(hInput, lpBuffer, nChars, lpNumRead, pInputControl) — wide.
+// ReadConsoleW(hInput, lpBuffer, nChars, lpNumRead, pInputControl) â€” wide.
 fn read_console_w(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(1);
     let n_chars = ctx.arg(2) as usize;
@@ -1750,7 +1143,7 @@ fn read_console_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ReadConsoleA(hInput, lpBuffer, nChars, lpNumRead, pInputControl) — narrow.
+// ReadConsoleA(hInput, lpBuffer, nChars, lpNumRead, pInputControl) â€” narrow.
 fn read_console_a(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(1);
     let n_chars = ctx.arg(2) as usize;
@@ -1961,7 +1354,7 @@ fn find_matches(ctx: &ApiContext, raw: &str) -> Vec<(String, bool, u64)> {
     if let Ok(entries) = ctx.fs.list_dir(&dir) {
         for e in entries {
             if wildcard_match(&pat, &e.name) {
-                let is_dir = matches!(e.kind, crate::fs::vfs::EntryKind::Directory);
+                let is_dir = matches!(e.kind, webwine_api::fs::vfs::EntryKind::Directory);
                 out.push((e.name, is_dir, e.size));
             }
         }
@@ -2091,7 +1484,7 @@ fn find_close(ctx: &mut ApiContext) -> Handled {
 }
 
 // GetVolumeInformation(root, volNameBuf, volNameSize, *serial, *maxComp,
-//                      *fsFlags, fsNameBuf, fsNameSize) — 8 args.
+//                      *fsFlags, fsNameBuf, fsNameSize) â€” 8 args.
 fn get_volume_info(ctx: &mut ApiContext, wide: bool) -> Handled {
     let vol_buf = ctx.arg(1);
     let serial = ctx.arg(3);
@@ -2181,7 +1574,7 @@ fn file_time_to_system_time(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// FileTimeToLocalFileTime(lpFileTime, lpLocalFileTime): no timezone — copy.
+// FileTimeToLocalFileTime(lpFileTime, lpLocalFileTime): no timezone â€” copy.
 fn file_time_to_local_file_time(ctx: &mut ApiContext) -> Handled {
     let ft = read_filetime(ctx, ctx.arg(0));
     let out = ctx.arg(1);
@@ -2259,7 +1652,7 @@ fn date_time_format(ctx: &mut ApiContext, wide: bool, is_date: bool) -> Handled 
 }
 
 // CreateProcessA(appName, cmdLine, procAttr, threadAttr, inherit, flags, env,
-//                cwd, startupInfo, processInfo) — 10 args.
+//                cwd, startupInfo, processInfo) â€” 10 args.
 fn create_process(ctx: &mut ApiContext, app: String, cmd: String) -> Handled {
     let pi = ctx.arg(9); // lpProcessInformation
 
@@ -2287,7 +1680,7 @@ fn create_process(ctx: &mut ApiContext, app: String, cmd: String) -> Handled {
         let _ = ctx.memory.write_u32(pi + 12, child * 100);
     }
     ctx.spawns
-        .push(crate::vm::process::SpawnRequest { path, pi_addr: pi });
+        .push(webwine_api::vm::process::SpawnRequest { path, pi_addr: pi });
     ctx.cpu.last_error = 0;
     ctx.ret_stdcall(1, 10); // TRUE
     Handled::Ok
@@ -2339,20 +1732,20 @@ fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// GetProcAddress(hModule, lpProcName) — return a real trampoline for a function
+// GetProcAddress(hModule, lpProcName) â€” return a real trampoline for a function
 // we implement (so the guest can call it), else 0 (caller uses its fallback).
 fn get_proc_address(ctx: &mut ApiContext) -> Handled {
     let name_arg = ctx.arg(1);
     let va = if name_arg < 0x1_0000 {
-        0 // imported by ordinal — not supported
+        0 // imported by ordinal â€” not supported
     } else {
         let name = ctx.cstr(name_arg);
-        let v = ctx.proc_addr.get(&name).copied().unwrap_or(0);
+        let v = ctx.proc_address("", &name);
         if v == 0 {
             // A miss means a dynamically-resolved import we don't provide; the
             // guest may call NULL. Logged at trace for diagnosis ("Run as debug").
             ctx.logs.log(
-                crate::logs::LogLevel::Trace,
+                webwine_api::logs::LogLevel::Trace,
                 "api",
                 &format!("GetProcAddress miss: {name}"),
                 Some(ctx.pid),
@@ -2360,21 +1753,26 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
         }
         v
     };
-    ctx.ret_stdcall(va, 2);
+    if va == 0 {
+        ctx.set_last_error(ERROR_PROC_NOT_FOUND);
+    } else {
+        ctx.set_last_error(0);
+    }
+    ctx.return_stdcall(va, 2);
     Handled::Ok
 }
 
-// Beep(dwFreq, dwDuration) — emit a UI beep for the frontend (Web Audio).
+// Beep(dwFreq, dwDuration) â€” emit a UI beep for the frontend (Web Audio).
 fn beep(ctx: &mut ApiContext) -> Handled {
     let freq = ctx.arg(0);
     let duration = ctx.arg(1);
     ctx.ui_events
-        .push(crate::vm::process::UiEvent::Beep { freq, duration });
+        .push(webwine_api::vm::process::UiEvent::Beep { freq, duration });
     ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
 
-// GetFullPathNameW(lpFileName, nBufferLength, lpBuffer, lpFilePart) — resolve
+// GetFullPathNameW(lpFileName, nBufferLength, lpBuffer, lpFilePart) â€” resolve
 // to an absolute path. Rust std calls this to canonicalize before CreateFile.
 fn get_full_path_name_w(ctx: &mut ApiContext) -> Handled {
     let input = ctx.wstr(ctx.arg(0));
@@ -2477,7 +1875,7 @@ fn set_current_directory_w(ctx: &mut ApiContext) -> Handled {
 // We have no registry. Report "key not found" so apps fall back to defaults
 // (ERROR_FILE_NOT_FOUND). Returning success with bogus data breaks apps that
 // read real settings from the registry (e.g. cmd.exe's Command Processor key).
-fn reg_open_key(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn reg_open_key(ctx: &mut ApiContext) -> Handled {
     let phk = ctx.arg(4);
     if phk != 0 {
         let _ = ctx.memory.write_u32(phk, 0);
@@ -2486,7 +1884,7 @@ fn reg_open_key(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn reg_query_value(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn reg_query_value(ctx: &mut ApiContext) -> Handled {
     ctx.ret_stdcall(2, 6); // ERROR_FILE_NOT_FOUND
     Handled::Ok
 }
@@ -2562,7 +1960,7 @@ fn virtual_protect(ctx: &mut ApiContext) -> Handled {
 
 // A non-zero fake HMODULE for dynamically loaded DLLs. GetProcAddress resolves
 // functions by name regardless of the module handle, so a single sentinel is
-// enough — and returning non-NULL lets delay-load helpers succeed instead of
+// enough â€” and returning non-NULL lets delay-load helpers succeed instead of
 // raising ERROR_MOD_NOT_FOUND (0xC06D007E).
 const FAKE_MODULE: u32 = 0x5AD0_0000;
 
@@ -2593,7 +1991,7 @@ fn get_module_handle_w(ctx: &mut ApiContext) -> Handled {
     get_module_handle_a(ctx)
 }
 
-// GetModuleHandleEx(flags, name, &out_module) — write image base, return TRUE
+// GetModuleHandleEx(flags, name, &out_module) â€” write image base, return TRUE
 fn get_module_handle_ex(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(2);
     let base = ctx
@@ -2852,7 +2250,7 @@ fn get_command_line_w(ctx: &mut ApiContext) -> Handled {
 }
 
 // STARTUPINFO is 68 bytes; cb at +0. Zero everything (so dwFlags has no
-// STARTF_USESTDHANDLES → the CRT falls back to GetStdHandle) and set cb.
+// STARTF_USESTDHANDLES â†’ the CRT falls back to GetStdHandle) and set cb.
 fn get_startup_info(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
@@ -2887,7 +2285,7 @@ fn get_current_thread(ctx: &mut ApiContext) -> Handled {
 // shared virtual clock so successive reads differ. Base = 2024-01-01 00:00 UTC.
 fn fake_filetime() -> u64 {
     const BASE_2024: u64 = 133_485_408_000_000_000;
-    BASE_2024 + crate::winapi::winmm::tick_ms() as u64 * 10_000
+    BASE_2024 + crate::winmm::tick_ms() as u64 * 10_000
 }
 
 // GetSystemTimeAsFileTime / GetSystemTimePreciseAsFileTime(LPFILETIME): write a
@@ -2910,7 +2308,7 @@ fn get_system_time_struct(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
         // wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds
-        let ms = (crate::winapi::winmm::tick_ms() % 1000) as u16;
+        let ms = (crate::winmm::tick_ms() % 1000) as u16;
         for (off, v) in [(0, 2024u16), (2, 1), (4, 1), (6, 1), (8, 12), (10, 0), (12, 0), (14, ms)] {
             let _ = ctx.memory.write_u16(p + off, v);
         }
@@ -3018,7 +2416,7 @@ fn get_computer_name_w(ctx: &mut ApiContext) -> Handled {
 
 // GetUserName(lpBuffer, lpnSize): write "guest" + the size INCLUDING the null
 // (per the Win32 contract), unlike GetComputerName.
-fn get_user_name_a(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn get_user_name_a(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(0);
     let size_ptr = ctx.arg(1);
     let name = b"guest";
@@ -3033,7 +2431,7 @@ fn get_user_name_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn get_user_name_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn get_user_name_w(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(0);
     let size_ptr = ctx.arg(1);
     let name = "guest";
@@ -3054,7 +2452,7 @@ fn query_perf_counter(ctx: &mut ApiContext) -> Handled {
     // Frequency is reported as 1 MHz, so the counter is in microseconds.
     let p = ctx.arg(0);
     if p != 0 {
-        let micros = crate::winapi::winmm::tick_ms() as u64 * 1000;
+        let micros = crate::winmm::tick_ms() as u64 * 1000;
         let _ = ctx.memory.write_u32(p, micros as u32);
         let _ = ctx.memory.write_u32(p + 4, (micros >> 32) as u32);
     }
@@ -3063,7 +2461,7 @@ fn query_perf_counter(ctx: &mut ApiContext) -> Handled {
 }
 
 fn get_tick_count(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(crate::winapi::winmm::tick_ms(), 0);
+    ctx.ret_stdcall(crate::winmm::tick_ms(), 0);
     Handled::Ok
 }
 
@@ -3152,7 +2550,7 @@ fn dup_handle(ctx: &mut ApiContext) -> Handled {
 fn raise_exception(ctx: &mut ApiContext) -> Handled {
     let code = ctx.arg(0);
     ctx.logs.log(
-        crate::logs::LogLevel::Warn,
+        webwine_api::logs::LogLevel::Warn,
         "api",
         &format!("RaiseException code=0x{code:08X}"),
         Some(ctx.pid),
@@ -3292,7 +2690,7 @@ fn interlocked_cmpxchg(ctx: &mut ApiContext) -> Handled {
 // stub helpers
 
 // Stub family: return a constant in EAX and clean exactly `n` stdcall args.
-// Naming: r{val}_{nargs}. Correct arg counts matter — a wrong count drifts
+// Naming: r{val}_{nargs}. Correct arg counts matter â€” a wrong count drifts
 // the guest stack and eventually derails a `ret`.
 macro_rules! stubs {
     ($($name:ident => ($val:expr, $n:expr)),* $(,)?) => {
@@ -3313,15 +2711,15 @@ fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ─── FormatMessage ────────────────────────────────────────────────────────────
+// â”€â”€â”€ FormatMessage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // FormatMessage(dwFlags, lpSource, dwMessageId, dwLanguageId,
-//               lpBuffer, nSize, Arguments) — 7 args, stdcall.
+//               lpBuffer, nSize, Arguments) â€” 7 args, stdcall.
 //
 // Flags we honour:
-//   FORMAT_MESSAGE_FROM_SYSTEM (0x1000)  → look up dwMessageId in the table.
-//   FORMAT_MESSAGE_FROM_STRING (0x0400)  → format lpSource as template.
-//   FORMAT_MESSAGE_ALLOCATE_BUFFER (0x100) → heap-allocate; write ptr at lpBuffer.
-//   FORMAT_MESSAGE_IGNORE_INSERTS (0x200) → skip %n substitution.
+//   FORMAT_MESSAGE_FROM_SYSTEM (0x1000)  â†’ look up dwMessageId in the table.
+//   FORMAT_MESSAGE_FROM_STRING (0x0400)  â†’ format lpSource as template.
+//   FORMAT_MESSAGE_ALLOCATE_BUFFER (0x100) â†’ heap-allocate; write ptr at lpBuffer.
+//   FORMAT_MESSAGE_IGNORE_INSERTS (0x200) â†’ skip %n substitution.
 //
 // Everything else silently falls back to a generic "unknown error" message so
 // the caller's error-checking paths still work.
@@ -3474,7 +2872,7 @@ fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
     let flags = ctx.arg(0);
     let source = ctx.arg(1);
     let msg_id = ctx.arg(2);
-    // arg(3) = language id — ignored, we always produce en-US
+    // arg(3) = language id â€” ignored, we always produce en-US
     let lp_buf = ctx.arg(4);
     let n_size = ctx.arg(5);
     let arg_ptr = ctx.arg(6);
@@ -3503,7 +2901,7 @@ fn format_message_core(ctx: &mut ApiContext, wide: bool) -> u32 {
             with_ins.trim_end_matches(|c| c == '\r' || c == '\n')
         )
     } else {
-        // Unsupported flags — return empty (caller checks len).
+        // Unsupported flags â€” return empty (caller checks len).
         return 0;
     };
 

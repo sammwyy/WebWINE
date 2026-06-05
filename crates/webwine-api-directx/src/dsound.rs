@@ -1,5 +1,5 @@
-use crate::winapi::context::{ApiContext, Handled};
-use crate::winapi::WinApiRegistry;
+﻿use webwine_api::winapi::context::{ApiContext, Handled};
+use webwine_api::winapi::WinApiRegistry;
 
 // IDirectSound8
 const IDIRECTSOUND8_METHODS: &[&str] = &[

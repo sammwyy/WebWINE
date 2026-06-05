@@ -1,0 +1,7 @@
+[package]
+name = "webwine-api-winapi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+webwine-api = { path = "../webwine-api" }

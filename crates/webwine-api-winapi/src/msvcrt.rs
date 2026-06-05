@@ -142,14 +142,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "__stdio_common_vsnwprintf_s", stdio_vswprintf),
         ("msvcrt.dll", "__stdio_common_vsprintf", stdio_vsprintf),
         ("msvcrt.dll", "__stdio_common_vsprintf_s", stdio_vsprintf),
-        // C++ runtime mutex primitives (msvcp_win). Correct arg counts; no-op.
-        ("msvcp_win.dll", "_Mtx_init_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Mtx_destroy_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Mtx_lock", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Mtx_unlock", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Mtx_trylock", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Cnd_init_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcp_win.dll", "_Cnd_destroy_in_situ", |c| { c.ret_cdecl(0); Handled::Ok }),
         ("msvcrt.dll", "__stdio_common_vsprintf", stub_zero_cdecl_1),
         ("msvcrt.dll", "fwrite", fwrite),
         ("msvcrt.dll", "fputc", fputc),
@@ -264,16 +256,16 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_cdecl(if r { 1 } else { 0 });
             Handled::Ok
         }),
-        // _wcsnicmp(s1, s2, count) — case-insensitive wide-string compare, cdecl, 3 args.
+        // _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string compare, cdecl, 3 args.
         ("msvcrt.dll", "_wcsnicmp", wcsnicmp_fn),
         ("msvcrt.dll", "wcsnicmp",  wcsnicmp_fn),
-        // C++ operator delete[] (decorated as ??_V@YAXPAX@Z) — 1 arg, cdecl, returns void.
+        // C++ operator delete[] (decorated as ??_V@YAXPAX@Z) â€” 1 arg, cdecl, returns void.
         ("msvcrt.dll", "??_V@YAXPAX@Z", stub_void_1_cdecl),
         // operator new[] / delete
         ("msvcrt.dll", "??2@YAPAXI@Z",  malloc),    // operator new[](size)
         ("msvcrt.dll", "??3@YAXPAX@Z",  stub_void_1_cdecl), // operator delete
         // MSVC SEH helpers
-        // _local_unwind4(cookie*, funcinfo*, target_level) — 3 args, cdecl.
+        // _local_unwind4(cookie*, funcinfo*, target_level) â€” 3 args, cdecl.
         // We stub it as a no-op; the actual unwind (destructor calls) would
         // require full frame-walking, not needed for basic cmd.exe.
         ("msvcrt.dll", "_local_unwind4", stub_zero_cdecl_3),
@@ -333,44 +325,24 @@ pub fn register(r: &mut WinApiRegistry) {
             stub_zero_cdecl_0,
         ),
         ("msvcrt.dll", "_except_handler3", stub_one_cdecl_4),
-        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),
-        // ucrtbase / vcruntime aliases
-        ("ucrtbase.dll", "exit", exit),
-        ("ucrtbase.dll", "_exit", exit),
-        ("ucrtbase.dll", "malloc", malloc),
-        ("ucrtbase.dll", "free", stub_void_1),
-        ("ucrtbase.dll", "printf", printf),
-        ("ucrtbase.dll", "puts", puts),
-        ("ucrtbase.dll", "__stdio_common_vfprintf", stdio_vfprintf),
-        ("ucrtbase.dll", "_initterm", initterm),
-        ("ucrtbase.dll", "_initterm_e", initterm_e),
-        ("ucrtbase.dll", "__acrt_iob_func", acrt_iob),
-        ("vcruntime140.dll", "memcpy", memcpy),
-        ("vcruntime140.dll", "memset", memset),
-        ("vcruntime140.dll", "memmove", memcpy),
-        (
-            "vcruntime140.dll",
-            "__C_specific_handler",
-            stub_zero_cdecl_1,
-        ),
-    ];
+        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
 }
 
-fn exit(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn exit(ctx: &mut ApiContext) -> Handled {
     Handled::ExitProcess(ctx.arg(0))
 }
 
-fn malloc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn malloc(ctx: &mut ApiContext) -> Handled {
     let size = ctx.arg(0);
     let ptr = ctx.heap_alloc(size);
     ctx.ret_cdecl(ptr);
     Handled::Ok
 }
 
-fn calloc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn calloc(ctx: &mut ApiContext) -> Handled {
     let n = ctx.arg(0);
     let sz = ctx.arg(1);
     let total = n.saturating_mul(sz);
@@ -380,7 +352,7 @@ fn calloc(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn realloc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn realloc(ctx: &mut ApiContext) -> Handled {
     let old = ctx.arg(0);
     let size = ctx.arg(1);
     let ptr = ctx.heap_realloc(old, size);
@@ -388,7 +360,7 @@ fn realloc(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn memcpy(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn memcpy(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let n = ctx.arg(2) as usize;
@@ -401,7 +373,7 @@ fn memcpy(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn memcpy_s(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn memcpy_s(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let _cap = ctx.arg(1);
     let src = ctx.arg(2);
@@ -415,7 +387,7 @@ fn memcpy_s(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn memset(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn memset(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let val = ctx.arg(1) as u8;
     let n = ctx.arg(2) as usize;
@@ -425,7 +397,7 @@ fn memset(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn memcmp(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn memcmp(ctx: &mut ApiContext) -> Handled {
     let a = ctx.arg(0);
     let b = ctx.arg(1);
     let n = ctx.arg(2) as usize;
@@ -436,21 +408,21 @@ fn memcmp(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strlen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strlen(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let s = ctx.cstr(p);
     ctx.ret_cdecl(s.len() as u32);
     Handled::Ok
 }
 
-fn wcslen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcslen(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let s = ctx.wstr(p);
     ctx.ret_cdecl(s.len() as u32);
     Handled::Ok
 }
 
-fn strcmp(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strcmp(ctx: &mut ApiContext) -> Handled {
     let a = ctx.cstr(ctx.arg(0));
     let b = ctx.cstr(ctx.arg(1));
     let r = a.as_str().cmp(b.as_str()) as i32;
@@ -458,7 +430,7 @@ fn strcmp(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strncmp(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strncmp(ctx: &mut ApiContext) -> Handled {
     let a = ctx.cstr(ctx.arg(0));
     let b = ctx.cstr(ctx.arg(1));
     let n = ctx.arg(2) as usize;
@@ -467,7 +439,7 @@ fn strncmp(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strcpy(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strcpy(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let s = ctx.cstr(src);
@@ -479,13 +451,13 @@ fn strcpy(ctx: &mut ApiContext) -> Handled {
 }
 
 // getenv(name): we have no environment, so every variable is unset (NULL).
-fn getenv_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn getenv_fn(ctx: &mut ApiContext) -> Handled {
     ctx.ret_cdecl(0);
     Handled::Ok
 }
 
 // _getcwd(buf, size): write the CWD; if buf is NULL, malloc one (size bytes).
-fn getcwd_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn getcwd_fn(ctx: &mut ApiContext) -> Handled {
     let mut buf = ctx.arg(0);
     let size = ctx.arg(1);
     let mut bytes = ctx.cwd.clone().into_bytes();
@@ -499,14 +471,14 @@ fn getcwd_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // _chdir(path): set the working directory. Returns 0 on success.
-fn chdir_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn chdir_fn(ctx: &mut ApiContext) -> Handled {
     let raw = ctx.cstr(ctx.arg(0));
     *ctx.cwd = ctx.resolve_path(&raw);
     ctx.ret_cdecl(0);
     Handled::Ok
 }
 
-fn strncpy(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strncpy(ctx: &mut ApiContext) -> Handled {
     // strncpy(dst, src, n): copy at most n bytes; pad with NUL if src is shorter.
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
@@ -520,7 +492,7 @@ fn strncpy(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strncat(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strncat(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let n = ctx.arg(2) as usize;
@@ -534,7 +506,7 @@ fn strncat(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strcat(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strcat(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let existing = ctx.cstr(dst);
@@ -551,7 +523,7 @@ fn strcat(ctx: &mut ApiContext) -> Handled {
 // address into the buffer (MSVC _JUMP_BUFFER: Ebp, Ebx, Edi, Esi, Esp, Eip),
 // then return 0. longjmp restores them to resume here. We don't model SEH
 // unwinding (Registration/Cookie), which is fine for plain error-recovery jumps.
-fn setjmp_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn setjmp_fn(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(0);
     let ret_addr = ctx.memory.read_u32(ctx.cpu.esp).unwrap_or(0);
     let esp_after = ctx.cpu.esp.wrapping_add(4); // esp once the return address is popped
@@ -567,7 +539,7 @@ fn setjmp_fn(ctx: &mut ApiContext) -> Handled {
 
 // longjmp(jmp_buf, val): restore the saved state and resume at the setjmp site,
 // returning `val` (or 1 if val == 0).
-fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(0);
     let val = ctx.arg(1);
     ctx.cpu.ebp = ctx.memory.read_u32(buf).unwrap_or(0);
@@ -580,7 +552,7 @@ fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let s = ctx.wstr(ctx.arg(1));
     let mut bytes: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
@@ -590,7 +562,7 @@ fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let n = ctx.arg(2) as usize;
     let s = ctx.wstr(ctx.arg(1));
@@ -605,7 +577,7 @@ fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let existing = ctx.wstr(dst);
     let append = ctx.wstr(ctx.arg(1));
@@ -617,7 +589,7 @@ fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let needle = ctx.arg(1) as u16;
     let s = ctx.wstr(p);
@@ -627,7 +599,7 @@ fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let needle = ctx.arg(1) as u16;
     let s = ctx.wstr(p);
@@ -637,7 +609,7 @@ fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let hay: Vec<u16> = ctx.wstr(p).encode_utf16().collect();
     let needle: Vec<u16> = ctx.wstr(ctx.arg(1)).encode_utf16().collect();
@@ -651,7 +623,7 @@ fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strchr(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strchr(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let c = ctx.arg(1) as u8;
     let s = ctx.memory.read_cstr(p);
@@ -661,7 +633,7 @@ fn strchr(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strrchr(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strrchr(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let c = ctx.arg(1) as u8;
     let s = ctx.memory.read_cstr(p);
@@ -671,7 +643,7 @@ fn strrchr(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strstr(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strstr(ctx: &mut ApiContext) -> Handled {
     let hay = ctx.cstr(ctx.arg(0));
     let needle = ctx.cstr(ctx.arg(1));
     let r = hay
@@ -682,21 +654,21 @@ fn strstr(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn strtol(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strtol(ctx: &mut ApiContext) -> Handled {
     let s = ctx.cstr(ctx.arg(0));
     let r = s.trim().parse::<i32>().unwrap_or(0) as u32;
     ctx.ret_cdecl(r);
     Handled::Ok
 }
 
-fn strtoul(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strtoul(ctx: &mut ApiContext) -> Handled {
     let s = ctx.cstr(ctx.arg(0));
     let r = s.trim().parse::<u32>().unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
 }
 
-fn atoi(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn atoi(ctx: &mut ApiContext) -> Handled {
     let s = ctx.cstr(ctx.arg(0));
     let r = s.trim().parse::<i32>().unwrap_or(0) as u32;
     ctx.ret_cdecl(r);
@@ -704,7 +676,7 @@ fn atoi(ctx: &mut ApiContext) -> Handled {
 }
 
 // _itoa/_ltoa/_ultoa(value, char* str, int radix): write value in `radix` to str.
-fn itoa_radix(ctx: &mut ApiContext, signed: bool) -> Handled {
+pub(crate) fn itoa_radix(ctx: &mut ApiContext, signed: bool) -> Handled {
     let value = ctx.arg(0);
     let dst = ctx.arg(1);
     let radix = ctx.arg(2).clamp(2, 36);
@@ -720,7 +692,7 @@ fn itoa_radix(ctx: &mut ApiContext, signed: bool) -> Handled {
     Handled::Ok
 }
 
-fn to_radix(mut v: u64, radix: u32) -> String {
+pub(crate) fn to_radix(mut v: u64, radix: u32) -> String {
     if v == 0 {
         return "0".to_string();
     }
@@ -734,11 +706,11 @@ fn to_radix(mut v: u64, radix: u32) -> String {
     String::from_utf8(buf).unwrap()
 }
 
-// _open_osfhandle(osfhandle, flags): inverse of _get_osfhandle — wrap a Win32
+// _open_osfhandle(osfhandle, flags): inverse of _get_osfhandle â€” wrap a Win32
 // HANDLE in a CRT fd. The std handles map back to fds 0/1/2; anything else gets
 // a generic non-std fd (3), enough for apps that wrap a console handle for
 // stdio redirection.
-fn open_osfhandle(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn open_osfhandle(ctx: &mut ApiContext) -> Handled {
     let fd = match ctx.arg(0) {
         0xFFFF_FFF6 => 0, // stdin
         0xFFFF_FFF5 => 1, // stdout
@@ -751,7 +723,7 @@ fn open_osfhandle(ctx: &mut ApiContext) -> Handled {
 }
 
 // _get_osfhandle(fd): map CRT fd 0/1/2 to the std Win32 HANDLEs.
-fn get_osfhandle(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn get_osfhandle(ctx: &mut ApiContext) -> Handled {
     let h = match ctx.arg(0) {
         0 => 0xFFFF_FFF6u32, // stdin
         1 => 0xFFFF_FFF5,    // stdout
@@ -762,7 +734,7 @@ fn get_osfhandle(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn puts(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn puts(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let mut s = ctx.cstr(p);
     s.push('\n');
@@ -771,14 +743,14 @@ fn puts(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn putchar(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn putchar(ctx: &mut ApiContext) -> Handled {
     let c = ctx.arg(0) as u8;
     ctx.console.stdout.push(c);
     ctx.ret_cdecl(c as u32);
     Handled::Ok
 }
 
-fn printf(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn printf(ctx: &mut ApiContext) -> Handled {
     let fmt_ptr = ctx.arg(0);
     let fmt = ctx.cstr(fmt_ptr);
     let result = format_string(ctx, &fmt, 1);
@@ -788,7 +760,7 @@ fn printf(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn fprintf(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fprintf(ctx: &mut ApiContext) -> Handled {
     // arg0 = FILE*, arg1 = fmt, rest = args
     let stream = ctx.arg(0);
     let fmt_ptr = ctx.arg(1);
@@ -800,7 +772,7 @@ fn fprintf(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn sprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn sprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let fmt_ptr = ctx.arg(1);
     let fmt = ctx.cstr(fmt_ptr);
@@ -813,7 +785,7 @@ fn sprintf_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn snprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn snprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let cap = ctx.arg(1) as usize;
     let fmt_ptr = ctx.arg(2);
@@ -829,7 +801,7 @@ fn snprintf_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // vprintf(fmt, va_list) -> console
-fn vprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn vprintf_fn(ctx: &mut ApiContext) -> Handled {
     let fmt = ctx.cstr(ctx.arg(0));
     let va = ctx.arg(1);
     let result = format_va(ctx, &fmt, va);
@@ -840,7 +812,7 @@ fn vprintf_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // vfprintf(FILE*, fmt, va_list)
-fn vfprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn vfprintf_fn(ctx: &mut ApiContext) -> Handled {
     let stream = ctx.arg(0);
     let fmt = ctx.cstr(ctx.arg(1));
     let va = ctx.arg(2);
@@ -852,7 +824,7 @@ fn vfprintf_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // vsprintf(buf, fmt, va_list)
-fn vsprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn vsprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let fmt = ctx.cstr(ctx.arg(1));
     let va = ctx.arg(2);
@@ -866,7 +838,7 @@ fn vsprintf_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // _vsnprintf(buf, count, fmt, va_list)
-fn vsnprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn vsnprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let cap = ctx.arg(1) as usize;
     let fmt = ctx.cstr(ctx.arg(2));
@@ -882,7 +854,7 @@ fn vsnprintf_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // _strdup(s): malloc a copy of the C string.
-fn strdup_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn strdup_fn(ctx: &mut ApiContext) -> Handled {
     let s = ctx.cstr(ctx.arg(0));
     let mut bytes = s.into_bytes();
     bytes.push(0);
@@ -894,7 +866,7 @@ fn strdup_fn(ctx: &mut ApiContext) -> Handled {
 
 // Wide formatting shared core. Reads a wide format string and produces wide
 // output. %s is a wide string arg (wprintf convention); %d/%u/%x/%c handled.
-fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u16> {
+pub(crate) fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u16> {
     let mut out: Vec<u16> = Vec::new();
     let chars: Vec<char> = fmt.chars().collect();
     let mut i = 0;
@@ -927,7 +899,7 @@ fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u16> {
     out
 }
 
-fn write_wide(ctx: &mut ApiContext, dst: u32, cap: usize, units: &[u16]) -> u32 {
+pub(crate) fn write_wide(ctx: &mut ApiContext, dst: u32, cap: usize, units: &[u16]) -> u32 {
     let n = if cap > 0 { units.len().min(cap - 1) } else { units.len() };
     let mut bytes: Vec<u8> = units[..n].iter().flat_map(|u| u.to_le_bytes()).collect();
     bytes.extend_from_slice(&[0, 0]);
@@ -936,7 +908,7 @@ fn write_wide(ctx: &mut ApiContext, dst: u32, cap: usize, units: &[u16]) -> u32 
 }
 
 // _snwprintf(buf, count, fmt, ...)
-fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let cap = ctx.arg(1) as usize;
     let fmt = ctx.wstr(ctx.arg(2));
@@ -946,8 +918,8 @@ fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// swprintf(buf, fmt, ...) — no count argument.
-fn snwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
+// swprintf(buf, fmt, ...) â€” no count argument.
+pub(crate) fn snwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let fmt = ctx.wstr(ctx.arg(1));
     let units = format_wide(ctx, &fmt, ArgSrc::Stack { esp: ctx.cpu.esp, idx: 2 });
@@ -957,7 +929,7 @@ fn snwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
 }
 
 // _vsnwprintf(buf, count, fmt, va_list)
-fn vsnwprintf_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn vsnwprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let cap = ctx.arg(1) as usize;
     let fmt = ctx.wstr(ctx.arg(2));
@@ -968,8 +940,8 @@ fn vsnwprintf_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// vswprintf(buf, fmt, va_list) — no count argument.
-fn vsnwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
+// vswprintf(buf, fmt, va_list) â€” no count argument.
+pub(crate) fn vsnwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let fmt = ctx.wstr(ctx.arg(1));
     let va = ctx.arg(2);
@@ -979,7 +951,7 @@ fn vsnwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
     // __stdio_common_vfprintf(options, stream, format, locale, va_list)
     let fmt_ptr = ctx.arg(2);
     let fmt = ctx.cstr(fmt_ptr);
@@ -991,7 +963,7 @@ fn stdio_vfprintf(ctx: &mut ApiContext) -> Handled {
 
 // __stdio_common_vswprintf(opts(u64), buffer, count, format(wide), locale, va_list)
 // -> wide buffer formatting. opts occupies two arg slots (it is __int64).
-fn stdio_vswprintf(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn stdio_vswprintf(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(2);
     let count = ctx.arg(3) as usize;
     let fmt = ctx.wstr(ctx.arg(4));
@@ -1003,7 +975,7 @@ fn stdio_vswprintf(ctx: &mut ApiContext) -> Handled {
 }
 
 // __stdio_common_vsprintf(opts(u64), buffer, count, format, locale, va_list)
-fn stdio_vsprintf(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn stdio_vsprintf(ctx: &mut ApiContext) -> Handled {
     let buf = ctx.arg(2);
     let count = ctx.arg(3) as usize;
     let fmt = ctx.cstr(ctx.arg(4));
@@ -1018,7 +990,7 @@ fn stdio_vsprintf(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn fwrite(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fwrite(ctx: &mut ApiContext) -> Handled {
     // fwrite(buf, size, count, FILE*)
     let buf = ctx.arg(0);
     let size = ctx.arg(1);
@@ -1033,7 +1005,7 @@ fn fwrite(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn fputc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fputc(ctx: &mut ApiContext) -> Handled {
     // fputc(c, FILE*)
     let c = ctx.arg(0) as u8;
     let stream = ctx.arg(1);
@@ -1042,7 +1014,7 @@ fn fputc(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn fputs(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fputs(ctx: &mut ApiContext) -> Handled {
     // fputs(str, FILE*)
     let s = ctx.cstr(ctx.arg(0));
     let stream = ctx.arg(1);
@@ -1056,12 +1028,12 @@ fn fputs(ctx: &mut ApiContext) -> Handled {
 // (>= 0x7FFD_0000), or a small VFS handle returned by fopen. Writes to a VFS
 // handle hit the file; everything else goes to the console.
 
-fn is_vfs_stream(stream: u32) -> bool {
+pub(crate) fn is_vfs_stream(stream: u32) -> bool {
     stream != 0 && stream < 0x7FFD_0000
 }
 
-fn write_stream(ctx: &mut ApiContext, stream: u32, bytes: &[u8]) {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn write_stream(ctx: &mut ApiContext, stream: u32, bytes: &[u8]) {
+    use webwine_api::vm::handles::KernelObject;
     let target = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
             Some((path.clone(), *cursor))
@@ -1087,7 +1059,7 @@ fn write_stream(ctx: &mut ApiContext, stream: u32, bytes: &[u8]) {
 }
 
 // fopen(path, mode) -> FILE*
-fn fopen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fopen(ctx: &mut ApiContext) -> Handled {
     let path = ctx.cstr(ctx.arg(0));
     let mode = ctx.cstr(ctx.arg(1));
     let h = open_vfs(ctx, &path, &mode);
@@ -1096,7 +1068,7 @@ fn fopen(ctx: &mut ApiContext) -> Handled {
 }
 
 // _fsopen(path, mode, shflag) -> FILE*
-fn fsopen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fsopen(ctx: &mut ApiContext) -> Handled {
     let path = ctx.cstr(ctx.arg(0));
     let mode = ctx.cstr(ctx.arg(1));
     let h = open_vfs(ctx, &path, &mode);
@@ -1107,7 +1079,7 @@ fn fsopen(ctx: &mut ApiContext) -> Handled {
 // freopen(path, mode, stream) -> stream (or NULL). We open/truncate the file but
 // keep redirecting the original stream's writes to the console, so program log
 // output stays visible rather than vanishing into a file.
-fn freopen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn freopen(ctx: &mut ApiContext) -> Handled {
     let path = ctx.cstr(ctx.arg(0));
     let mode = ctx.cstr(ctx.arg(1));
     let stream = ctx.arg(2);
@@ -1116,8 +1088,8 @@ fn freopen(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn open_vfs(ctx: &mut ApiContext, raw_path: &str, mode: &str) -> u32 {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn open_vfs(ctx: &mut ApiContext, raw_path: &str, mode: &str) -> u32 {
+    use webwine_api::vm::handles::KernelObject;
     let path = ctx.resolve_path(raw_path);
     let writable = mode.contains('w') || mode.contains('a') || mode.contains('+');
     let truncate = mode.contains('w');
@@ -1144,7 +1116,7 @@ fn open_vfs(ctx: &mut ApiContext, raw_path: &str, mode: &str) -> u32 {
     })
 }
 
-fn fclose(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn fclose(ctx: &mut ApiContext) -> Handled {
     let stream = ctx.arg(0);
     if is_vfs_stream(stream) {
         ctx.handles.remove(stream);
@@ -1154,8 +1126,8 @@ fn fclose(ctx: &mut ApiContext) -> Handled {
 }
 
 // fread(buf, size, count, FILE*) -> count of full elements read
-fn fread(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn fread(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let buf = ctx.arg(0);
     let size = ctx.arg(1).max(1);
     let count = ctx.arg(2);
@@ -1185,8 +1157,8 @@ fn fread(ctx: &mut ApiContext) -> Handled {
 }
 
 // fseek(FILE*, offset, origin): 0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END
-fn fseek(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn fseek(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let stream = ctx.arg(0);
     let offset = ctx.arg(1) as i32 as i64;
     let origin = ctx.arg(2);
@@ -1212,8 +1184,8 @@ fn fseek(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn ftell(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn ftell(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let stream = ctx.arg(0);
     let pos = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { cursor, .. }) if is_vfs_stream(stream) => *cursor as u32,
@@ -1223,8 +1195,8 @@ fn ftell(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn rewind(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn rewind(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let stream = ctx.arg(0);
     if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
         *cursor = 0;
@@ -1234,8 +1206,8 @@ fn rewind(ctx: &mut ApiContext) -> Handled {
 }
 
 // fgetc(FILE*) -> int (byte or EOF=-1)
-fn fgetc(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn fgetc(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let stream = ctx.arg(0);
     let info = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
@@ -1261,8 +1233,8 @@ fn fgetc(ctx: &mut ApiContext) -> Handled {
 }
 
 // fgets(buf, n, FILE*): read up to n-1 bytes or until newline.
-fn fgets(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn fgets(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let buf = ctx.arg(0);
     let n = ctx.arg(1) as usize;
     let stream = ctx.arg(2);
@@ -1304,8 +1276,8 @@ fn fgets(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn feof(ctx: &mut ApiContext) -> Handled {
-    use crate::vm::handles::KernelObject;
+pub(crate) fn feof(ctx: &mut ApiContext) -> Handled {
+    use webwine_api::vm::handles::KernelObject;
     let stream = ctx.arg(0);
     let eof = match ctx.handles.get(stream) {
         Some(KernelObject::VfsFile { path, cursor, .. }) if is_vfs_stream(stream) => {
@@ -1319,18 +1291,18 @@ fn feof(ctx: &mut ApiContext) -> Handled {
 }
 
 // scanf/fscanf/sscanf: return EOF (-1). cdecl, caller cleans the stack.
-fn scanf_eof(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn scanf_eof(ctx: &mut ApiContext) -> Handled {
     ctx.ret_cdecl(0xFFFF_FFFF);
     Handled::Ok
 }
 
-fn ret_class(ctx: &mut ApiContext, pred: impl Fn(u8) -> bool) -> Handled {
+pub(crate) fn ret_class(ctx: &mut ApiContext, pred: impl Fn(u8) -> bool) -> Handled {
     let v = ctx.arg(0) as u8;
     ctx.ret_cdecl(if pred(v) { 1 } else { 0 });
     Handled::Ok
 }
 
-fn acrt_iob(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn acrt_iob(ctx: &mut ApiContext) -> Handled {
     // Return a fake FILE* based on the fd (0=stdin, 1=stdout, 2=stderr)
     let fd = ctx.arg(0);
     let fake: u32 = 0x7FFD_F400 + fd * 0x20;
@@ -1341,19 +1313,19 @@ fn acrt_iob(ctx: &mut ApiContext) -> Handled {
 // _initterm(first, last): call each non-null fn pointer in [first, last).
 // We collect the pointers and hand them to the executor, which actually
 // runs them (a handler can't call guest code itself).
-fn initterm(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn initterm(ctx: &mut ApiContext) -> Handled {
     let first = ctx.arg(0);
     let last = ctx.arg(1);
     Handled::CallChain(collect_init_table(ctx, first, last))
 }
 
-fn initterm_e(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn initterm_e(ctx: &mut ApiContext) -> Handled {
     let first = ctx.arg(0);
     let last = ctx.arg(1);
     Handled::CallChainE(collect_init_table(ctx, first, last))
 }
 
-fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec<u32> {
+pub(crate) fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec<u32> {
     let mut funcs = Vec::new();
     let mut p = first;
     while p < last {
@@ -1367,14 +1339,14 @@ fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec<u32> {
     funcs
 }
 
-fn p_argc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn p_argc(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F500u32;
     let _ = ctx.memory.write_u32(va, 1);
     ctx.ret_cdecl(va);
     Handled::Ok
 }
 
-fn p_argv(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn p_argv(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F510u32;
     let _ = ctx.memory.write_u32(va, 0x7FFD_F520);
     let _ = ctx.memory.write_bytes(0x7FFD_F520, b"program.exe\0");
@@ -1383,7 +1355,7 @@ fn p_argv(ctx: &mut ApiContext) -> Handled {
 }
 
 // Split a Windows command line into argv, respecting double-quoted segments.
-fn tokenize_cmdline(s: &str) -> Vec<String> {
+pub(crate) fn tokenize_cmdline(s: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut cur = String::new();
     let mut in_quotes = false;
@@ -1404,7 +1376,7 @@ fn tokenize_cmdline(s: &str) -> Vec<String> {
 
 // __getmainargs(int* argc, char*** argv, char*** env, int wild, _startupinfo*)
 // Fills argc/argv/env so the CRT can call main(argc, argv, env). cdecl.
-fn getmainargs(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let argc_p = ctx.arg(0);
     let argv_p = ctx.arg(1);
     let env_p = ctx.arg(2);
@@ -1431,7 +1403,7 @@ fn getmainargs(ctx: &mut ApiContext) -> Handled {
 }
 
 // Wide variant: argv/env are wchar_t**.
-fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let argc_p = ctx.arg(0);
     let argv_p = ctx.arg(1);
     let env_p = ctx.arg(2);
@@ -1458,14 +1430,14 @@ fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn p_commode(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn p_commode(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F530u32;
     let _ = ctx.memory.write_u32(va, 0);
     ctx.ret_cdecl(va);
     Handled::Ok
 }
 
-fn p_fmode(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn p_fmode(ctx: &mut ApiContext) -> Handled {
     let va = 0x7FFD_F540u32;
     let _ = ctx.memory.write_u32(va, 0);
     ctx.ret_cdecl(va);
@@ -1477,13 +1449,13 @@ fn p_fmode(ctx: &mut ApiContext) -> Handled {
 // Source of variadic arguments for the printf family. Stack-based functions
 // (printf, fprintf) read successive 4-byte slots above ESP; the v* variants read
 // from a va_list pointer into guest memory.
-enum ArgSrc {
+pub(crate) enum ArgSrc {
     Stack { esp: u32, idx: u32 },
     Va { ptr: u32, idx: u32 },
 }
 
 impl ArgSrc {
-    fn next(&mut self, mem: &crate::vm::memory::GuestMemory) -> u32 {
+    fn next(&mut self, mem: &webwine_api::vm::memory::GuestMemory) -> u32 {
         match self {
             ArgSrc::Stack { esp, idx } => {
                 let v = mem.read_u32(*esp + 4 + 4 * *idx).unwrap_or(0);
@@ -1499,7 +1471,7 @@ impl ArgSrc {
     }
 }
 
-fn format_string(ctx: &ApiContext, fmt: &str, first_arg: u32) -> String {
+pub(crate) fn format_string(ctx: &ApiContext, fmt: &str, first_arg: u32) -> String {
     format_args_src(
         ctx,
         fmt,
@@ -1510,7 +1482,7 @@ fn format_string(ctx: &ApiContext, fmt: &str, first_arg: u32) -> String {
     )
 }
 
-fn format_va(ctx: &ApiContext, fmt: &str, va_ptr: u32) -> String {
+pub(crate) fn format_va(ctx: &ApiContext, fmt: &str, va_ptr: u32) -> String {
     format_args_src(
         ctx,
         fmt,
@@ -1521,7 +1493,7 @@ fn format_va(ctx: &ApiContext, fmt: &str, va_ptr: u32) -> String {
     )
 }
 
-fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> String {
+pub(crate) fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> String {
     let mut out = String::new();
     let chars: Vec<char> = fmt.chars().collect();
     let mut i = 0;
@@ -1576,42 +1548,42 @@ fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> String {
 
 // cdecl stubs
 
-fn stub_zero_cdecl_0(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_zero_cdecl_0(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_zero_cdecl_1(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_zero_cdecl_1(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_zero_cdecl_2(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_zero_cdecl_2(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_zero_cdecl_3(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_zero_cdecl_3(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_one_cdecl_4(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_one_cdecl_4(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(1); // EXCEPTION_CONTINUE_SEARCH
     Handled::Ok
 }
-fn stub_void_1_cdecl(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_void_1_cdecl(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_void_0(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_void_0(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-fn stub_void_1(c: &mut ApiContext) -> Handled {
+pub(crate) fn stub_void_1(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
 
-/// _wcsnicmp(s1, s2, count) — case-insensitive wide-string comparison, cdecl, 3 args.
+/// _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string comparison, cdecl, 3 args.
 /// Returns negative/0/positive like strcmp.
-fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
     let p1    = ctx.arg(0);
     let p2    = ctx.arg(1);
     let count = ctx.arg(2) as usize;

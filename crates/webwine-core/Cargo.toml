@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+webwine-api = { path = "../webwine-api" }
+webwine-api-winapi = { path = "../webwine-api-winapi" }
+webwine-api-directx = { path = "../webwine-api-directx" }
+webwine-api-net20 = { path = "../webwine-api-net20" }
 thiserror = "1"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

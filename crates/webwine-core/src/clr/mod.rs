@@ -3,7 +3,6 @@
 // native entry point only bootstraps the runtime; the real program lives as CIL
 // bytecode described by the metadata tables parsed in `metadata.rs`.
 
-pub mod bcl;
 pub mod interp;
 pub mod metadata;
 

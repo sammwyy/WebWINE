@@ -1,51 +1,15 @@
-// A small CIL (Common Intermediate Language) interpreter. It executes the IL of
+﻿// A small CIL (Common Intermediate Language) interpreter. It executes the IL of
 // managed methods on an evaluation stack, dispatching `call`s either to other
 // MethodDefs in the same assembly (interpreted recursively) or to BCL methods,
-// which are handled as internal calls in `bcl`.
+// which are handled as internal calls in `webwine-api-net20`.
 
 use crate::clr::metadata::{decompress_uint, CodedKind, T_MEMBERREF, T_METHODDEF, T_STANDALONESIG, T_TYPEREF};
 use crate::clr::ClrImage;
 use crate::error::{Result, VmError};
 
-use super::bcl;
-
 use std::rc::Rc;
 use std::cell::RefCell;
-
-/// A value on the managed evaluation stack. Intentionally minimal — enough for
-/// integer/string console programs. Wider type fidelity comes later.
-#[derive(Clone, Debug)]
-pub enum Value {
-    I4(i32),
-    I8(i64),
-    R8(f64),
-    Str(String),
-    Array(Rc<RefCell<Vec<Value>>>),
-    Null,
-}
-
-impl Value {
-    pub fn as_i4(&self) -> i32 {
-        match self {
-            Value::I4(v) => *v,
-            Value::I8(v) => *v as i32,
-            Value::R8(v) => *v as i32,
-            _ => 0,
-        }
-    }
-
-    /// Display form used by Console.Write/WriteLine.
-    pub fn display(&self) -> String {
-        match self {
-            Value::I4(v) => v.to_string(),
-            Value::I8(v) => v.to_string(),
-            Value::R8(v) => v.to_string(),
-            Value::Str(s) => s.clone(),
-            Value::Array(a) => format!("System.Object[{}]", a.borrow().len()),
-            Value::Null => String::new(),
-        }
-    }
-}
+use webwine_api_net20::{Net20Runtime, Value};
 
 /// Resolved call target: either interpreted IL or a BCL internal call.
 pub enum CallTarget {
@@ -134,7 +98,7 @@ impl<'a> ClrRuntime<'a> {
                     stack.push(args.get(i).cloned().unwrap_or(Value::Null));
                 }
                 0x10 => {
-                    // starg.s <u8> — not meaningful without mutable args; drop.
+                    // starg.s <u8> â€” not meaningful without mutable args; drop.
                     ip += 1;
                     stack.pop();
                 }
@@ -144,7 +108,7 @@ impl<'a> ClrRuntime<'a> {
                     stack.push(locals.get(i).cloned().unwrap_or(Value::Null));
                 }
                 0x12 => {
-                    // ldloca.s — push a placeholder; address semantics unsupported.
+                    // ldloca.s â€” push a placeholder; address semantics unsupported.
                     ip += 1;
                     stack.push(Value::Null);
                 }
@@ -336,7 +300,7 @@ impl<'a> ClrRuntime<'a> {
             }
             CallTarget::Bcl { key, argc, returns_value } => {
                 let args = pop_args(stack, argc);
-                let result = bcl::dispatch(&key, args, self);
+                let result = webwine_api_net20::dispatch(&key, args, self);
                 if returns_value {
                     if let Some(v) = result {
                         stack.push(v);
@@ -434,6 +398,16 @@ impl<'a> ClrRuntime<'a> {
     pub fn halt(&mut self, code: i32) {
         self.halted = true;
         self.exit_code = code;
+    }
+}
+
+impl Net20Runtime for ClrRuntime<'_> {
+    fn stdout_mut(&mut self) -> &mut String {
+        &mut self.stdout
+    }
+
+    fn halt(&mut self, code: i32) {
+        ClrRuntime::halt(self, code);
     }
 }
 

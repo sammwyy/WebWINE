@@ -314,6 +314,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "webwine-api"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "indexmap",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "webwine-api-directx"
+version = "0.1.0"
+dependencies = [
+ "webwine-api",
+]
+
+[[package]]
+name = "webwine-api-net20"
+version = "0.1.0"
+
+[[package]]
+name = "webwine-api-winapi"
+version = "0.1.0"
+dependencies = [
+ "webwine-api",
+]
+
+[[package]]
 name = "webwine-cli"
 version = "0.1.0"
 dependencies = [
@@ -330,6 +358,10 @@ dependencies = [
  "indexmap",
  "serde",
  "thiserror",
+ "webwine-api",
+ "webwine-api-directx",
+ "webwine-api-net20",
+ "webwine-api-winapi",
 ]
 
 [[package]]

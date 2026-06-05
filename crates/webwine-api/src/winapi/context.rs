@@ -5,6 +5,7 @@ use crate::vm::handles::HandleTable;
 use crate::vm::memory::GuestMemory;
 use crate::vm::process::{ConsoleStreams, GuiState, SpawnRequest};
 pub use crate::vm::process::{GuestMsg, UiEvent};
+use super::{ApiDispatcher, HandlerFn};
 
 pub enum Handled {
     Ok,
@@ -54,9 +55,29 @@ pub struct ApiContext<'a> {
     /// Message-table resource (id -> text) for FormatMessage(FROM_HMODULE).
     pub messages:  &'a std::collections::HashMap<u32, String>,
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
+    pub api_dispatcher: Option<&'a dyn ApiDispatcher>,
     pub tls_slots: &'a mut std::collections::HashMap<u32, u32>,
     pub next_tls:  &'a mut u32,
     pub rand_seed: &'a mut u32,
+}
+
+pub trait ApiRuntimeEnv {
+    fn arg(&self, n: u32) -> u32;
+    fn return_stdcall(&mut self, retval: u32, nargs: u32);
+    fn return_cdecl(&mut self, retval: u32);
+    fn heap_alloc(&mut self, size: u32) -> u32;
+    fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32;
+    fn read_wstr(&self, va: u32) -> String;
+    fn read_u16(&self, va: u32) -> u16;
+    fn read_u32(&self, va: u32) -> u32;
+    fn write_u16(&mut self, va: u32, value: u16);
+    fn write_u32(&mut self, va: u32, value: u32);
+    fn write_bytes(&mut self, va: u32, bytes: &[u8]);
+    fn proc_address(&self, dll: &str, name: &str) -> u32;
+    fn api_handler(&self, dll: &str, name: &str) -> Option<HandlerFn>;
+    fn call_api_stdcall(&mut self, dll: &str, name: &str, args: &[u32]) -> Option<(Handled, u32)>;
+    fn last_error(&self) -> u32;
+    fn set_last_error(&mut self, value: u32);
 }
 
 impl<'a> ApiContext<'a> {
@@ -110,6 +131,31 @@ impl<'a> ApiContext<'a> {
         self.api_trampoline_va(dll, name)
     }
 
+    /// Call another registered host API through the runtime dispatcher using a
+    /// temporary stdcall frame. This is intended for API-to-API delegation inside
+    /// stubs; complex blocking/exit flows should be returned to the executor.
+    pub fn call_api_stdcall(&mut self, dll: &str, name: &str, args: &[u32]) -> Option<(Handled, u32)> {
+        let handler = self.api_dispatcher?.handler(dll, name)?;
+        let saved_esp = self.cpu.esp;
+        let saved_eip = self.cpu.eip;
+        let saved_eax = self.cpu.eax;
+        let frame = saved_esp.wrapping_sub(4 + args.len() as u32 * 4);
+        self.memory.ensure_mapped(frame, saved_esp);
+        let _ = self.memory.write_u32(frame, saved_eip);
+        for (i, &arg) in args.iter().enumerate() {
+            let _ = self.memory.write_u32(frame + 4 + i as u32 * 4, arg);
+        }
+        self.cpu.esp = frame;
+        let handled = handler(self);
+        let retval = self.cpu.eax;
+        self.cpu.esp = saved_esp;
+        self.cpu.eip = saved_eip;
+        if !matches!(handled, Handled::Ok) {
+            self.cpu.eax = saved_eax;
+        }
+        Some((handled, retval))
+    }
+
     /// Bump allocator on the process heap, tracking sizes so realloc can copy.
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
         if size == 0 { return 0; }
@@ -149,6 +195,72 @@ impl<'a> ApiContext<'a> {
             }
         }
         new_ptr
+    }
+}
+
+impl ApiRuntimeEnv for ApiContext<'_> {
+    fn arg(&self, n: u32) -> u32 {
+        self.arg(n)
+    }
+
+    fn return_stdcall(&mut self, retval: u32, nargs: u32) {
+        self.ret_stdcall(retval, nargs);
+    }
+
+    fn return_cdecl(&mut self, retval: u32) {
+        self.ret_cdecl(retval);
+    }
+
+    fn heap_alloc(&mut self, size: u32) -> u32 {
+        self.heap_alloc(size)
+    }
+
+    fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32 {
+        self.heap_realloc(old, new_size)
+    }
+
+    fn read_wstr(&self, va: u32) -> String {
+        self.wstr(va)
+    }
+
+    fn read_u16(&self, va: u32) -> u16 {
+        self.memory.read_u16(va).unwrap_or(0)
+    }
+
+    fn read_u32(&self, va: u32) -> u32 {
+        self.memory.read_u32(va).unwrap_or(0)
+    }
+
+    fn write_u16(&mut self, va: u32, value: u16) {
+        let _ = self.memory.write_u16(va, value);
+    }
+
+    fn write_u32(&mut self, va: u32, value: u32) {
+        let _ = self.memory.write_u32(va, value);
+    }
+
+    fn write_bytes(&mut self, va: u32, bytes: &[u8]) {
+        let _ = self.memory.write_bytes(va, bytes);
+    }
+
+    fn proc_address(&self, dll: &str, name: &str) -> u32 {
+        self.api_trampoline_va(dll, name)
+    }
+
+    fn api_handler(&self, dll: &str, name: &str) -> Option<HandlerFn> {
+        self.api_dispatcher?.handler(dll, name)
+    }
+
+    fn call_api_stdcall(&mut self, dll: &str, name: &str, args: &[u32]) -> Option<(Handled, u32)> {
+        self.call_api_stdcall(dll, name, args)
+    }
+
+    fn last_error(&self) -> u32 {
+        self.cpu.last_error
+    }
+
+    fn set_last_error(&mut self, value: u32) {
+        self.cpu.last_error = value;
     }
 }
 

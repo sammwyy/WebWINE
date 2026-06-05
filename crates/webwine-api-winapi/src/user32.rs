@@ -1,5 +1,5 @@
 use super::{ApiContext, Handled, WinApiRegistry};
-use crate::vm::process::{GdiObject, GuestMsg, UiEvent, WindowEntry, GDI_TAG};
+use webwine_api::vm::process::{GdiObject, GuestMsg, UiEvent, WindowEntry, GDI_TAG};
 
 // Window messages we care about.
 const WM_DESTROY: u32 = 0x0002;
@@ -160,96 +160,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
-        // shell32 — return > 32 (success) with correct stdcall arg counts.
-        ("shell32.dll", "ShellExecuteA", |c| {
-            c.ret_stdcall(5, 6);
-            Handled::Ok
-        }),
-        ("shell32.dll", "ShellExecuteW", |c| {
-            c.ret_stdcall(5, 6);
-            Handled::Ok
-        }),
-        ("shell32.dll", "ShellExecuteExA", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shell32.dll", "ShellExecuteExW", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
-        ("shell32.dll", "SHGetFolderPathA", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("shell32.dll", "SHGetFolderPathW", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("shell32.dll", "CommandLineToArgvW", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("shell32.dll", "SetCurrentProcessExplicitAppUserModelID", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("shell32.dll", "SHGetPropertyStoreForWindow", |c| { c.ret_stdcall(0x8000_4001u32, 3); Handled::Ok }),
-        ("shell32.dll", "SHAddToRecentDocs", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("shell32.dll", "DragAcceptFiles", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("shell32.dll", "ExtractIconW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("shell32.dll", "Shell_NotifyIconW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("shell32.dll", "Shell_NotifyIconA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        // gdi32 drawing
-        ("gdi32.dll", "TextOutA", text_out_a),
-        ("gdi32.dll", "TextOutW", text_out_w),
-        ("gdi32.dll", "SetTextColor", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("gdi32.dll", "SetBkMode", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("gdi32.dll", "GetStockObject", get_stock_object),
-        ("gdi32.dll", "CreateSolidBrush", create_solid_brush),
-        ("gdi32.dll", "CreatePen", create_pen),
-        ("gdi32.dll", "SelectObject", select_object),
-        ("gdi32.dll", "DeleteObject", |c| {
-            c.ret_stdcall(1, 1);
-            Handled::Ok
-        }),
-        ("gdi32.dll", "MoveToEx", move_to_ex),
-        ("gdi32.dll", "LineTo", line_to),
-        ("gdi32.dll", "Rectangle", gdi_rectangle),
-        ("gdi32.dll", "Ellipse", gdi_ellipse),
-        ("gdi32.dll", "SetPixel", gdi_set_pixel),
-        ("user32.dll", "FillRect", fill_rect),
-        // gdi32 framebuffer (DIB section + blit) — the SDL/windib video path.
-        ("gdi32.dll", "CreateCompatibleDC", create_compatible_dc),
-        ("gdi32.dll", "CreateDIBSection", create_dib_section),
-        ("gdi32.dll", "CreateCompatibleBitmap", create_compatible_bitmap),
-        ("gdi32.dll", "DeleteDC", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("gdi32.dll", "BitBlt", bit_blt),
-        ("gdi32.dll", "StretchBlt", stretch_blt),
-        ("gdi32.dll", "StretchDIBits", stretch_dibits),
-        ("gdi32.dll", "SetDIBitsToDevice", set_dibits_to_device),
-        ("gdi32.dll", "GetDeviceCaps", get_device_caps),
-        ("gdi32.dll", "GetDIBits", |c| { c.ret_stdcall(0, 7); Handled::Ok }),
-        // palette / pixel-format / gamma: stubbed with correct arg counts so the
-        // guest stack stays balanced (32bpp DIBs don't need a palette).
-        ("gdi32.dll", "ChoosePixelFormat", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("gdi32.dll", "SetPixelFormat", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
-        ("gdi32.dll", "DescribePixelFormat", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
-        ("gdi32.dll", "SwapBuffers", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("gdi32.dll", "CreatePalette", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("gdi32.dll", "SelectPalette", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("gdi32.dll", "RealizePalette", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("gdi32.dll", "UnrealizeObject", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("gdi32.dll", "SetDIBColorTable", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("gdi32.dll", "SetPaletteEntries", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("gdi32.dll", "GetSystemPaletteEntries", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("gdi32.dll", "GetSystemPaletteUse", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
-        ("gdi32.dll", "SetSystemPaletteUse", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("gdi32.dll", "GetDeviceGammaRamp", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("gdi32.dll", "SetDeviceGammaRamp", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-    ];
+        ("user32.dll", "FillRect", fill_rect),    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
@@ -295,7 +206,7 @@ fn system_parameters_info(ctx: &mut ApiContext) -> Handled {
 
 // window classes
 
-// WNDCLASSA: style@0, lpfnWndProc@4, …, lpszClassName@36
+// WNDCLASSA: style@0, lpfnWndProc@4, â€¦, lpszClassName@36
 fn register_class_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let wndproc = ctx.memory.read_u32(p + 4).unwrap_or(0);
@@ -306,7 +217,7 @@ fn register_class_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// WNDCLASSEXA: cbSize@0, style@4, lpfnWndProc@8, …, lpszClassName@40
+// WNDCLASSEXA: cbSize@0, style@4, lpfnWndProc@8, â€¦, lpszClassName@40
 fn register_class_ex_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let wndproc = ctx.memory.read_u32(p + 8).unwrap_or(0);
@@ -378,7 +289,7 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
 }
 
 // CreateDialogParam/DialogBoxParam(hInst, lpTemplate, hWndParent, lpDialogFunc,
-// dwInitParam) — 5 args. Create a guest window whose WndProc is the dialog proc,
+// dwInitParam) â€” 5 args. Create a guest window whose WndProc is the dialog proc,
 // then queue WM_INITDIALOG so the proc initializes. Returns the HWND.
 const WM_INITDIALOG: u32 = 0x0110;
 fn create_dialog(ctx: &mut ApiContext) -> Handled {
@@ -589,7 +500,7 @@ fn get_message(ctx: &mut ApiContext) -> Handled {
             Handled::Ok
         }
         None => {
-            // No work and no quit — suspend until the frontend posts a message.
+            // No work and no quit â€” suspend until the frontend posts a message.
             Handled::Block
         }
     }
@@ -648,7 +559,7 @@ fn begin_paint(ctx: &mut ApiContext) -> Handled {
     let ps = ctx.arg(1);
     // Clear the client area before the guest repaints it.
     ctx.ui_events.push(UiEvent::ClearClient { hwnd });
-    // PAINTSTRUCT { hdc, fErase, rcPaint(4), … } — provide hdc = hwnd.
+    // PAINTSTRUCT { hdc, fErase, rcPaint(4), â€¦ } â€” provide hdc = hwnd.
     if ps != 0 {
         let _ = ctx.memory.write_u32(ps, hwnd);
         let _ = ctx.memory.write_u32(ps + 4, 0);
@@ -676,8 +587,8 @@ fn get_client_rect(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// TextOutA(hdc, x, y, lpString, count) — hdc is the hwnd from BeginPaint.
-fn text_out_a(ctx: &mut ApiContext) -> Handled {
+// TextOutA(hdc, x, y, lpString, count) â€” hdc is the hwnd from BeginPaint.
+pub(crate) fn text_out_a(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let x = ctx.arg(1) as i32;
     let y = ctx.arg(2) as i32;
@@ -695,7 +606,7 @@ fn text_out_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn text_out_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn text_out_w(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let x = ctx.arg(1) as i32;
     let y = ctx.arg(2) as i32;
@@ -721,19 +632,19 @@ const BRUSH_TAG: u32 = 0x0B00_0000;
 const PEN_TAG: u32 = 0x0C00_0000;
 const OBJ_MASK: u32 = 0x00FF_FFFF;
 
-fn create_solid_brush(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn create_solid_brush(ctx: &mut ApiContext) -> Handled {
     let color = ctx.arg(0) & OBJ_MASK;
     ctx.ret_stdcall(BRUSH_TAG | color, 1);
     Handled::Ok
 }
 
-fn create_pen(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn create_pen(ctx: &mut ApiContext) -> Handled {
     let color = ctx.arg(2) & OBJ_MASK; // CreatePen(style, width, color)
     ctx.ret_stdcall(PEN_TAG | color, 3);
     Handled::Ok
 }
 
-fn get_stock_object(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn get_stock_object(ctx: &mut ApiContext) -> Handled {
     // WHITE_BRUSH=0, LTGRAY=1, GRAY=2, DKGRAY=3, BLACK_BRUSH=4, NULL_BRUSH=5,
     // BLACK_PEN=7, WHITE_PEN=6
     let obj = match ctx.arg(0) {
@@ -750,7 +661,7 @@ fn get_stock_object(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn select_object(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn select_object(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let obj = ctx.arg(1);
 
@@ -779,7 +690,7 @@ fn select_object(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn move_to_ex(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn move_to_ex(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let x = ctx.arg(1) as i32;
     let y = ctx.arg(2) as i32;
@@ -796,7 +707,7 @@ fn move_to_ex(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn line_to(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn line_to(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let x = ctx.arg(1) as i32;
     let y = ctx.arg(2) as i32;
@@ -819,7 +730,7 @@ fn line_to(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn gdi_rectangle(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn gdi_rectangle(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let (l, t, r, b) = (
         ctx.arg(1) as i32,
@@ -843,7 +754,7 @@ fn gdi_rectangle(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn gdi_ellipse(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn gdi_ellipse(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let (l, t, r, b) = (
         ctx.arg(1) as i32,
@@ -867,7 +778,7 @@ fn gdi_ellipse(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn gdi_set_pixel(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn gdi_set_pixel(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let x = ctx.arg(1) as i32;
     let y = ctx.arg(2) as i32;
@@ -877,7 +788,7 @@ fn gdi_set_pixel(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// FillRect(hdc, const RECT*, hbrush) — user32
+// FillRect(hdc, const RECT*, hbrush) â€” user32
 fn fill_rect(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let rp = ctx.arg(1);
@@ -912,7 +823,7 @@ fn new_gdi_handle(ctx: &mut ApiContext) -> u32 {
 }
 
 // CreateCompatibleDC(hdc) -> memory DC handle.
-fn create_compatible_dc(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn create_compatible_dc(ctx: &mut ApiContext) -> Handled {
     let h = new_gdi_handle(ctx);
     ctx.gui.gdi_objects.insert(h, GdiObject::MemDc { bitmap: 0 });
     ctx.ret_stdcall(h, 1);
@@ -921,7 +832,7 @@ fn create_compatible_dc(ctx: &mut ApiContext) -> Handled {
 
 // CreateDIBSection(hdc, *BITMAPINFO, usage, **ppvBits, hSection, offset) -> HBITMAP.
 // Allocates the pixel buffer in guest memory and writes its pointer to *ppvBits.
-fn create_dib_section(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn create_dib_section(ctx: &mut ApiContext) -> Handled {
     let bmi = ctx.arg(1);
     let ppv_bits = ctx.arg(3);
     // BITMAPINFOHEADER: biSize@0, biWidth@4, biHeight@8, biPlanes@12(u16),
@@ -947,7 +858,7 @@ fn create_dib_section(ctx: &mut ApiContext) -> Handled {
 }
 
 // CreateCompatibleBitmap(hdc, w, h) -> HBITMAP (32bpp top-down, own buffer).
-fn create_compatible_bitmap(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn create_compatible_bitmap(ctx: &mut ApiContext) -> Handled {
     let width = ctx.arg(1) as i32;
     let height = ctx.arg(2) as i32;
     let size = (width.max(0) * height.max(0) * 4).max(4) as u32;
@@ -1000,7 +911,7 @@ fn read_dib_rgba(
 }
 
 // BitBlt(hdcDest, x, y, w, h, hdcSrc, sx, sy, rop) -> blit memory DC to a window.
-fn bit_blt(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn bit_blt(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
     let (x, y, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
     let src = ctx.arg(5);
@@ -1017,7 +928,7 @@ fn bit_blt(ctx: &mut ApiContext) -> Handled {
 }
 
 // StretchBlt(hdcDest, x, y, w, h, hdcSrc, sx, sy, sw, sh, rop) -> 11 args.
-fn stretch_blt(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn stretch_blt(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
     let (x, y, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
     let src = ctx.arg(5);
@@ -1035,7 +946,7 @@ fn stretch_blt(ctx: &mut ApiContext) -> Handled {
 
 // StretchDIBits(hdc, xDest,yDest,wDest,hDest, xSrc,ySrc,wSrc,hSrc, *bits, *bmi,
 //               usage, rop) -> 13 args. Blits a caller-supplied DIB buffer.
-fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
     let (xd, yd, wd, hd) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
     let (xs, ys, ws, hs) = (ctx.arg(5) as i32, ctx.arg(6) as i32, ctx.arg(7) as i32, ctx.arg(8) as i32);
@@ -1055,7 +966,7 @@ fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
 
 // SetDIBitsToDevice(hdc, xDest,yDest, w,h, xSrc,ySrc, startScan,scanLines,
 //                   *bits, *bmi, usage) -> 12 args.
-fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
     let (xd, yd, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
     let (xs, ys) = (ctx.arg(5) as i32, ctx.arg(6) as i32);
@@ -1074,7 +985,7 @@ fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
 }
 
 // GetDeviceCaps(hdc, index) -> capability value.
-fn get_device_caps(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn get_device_caps(ctx: &mut ApiContext) -> Handled {
     let index = ctx.arg(1);
     let v = match index {
         8 => 1920,   // HORZRES
