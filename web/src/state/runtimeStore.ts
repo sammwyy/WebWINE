@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import { RuntimeBridge } from "../core/bridge/runtime-bridge";
 import { useLogStore } from "./logStore";
+import { AppRegistry } from "../shared/lib/app-registry";
 
 interface RuntimeStore {
   runtime: RuntimeBridge | null;
@@ -15,7 +16,7 @@ interface RuntimeStore {
   init: () => Promise<void>;
 }
 
-import { loadVfsSnapshot } from "../shared/lib/vfs-storage";
+import { loadVfsSnapshot, saveVfsSnapshot } from "../shared/lib/vfs-storage";
 
 export const useRuntimeStore = create<RuntimeStore>((set) => ({
   runtime: null,
@@ -31,6 +32,17 @@ export const useRuntimeStore = create<RuntimeStore>((set) => ({
 
     await rt.ready();
     await loadVfsSnapshot(rt);
+
+    // The client owns the virtual-app list; materialize each in the guest VFS
+    // (placeholder exe marker + Start Menu shortcut) now that the runtime is up.
+    // The core no longer seeds these — see WebWineVm::register_app.
+    await Promise.all(
+      AppRegistry.getAll().map((app) =>
+        rt.registerApp(app).catch(() => {
+          /* non-fatal: a single app failing to register shouldn't block boot */
+        }),
+      ),
+    );
 
     rt.onVfsChanged(() => {
       saveVfsSnapshot(rt);

@@ -27,23 +27,38 @@ pub struct VfsFile {
 impl VfsFile {
     /// A real file holding `bytes` in memory.
     pub fn real(name: impl Into<String>, bytes: Vec<u8>) -> Self {
-        VfsFile { name: name.into(), is_virtual: false, bytes }
+        VfsFile {
+            name: name.into(),
+            is_virtual: false,
+            bytes,
+        }
     }
 
     /// A virtual ghost: it exists (listings/stat) but has no readable content.
     pub fn ghost(name: impl Into<String>) -> Self {
-        VfsFile { name: name.into(), is_virtual: true, bytes: Vec::new() }
+        VfsFile {
+            name: name.into(),
+            is_virtual: true,
+            bytes: Vec::new(),
+        }
     }
 
     /// Reported size in bytes (0 for ghosts).
     pub fn size(&self) -> u64 {
-        if self.is_virtual { 0 } else { self.bytes.len() as u64 }
+        if self.is_virtual {
+            0
+        } else {
+            self.bytes.len() as u64
+        }
     }
 
     /// Borrow the content. Errors for a virtual ghost ("exists but no content").
     pub fn content(&self) -> Result<&[u8]> {
         if self.is_virtual {
-            Err(VmError::NotFound(format!("{}: virtual file has no content", self.name)))
+            Err(VmError::NotFound(format!(
+                "{}: virtual file has no content",
+                self.name
+            )))
         } else {
             Ok(&self.bytes)
         }
@@ -105,14 +120,6 @@ pub enum EntryKind {
     Directory,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppRegistration {
-    pub name: String,
-    pub exe_path: String,
-    pub icon_path: String,
-    pub action: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VirtualFileSystem {
     root: IndexMap<char, VfsDirectory>,
@@ -148,28 +155,6 @@ impl VirtualFileSystem {
         Some(drive)
     }
 
-    /// Register an application in the virtual filesystem.
-    /// This creates the executable file with its action marker,
-    /// and a corresponding shortcut in the Start Menu.
-    pub fn register_app(&mut self, app: &AppRegistration) -> Result<()> {
-        let marker = if app.action.starts_with("ext:") {
-            format!("special:{}", app.action)
-        } else {
-            format!("special:{}", app.action)
-        };
-        
-        // Ensure path to exe exists and mount it
-        let _ = self.mount_file(&app.exe_path, marker.into_bytes());
-
-        let lnk_path = format!(
-            "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\{}.lnk",
-            app.name
-        );
-        let _ = self.mount_file(&lnk_path, app.exe_path.as_bytes().to_vec());
-
-        Ok(())
-    }
-
     /// Initialise a disk's default Windows layout — the standard profile and
     /// system folders plus the WebWINE shell helper exes — creating only what is
     /// missing (idempotent). Writes go through normal ops, so on a driver-backed
@@ -199,43 +184,16 @@ impl VirtualFileSystem {
                 let _ = self.create_dir(&acc); // ignore AlreadyExists
             }
         }
-        
-        // Define default applications dynamically without hardcoded files
-        let apps = vec![
-            AppRegistration {
-                name: "WW Explorer".to_string(),
-                exe_path: format!("{drive}:\\Windows\\System32\\WWExplorer.exe"),
-                icon_path: "apps/explorer.webp".to_string(),
-                action: "explorer".to_string(),
-            },
-            AppRegistration {
-                name: "WW Editor".to_string(),
-                exe_path: format!("{drive}:\\Windows\\System32\\WWEditor.exe"),
-                icon_path: "apps/notepad.webp".to_string(),
-                action: "editor".to_string(),
-            },
-            AppRegistration {
-                name: "Upload File".to_string(),
-                exe_path: format!("{drive}:\\Windows\\System32\\uploadfile.exe"),
-                icon_path: "apps/upload-file.webp".to_string(),
-                action: "upload-file".to_string(),
-            },
-            AppRegistration {
-                name: "Upload Folder".to_string(),
-                exe_path: format!("{drive}:\\Windows\\System32\\uploadfolder.exe"),
-                icon_path: "apps/upload-folder.webp".to_string(),
-                action: "upload-folder".to_string(),
-            },
-        ];
-
-        for app in apps {
-            let _ = self.register_app(&app);
-        }
+        // Virtual apps (Explorer, Editor, …) are a client concern: the frontend
+        // owns the list and materializes each via WebWineVm::register_app. The
+        // filesystem layer only lays down the directory skeleton.
     }
 
     /// True if `guest_path`'s drive is backed by a host storage driver.
     fn driver_drive(guest_path: &str) -> Option<char> {
-        GuestPath::parse(guest_path).ok().map(|p| p.drive.to_ascii_uppercase())
+        GuestPath::parse(guest_path)
+            .ok()
+            .map(|p| p.drive.to_ascii_uppercase())
     }
 
     /// Metadata for a path (size / is_dir / is_virtual) without reading content.
@@ -247,16 +205,28 @@ impl VirtualFileSystem {
         let path = GuestPath::parse(guest_path)?;
         let drive = self.get_drive(path.drive)?;
         if path.components.is_empty() {
-            return Ok(FileStat { size: 0, is_dir: true, is_virtual: false });
+            return Ok(FileStat {
+                size: 0,
+                is_dir: true,
+                is_virtual: false,
+            });
         }
         let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
-        let name = path.file_name().ok_or_else(|| VmError::Path("no filename".into()))?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("no filename".into()))?;
         let dir = Self::resolve_dir(drive, &parent_components)?;
         match dir.children.get(&name.to_ascii_uppercase()) {
-            Some(VfsNode::File(f)) =>
-                Ok(FileStat { size: f.size(), is_dir: false, is_virtual: f.is_virtual }),
-            Some(VfsNode::Directory(_)) =>
-                Ok(FileStat { size: 0, is_dir: true, is_virtual: false }),
+            Some(VfsNode::File(f)) => Ok(FileStat {
+                size: f.size(),
+                is_dir: false,
+                is_virtual: f.is_virtual,
+            }),
+            Some(VfsNode::Directory(_)) => Ok(FileStat {
+                size: 0,
+                is_dir: true,
+                is_virtual: false,
+            }),
             None => Err(VmError::NotFound(guest_path.to_string())),
         }
     }
@@ -297,7 +267,7 @@ impl VirtualFileSystem {
             ],
         );
         Self::ensure_dir_chain(&mut c, &["Windows", "System32"]);
-        
+
         // Ensure Places shortcuts
         Self::ensure_file(
             &mut c,
@@ -371,38 +341,8 @@ impl VirtualFileSystem {
         );
         Self::ensure_dir_chain(&mut c, &["Temp"]);
         self.root.insert('C', c);
-        
-        // Temporarily put the default apps in here for bootstrap
-        let default_apps = vec![
-            AppRegistration {
-                name: "WW Explorer".to_string(),
-                exe_path: "C:\\Windows\\System32\\WWExplorer.exe".to_string(),
-                icon_path: "apps/explorer.webp".to_string(),
-                action: "explorer".to_string(),
-            },
-            AppRegistration {
-                name: "WW Editor".to_string(),
-                exe_path: "C:\\Windows\\System32\\WWEditor.exe".to_string(),
-                icon_path: "apps/notepad.webp".to_string(),
-                action: "editor".to_string(),
-            },
-            AppRegistration {
-                name: "Upload File".to_string(),
-                exe_path: "C:\\Windows\\System32\\uploadfile.exe".to_string(),
-                icon_path: "apps/upload-file.webp".to_string(),
-                action: "upload-file".to_string(),
-            },
-            AppRegistration {
-                name: "Upload Folder".to_string(),
-                exe_path: "C:\\Windows\\System32\\uploadfolder.exe".to_string(),
-                icon_path: "apps/upload-folder.webp".to_string(),
-                action: "upload-folder".to_string(),
-            },
-        ];
-        
-        for app in default_apps {
-            let _ = self.register_app(&app);
-        }
+        // No virtual apps are seeded here: the client registers them via
+        // WebWineVm::register_app once the runtime is ready (see app-registry.ts).
     }
 
     fn ensure_dir_chain(dir: &mut VfsDirectory, parts: &[&str]) {
@@ -503,7 +443,8 @@ impl VirtualFileSystem {
         if matches!(dir.children.get(&key), Some(VfsNode::File(f)) if !f.is_virtual) {
             return Ok(()); // don't shadow a real file with a ghost
         }
-        dir.children.insert(key, VfsNode::File(VfsFile::ghost(file_name)));
+        dir.children
+            .insert(key, VfsNode::File(VfsFile::ghost(file_name)));
         Ok(())
     }
 
@@ -526,10 +467,13 @@ impl VirtualFileSystem {
         // A virtual ghost cannot be updated or replaced through normal writes.
         if let Some(VfsNode::File(f)) = dir.children.get(&key) {
             if f.is_virtual {
-                return Err(VmError::Path(format!("{file_name}: virtual file is read-only")));
+                return Err(VmError::Path(format!(
+                    "{file_name}: virtual file is read-only"
+                )));
             }
         }
-        dir.children.insert(key, VfsNode::File(VfsFile::real(file_name, bytes)));
+        dir.children
+            .insert(key, VfsNode::File(VfsFile::real(file_name, bytes)));
         Ok(())
     }
 
@@ -793,7 +737,6 @@ impl VirtualFileSystem {
             Some(raw.to_string())
         }
     }
-
 }
 
 impl Default for VirtualFileSystem {
@@ -816,8 +759,11 @@ mod tests {
         assert!(fs.node_exists(p));
         let st = fs.stat(p).unwrap();
         assert!(st.is_virtual && st.size == 0);
-        assert!(fs.list_dir("C:\\Windows\\System32\\").unwrap()
-            .iter().any(|e| e.name == "kernel32.dll" && e.is_virtual));
+        assert!(fs
+            .list_dir("C:\\Windows\\System32\\")
+            .unwrap()
+            .iter()
+            .any(|e| e.name == "kernel32.dll" && e.is_virtual));
 
         // Accessing content errors ("exists but no content").
         assert!(fs.read_file(p).is_err());
@@ -836,32 +782,34 @@ mod tests {
                 .unwrap();
             assert!(entries.is_empty());
         }
+        // The Start Menu Programs folder exists but is empty: virtual apps are
+        // registered by the client (WebWineVm::register_app), not seeded here.
         let start_menu = fs
             .list_dir(
                 "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\",
             )
             .unwrap();
-        assert!(start_menu.iter().any(|e| e.name == "WW Explorer.lnk"));
+        assert!(start_menu.is_empty());
         let places = fs
             .list_dir("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Places\\")
             .unwrap();
         assert!(places.iter().any(|e| e.name == "Your PC.lnk"));
-        let system32 = fs.list_dir("C:\\Windows\\System32\\").unwrap();
-        assert!(system32.iter().any(|e| e.name == "WWExplorer.exe"));
     }
 
     #[test]
     fn lnk_reads_follow_target_but_raw_is_preserved() {
-        let fs = VirtualFileSystem::new();
-        let resolved = fs
-            .read_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\WW Explorer.lnk")
-            .unwrap();
-        assert_eq!(resolved, b"special:explorer");
+        let mut fs = VirtualFileSystem::new();
+        // Materialize a shortcut by hand (what WebWineVm::register_app does): the
+        // .lnk holds the target exe path; that exe carries a `special:` marker.
+        let exe = "C:\\Windows\\System32\\WWExplorer.exe";
+        let lnk = "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\WW Explorer.lnk";
+        fs.mount_file(exe, b"special:explorer".to_vec()).unwrap();
+        fs.mount_file(lnk, exe.as_bytes().to_vec()).unwrap();
 
-        let raw = fs
-            .read_raw_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\WW Explorer.lnk")
-            .unwrap();
-        assert_eq!(raw, b"C:\\Windows\\System32\\WWExplorer.exe");
+        // read_file follows the .lnk to its target's content...
+        assert_eq!(fs.read_file(lnk).unwrap(), b"special:explorer");
+        // ...while read_raw_file preserves the .lnk's own bytes (the target path).
+        assert_eq!(fs.read_raw_file(lnk).unwrap(), exe.as_bytes());
     }
 
     #[test]

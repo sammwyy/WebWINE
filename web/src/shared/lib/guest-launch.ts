@@ -1,6 +1,7 @@
 import { openExplorer } from "../../apps/explorer/ExplorerApp";
 import { launchProcessHidden } from "../../apps/process-console/ProcessConsoleApp";
 import { openTextReader } from "../../apps/text-reader/TextReaderApp";
+import { openRegedit } from "../../apps/regedit/RegeditApp";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import {
   parseShortcutTarget,
@@ -118,6 +119,9 @@ async function launchShellAction(action: ShellAction, runtime: RuntimeBridge, ta
       return;
     case "editor":
       await openTextReader(targetPath ?? "", runtime);
+      return;
+    case "regedit":
+      openRegedit(runtime);
       return;
     default:
       // Delegate any unhandled or custom virtualApp actions to the client

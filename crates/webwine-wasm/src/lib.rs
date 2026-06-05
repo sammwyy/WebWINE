@@ -1,5 +1,13 @@
 use wasm_bindgen::prelude::*;
 use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult};
+use webwine_core::registry::{RegValue, RegistrySnapshot};
+
+/// One value row for the regedit UI.
+#[derive(serde::Serialize)]
+struct NamedValue {
+    name: String,
+    value: RegValue,
+}
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -161,10 +169,77 @@ impl Runtime {
 
     #[wasm_bindgen(js_name = registerApp)]
     pub fn register_app(&mut self, app_json: &JsValue) -> Result<(), JsValue> {
-        let app: webwine_core::fs::vfs::AppRegistration = serde_wasm_bindgen::from_value(app_json.clone())
+        let app: webwine_core::AppRegistration = serde_wasm_bindgen::from_value(app_json.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         self.vm
             .register_app(&app)
             .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    // ---- registry ----
+
+    /// Serialize the whole registry hive (for persisting to browser storage).
+    #[wasm_bindgen(js_name = exportRegistry)]
+    pub fn export_registry(&self) -> Result<JsValue, JsValue> {
+        serde_wasm_bindgen::to_value(&self.vm.registry.export())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Replace the registry hive from a previously exported snapshot.
+    #[wasm_bindgen(js_name = importRegistry)]
+    pub fn import_registry(&mut self, snapshot: &JsValue) -> Result<(), JsValue> {
+        let snap: RegistrySnapshot = serde_wasm_bindgen::from_value(snapshot.clone())
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.vm.registry.import(snap);
+        Ok(())
+    }
+
+    /// Immediate child key names of `path` (for the regedit tree).
+    #[wasm_bindgen(js_name = regListSubkeys)]
+    pub fn reg_list_subkeys(&self, path: &str) -> Result<JsValue, JsValue> {
+        let subs = self.vm.registry.subkeys(path);
+        serde_wasm_bindgen::to_value(&subs).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Values of `path` as `[{name, value}]` (for the regedit value pane).
+    #[wasm_bindgen(js_name = regListValues)]
+    pub fn reg_list_values(&self, path: &str) -> Result<JsValue, JsValue> {
+        let rows: Vec<NamedValue> = self
+            .vm
+            .registry
+            .values_of(path)
+            .map(|m| m.iter().map(|(name, value)| NamedValue { name: name.clone(), value: value.clone() }).collect())
+            .unwrap_or_default();
+        serde_wasm_bindgen::to_value(&rows).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// True if `path` exists.
+    #[wasm_bindgen(js_name = regKeyExists)]
+    pub fn reg_key_exists(&self, path: &str) -> bool {
+        self.vm.registry.key_exists(path)
+    }
+
+    #[wasm_bindgen(js_name = regCreateKey)]
+    pub fn reg_create_key(&mut self, path: &str) {
+        self.vm.registry.ensure_key(path);
+    }
+
+    #[wasm_bindgen(js_name = regDeleteKey)]
+    pub fn reg_delete_key(&mut self, path: &str) -> bool {
+        self.vm.registry.delete_key_path(path)
+    }
+
+    /// Set a value. `value` is a serialized `RegValue` (e.g. `{type:"Dword",data:1}`).
+    #[wasm_bindgen(js_name = regSetValue)]
+    pub fn reg_set_value(&mut self, path: &str, name: &str, value: &JsValue) -> Result<(), JsValue> {
+        let v: RegValue = serde_wasm_bindgen::from_value(value.clone())
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.vm.registry.set_value_path(path, name, v);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = regDeleteValue)]
+    pub fn reg_delete_value(&mut self, path: &str, name: &str) -> bool {
+        self.vm.registry.delete_value_path(path, name)
     }
 }

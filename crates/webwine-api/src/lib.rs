@@ -1,6 +1,7 @@
 pub mod error;
 pub mod fs;
 pub mod logs;
+pub mod registry;
 pub mod vm;
 pub mod winapi;
 

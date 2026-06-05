@@ -36,7 +36,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "VirtualAlloc", virtual_alloc),
         ("kernel32.dll", "VirtualFree", r1_3),
         ("kernel32.dll", "VirtualProtect", virtual_protect),
-        ("kernel32.dll", "VirtualQuery", r0_3),
+        ("kernel32.dll", "VirtualQuery", virtual_query),
         ("kernel32.dll", "GetModuleHandleA", get_module_handle_a),
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
@@ -1872,23 +1872,6 @@ fn set_current_directory_w(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// We have no registry. Report "key not found" so apps fall back to defaults
-// (ERROR_FILE_NOT_FOUND). Returning success with bogus data breaks apps that
-// read real settings from the registry (e.g. cmd.exe's Command Processor key).
-pub(crate) fn reg_open_key(ctx: &mut ApiContext) -> Handled {
-    let phk = ctx.arg(4);
-    if phk != 0 {
-        let _ = ctx.memory.write_u32(phk, 0);
-    }
-    ctx.ret_stdcall(2, 5); // ERROR_FILE_NOT_FOUND
-    Handled::Ok
-}
-
-pub(crate) fn reg_query_value(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(2, 6); // ERROR_FILE_NOT_FOUND
-    Handled::Ok
-}
-
 fn get_last_error(ctx: &mut ApiContext) -> Handled {
     let e = ctx.cpu.last_error;
     ctx.ret_stdcall(e, 0);
@@ -1955,6 +1938,63 @@ fn virtual_protect(ctx: &mut ApiContext) -> Handled {
         let _ = ctx.memory.write_u32(old_out, 0x40);
     }
     ctx.ret_stdcall(1, 4);
+    Handled::Ok
+}
+
+/// VirtualQuery(lpAddress, &mbi, dwLength) — fills a MEMORY_BASIC_INFORMATION
+/// (28 bytes on x86) and returns the number of bytes written (0x1C), or 0 if
+/// the buffer is too small. The MSVC CRT's __scrt_is_nonwritable_in_current_image
+/// __fastfails when this returns 0, so the previous stub (always 0) crashed any
+/// app built with a recent toolchain (e.g. Windows Media Player) during startup.
+fn virtual_query(ctx: &mut ApiContext) -> Handled {
+    // Map our PageProt bits to the Win32 PAGE_* protection constants.
+    fn to_win_prot(bits: u32) -> u32 {
+        let (r, w, x) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0);
+        match (x, w, r) {
+            (true, true, _) => 0x40,  // PAGE_EXECUTE_READWRITE
+            (true, false, true) => 0x20, // PAGE_EXECUTE_READ
+            (true, false, false) => 0x10, // PAGE_EXECUTE
+            (false, true, _) => 0x04, // PAGE_READWRITE
+            (false, false, true) => 0x02, // PAGE_READONLY
+            (false, false, false) => 0x01, // PAGE_NOACCESS
+        }
+    }
+
+    let addr = ctx.arg(0);
+    let buf = ctx.arg(1);
+    let len = ctx.arg(2);
+    if len < 0x1C {
+        ctx.ret_stdcall(0, 3);
+        return Handled::Ok;
+    }
+    let page = addr & !0xFFF;
+
+    // Region containing addr, if any (Copy fields → immutable borrow ends here).
+    let mapped = ctx.memory.regions.range(..=addr).next_back()
+        .filter(|(_, r)| addr < r.base.wrapping_add(r.size))
+        .map(|(_, r)| (r.base, r.base.wrapping_add(r.size), r.prot.bits()));
+
+    let (base_addr, alloc_base, alloc_prot, region_size, state, protect, mem_type) = match mapped {
+        Some((base, end, bits)) => {
+            let p = to_win_prot(bits);
+            (page, base, p, end.wrapping_sub(page), 0x1000u32 /*MEM_COMMIT*/, p, 0x20000u32 /*MEM_PRIVATE*/)
+        }
+        None => {
+            // Free hole: RegionSize spans up to the next mapped region.
+            let next = ctx.memory.regions.range(addr..).next().map(|(&b, _)| b).unwrap_or(0);
+            let size = if next > page { next - page } else { 0x1000 };
+            (page, 0, 0, size, 0x10000u32 /*MEM_FREE*/, 0x01u32 /*PAGE_NOACCESS*/, 0)
+        }
+    };
+
+    let _ = ctx.memory.write_u32(buf, base_addr);
+    let _ = ctx.memory.write_u32(buf + 0x04, alloc_base);
+    let _ = ctx.memory.write_u32(buf + 0x08, alloc_prot);
+    let _ = ctx.memory.write_u32(buf + 0x0C, region_size);
+    let _ = ctx.memory.write_u32(buf + 0x10, state);
+    let _ = ctx.memory.write_u32(buf + 0x14, protect);
+    let _ = ctx.memory.write_u32(buf + 0x18, mem_type);
+    ctx.ret_stdcall(0x1C, 3);
     Handled::Ok
 }
 

@@ -32,7 +32,7 @@ class AppRegistryImpl {
     const lower = name.toLowerCase();
     return this.registry.find((a) => a.name.toLowerCase() === lower);
   }
-  
+
   getAppByAction(action: string): AppRegistration | undefined {
     return this.registry.find((a) => a.action === action);
   }
@@ -56,7 +56,7 @@ export const AppRegistry = new AppRegistryImpl();
 // Register built-in applications
 AppRegistry.registerApp(
   {
-    name: "WW Explorer",
+    name: "File Explorer",
     exePath: "C:\\Windows\\System32\\WWExplorer.exe",
     icon: "apps/explorer.webp",
     action: "explorer",
@@ -66,10 +66,20 @@ AppRegistry.registerApp(
 
 AppRegistry.registerApp(
   {
-    name: "WW Editor",
+    name: "Text Editor",
     exePath: "C:\\Windows\\System32\\WWEditor.exe",
     icon: "apps/notepad.webp",
     action: "editor",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "Registry Editor",
+    exePath: "C:\\Windows\\System32\\regedit.exe",
+    icon: "apps/regedit.webp",
+    action: "regedit",
   },
   undefined,
 );

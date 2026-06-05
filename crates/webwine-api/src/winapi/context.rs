@@ -44,6 +44,7 @@ pub struct ApiContext<'a> {
     pub heap_next: &'a mut u32,
     pub heap_sizes: &'a mut std::collections::HashMap<u32, u32>,
     pub fs:        &'a mut VirtualFileSystem,
+    pub registry:  &'a mut crate::registry::Registry,
     pub logs:      &'a mut LogBuffer,
     pub pid:       u32,
     /// Guest path of the running image (e.g. C:\Users\guest\Desktop\calc.exe).

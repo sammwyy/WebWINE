@@ -6,8 +6,8 @@
  * to the Zustand log store instead of touching the DOM directly.
  */
 
-import type { DirectoryEntry, LogEvent, PeInfo, ProcessInfo, UiEvent } from "../wasm/worker";
-export type { DirectoryEntry, LogEvent, PeInfo, ProcessInfo, UiEvent } from "../wasm/worker";
+import type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, UiEvent } from "../wasm/worker";
+export type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, UiEvent } from "../wasm/worker";
 
 export interface ProcessHandlers {
   stdout?: (text: string) => void;
@@ -36,6 +36,7 @@ export class RuntimeBridge {
   /** Called when a guest process spawns a child via CreateProcess. */
   private spawnListener: ((pid: number, path: string) => void) | null = null;
   private vfsListeners: Set<() => void> = new Set();
+  private registryListeners: Set<() => void> = new Set();
 
   /** Per-PID output callbacks, set by process console windows. */
   private pidHandlers = new Map<number, ProcessHandlers>();
@@ -69,6 +70,12 @@ export class RuntimeBridge {
   onVfsChanged(cb: () => void): () => void {
     this.vfsListeners.add(cb);
     return () => this.vfsListeners.delete(cb);
+  }
+
+  /** Notified whenever the registry hive changes (edits from any window or guest). */
+  onRegistryChanged(cb: () => void): () => void {
+    this.registryListeners.add(cb);
+    return () => this.registryListeners.delete(cb);
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
@@ -118,6 +125,12 @@ export class RuntimeBridge {
     }
     if (msg.type === "vfs_changed") {
       for (const listener of this.vfsListeners) {
+        listener();
+      }
+      return;
+    }
+    if (msg.type === "reg_changed") {
+      for (const listener of this.registryListeners) {
         listener();
       }
       return;
@@ -252,9 +265,9 @@ export class RuntimeBridge {
   }
 
   async registerApp(app: { name: string; exePath: string; icon: string; action: string }): Promise<void> {
+    const requestId = this.nextId();
     return new Promise((resolve, reject) => {
-      const requestId = Math.random().toString(36).slice(2);
-      this.pendingRequests.set(requestId, { resolve, reject });
+      this.pending.set(requestId, { resolve: () => resolve(), reject });
       this.send({ type: "register_app", requestId, app });
     });
   }
@@ -302,5 +315,67 @@ export class RuntimeBridge {
 
   async importVfs(bytes: Uint8Array): Promise<void> {
     this.send({ type: "import_vfs", bytes: bytes.buffer });
+  }
+
+  // ---- registry ----
+
+  async regListSubkeys(path: string): Promise<string[]> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { subkeys: string[] }).subkeys),
+        reject,
+      });
+      this.send({ type: "reg_list_subkeys", requestId, path });
+    });
+  }
+
+  async regListValues(path: string): Promise<NamedValue[]> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { values: NamedValue[] }).values),
+        reject,
+      });
+      this.send({ type: "reg_list_values", requestId, path });
+    });
+  }
+
+  async regCreateKey(path: string): Promise<void> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, { resolve: () => resolve(), reject });
+      this.send({ type: "reg_create_key", requestId, path });
+    });
+  }
+
+  async regDeleteKey(path: string): Promise<boolean> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { result: boolean }).result),
+        reject,
+      });
+      this.send({ type: "reg_delete_key", requestId, path });
+    });
+  }
+
+  async regSetValue(path: string, name: string, value: RegValue): Promise<void> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, { resolve: () => resolve(), reject });
+      this.send({ type: "reg_set_value", requestId, path, name, value });
+    });
+  }
+
+  async regDeleteValue(path: string, name: string): Promise<boolean> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { result: boolean }).result),
+        reject,
+      });
+      this.send({ type: "reg_delete_value", requestId, path, name });
+    });
   }
 }

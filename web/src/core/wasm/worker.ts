@@ -18,6 +18,12 @@ type InMsg =
   | { type: "kill_process"; pid: number }
   | { type: "export_vfs"; requestId: string }
   | { type: "import_vfs"; bytes: ArrayBuffer }
+  | { type: "reg_list_subkeys"; requestId: string; path: string }
+  | { type: "reg_list_values"; requestId: string; path: string }
+  | { type: "reg_create_key"; requestId: string; path: string }
+  | { type: "reg_delete_key"; requestId: string; path: string }
+  | { type: "reg_set_value"; requestId: string; path: string; name: string; value: RegValue }
+  | { type: "reg_delete_value"; requestId: string; path: string; name: string }
   | { type: "register_app"; requestId: string; app: { name: string; exePath: string; icon: string; action: string } };
 
 type OutMsg =
@@ -37,7 +43,26 @@ type OutMsg =
   | { type: "logs"; events: LogEvent[] }
   | { type: "vfs_exported"; requestId: string; bytes: ArrayBuffer }
   | { type: "vfs_changed" }
+  | { type: "reg_subkeys"; requestId: string; subkeys: string[] }
+  | { type: "reg_values"; requestId: string; values: NamedValue[] }
+  | { type: "reg_ok"; requestId: string; result: boolean }
+  | { type: "reg_changed" }
   | { type: "app_registered"; requestId: string };
+
+/** A registry value, mirroring the Rust `RegValue` (serde adjacently tagged). */
+export type RegValue =
+  | { type: "Sz"; data: string }
+  | { type: "ExpandSz"; data: string }
+  | { type: "Dword"; data: number }
+  | { type: "Qword"; data: number }
+  | { type: "Binary"; data: number[] }
+  | { type: "MultiSz"; data: string[] }
+  | { type: "None" };
+
+export interface NamedValue {
+  name: string;
+  value: RegValue;
+}
 
 export interface DirectoryEntry {
   name: string;
@@ -126,6 +151,70 @@ function send(msg: OutMsg) {
   postMessage(msg);
 }
 
+// ---- registry persistence (IndexedDB; localStorage is unavailable in workers) ----
+
+const IDB_NAME = "webwine";
+const IDB_STORE = "kv";
+const REG_KEY = "registry";
+
+function idb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+        req.result.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key: string): Promise<unknown> {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+    tx.onsuccess = () => resolve(tx.result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbSet(key: string, value: unknown): Promise<void> {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(value, key);
+    tx.onsuccess = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadRegistry() {
+  if (!runtime) return;
+  try {
+    const snap = await idbGet(REG_KEY);
+    if (snap !== undefined && snap !== null) {
+      runtime.importRegistry(snap);
+    }
+  } catch {
+    // First run / private mode: keep the in-memory default hive.
+  }
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+/** Debounced flush of the in-memory hive to IndexedDB. */
+function persistRegistry() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (!runtime) return;
+    try {
+      void idbSet(REG_KEY, runtime.exportRegistry());
+    } catch {
+      // ignore quota / serialization failures
+    }
+  }, 400);
+}
+
 function flushLogs() {
   if (!runtime) return;
   const events = runtime.drainLogs() as LogEvent[];
@@ -176,6 +265,8 @@ async function runProcessLoop(pid: number) {
     }
   } finally {
     runningPids.delete(pid);
+    // A guest run may have mutated the hive (RegSetValueEx, RegCreateKeyEx).
+    persistRegistry();
   }
 }
 
@@ -185,6 +276,7 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
   if (msg.type === "init") {
     await init();
     runtime = new Runtime();
+    await loadRegistry();
     flushLogs();
     send({ type: "ready" });
     return;
@@ -272,11 +364,37 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
     } else if (msg.type === "import_vfs") {
       runtime.importVfs(new Uint8Array(msg.bytes));
       flushLogs();
+    } else if (msg.type === "reg_list_subkeys") {
+      const subkeys = runtime.regListSubkeys(msg.path) as string[];
+      send({ type: "reg_subkeys", requestId: msg.requestId, subkeys });
+    } else if (msg.type === "reg_list_values") {
+      const values = runtime.regListValues(msg.path) as NamedValue[];
+      send({ type: "reg_values", requestId: msg.requestId, values });
+    } else if (msg.type === "reg_create_key") {
+      runtime.regCreateKey(msg.path);
+      persistRegistry();
+      send({ type: "reg_ok", requestId: msg.requestId, result: true });
+      send({ type: "reg_changed" });
+    } else if (msg.type === "reg_delete_key") {
+      const result = runtime.regDeleteKey(msg.path) as boolean;
+      persistRegistry();
+      send({ type: "reg_ok", requestId: msg.requestId, result });
+      send({ type: "reg_changed" });
+    } else if (msg.type === "reg_set_value") {
+      runtime.regSetValue(msg.path, msg.name, msg.value);
+      persistRegistry();
+      send({ type: "reg_ok", requestId: msg.requestId, result: true });
+      send({ type: "reg_changed" });
+    } else if (msg.type === "reg_delete_value") {
+      const result = runtime.regDeleteValue(msg.path, msg.name) as boolean;
+      persistRegistry();
+      send({ type: "reg_ok", requestId: msg.requestId, result });
+      send({ type: "reg_changed" });
     } else if (msg.type === "register_app") {
+      // Icon is client-only UI metadata and is intentionally not sent to the core.
       runtime.registerApp({
         name: msg.app.name,
         exe_path: msg.app.exePath,
-        icon_path: msg.app.icon,
         action: msg.app.action,
       });
       flushLogs();

@@ -2,6 +2,7 @@ use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, OpKind, Register}
 
 use crate::error::Result;
 use crate::fs::vfs::VirtualFileSystem;
+use crate::registry::Registry;
 use crate::logs::{LogBuffer, LogLevel};
 use crate::vm::cpu::*;
 
@@ -23,6 +24,7 @@ pub fn run_slice(
     budget: u32,
     api: &WinApiRegistry,
     fs: &mut VirtualFileSystem,
+    registry: &mut Registry,
     logs: &mut LogBuffer,
 ) -> Result<SliceResult> {
     match &proc.state {
@@ -48,7 +50,7 @@ pub fn run_slice(
         let cur_eip = proc.cpu.eip;
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {
-            match handle_trampoline(proc, api, fs, logs, 0, &mut executed) {
+            match handle_trampoline(proc, api, fs, registry, logs, 0, &mut executed) {
                 Flow::Continue => {}
                 Flow::Block => {
                     // Suspend at the call site; resumed when a message arrives.
@@ -98,7 +100,7 @@ pub fn run_slice(
                 // We call handler(exceptionRecord, establisherFrame, context, dispatcher)
                 // with a stub EXCEPTION_RECORD and CONTEXT.  If the handler returns
                 // EXCEPTION_CONTINUE_EXECUTION (0) we resume; any other value crashes.
-                let handled_by_seh = try_seh(proc, api, fs, logs, &r, &mut executed);
+                let handled_by_seh = try_seh(proc, api, fs, registry, logs, &r, &mut executed);
                 if handled_by_seh {
                     // Handler absorbed the exception. EIP was updated (possibly via
                     // longjmp inside _except_handler4_common). Continue executing
@@ -145,6 +147,7 @@ fn handle_trampoline(
     proc: &mut GuestProcess,
     api: &WinApiRegistry,
     fs: &mut VirtualFileSystem,
+    registry: &mut Registry,
     logs: &mut LogBuffer,
     depth: u32,
     executed: &mut u32,
@@ -172,6 +175,7 @@ fn handle_trampoline(
             heap_next: &mut proc.heap_next,
             heap_sizes: &mut proc.heap_sizes,
             fs,
+            registry,
             logs,
             pid: proc.pid,
             exe_path: proc.path.as_str(),
@@ -194,7 +198,7 @@ fn handle_trampoline(
             let is_e = matches!(result, Some(Handled::CallChainE(_)));
             if depth < 8 {
                 for &pfn in funcs {
-                    match call_guest_fn(proc, api, fs, logs, pfn, depth + 1, executed) {
+                    match call_guest_fn(proc, api, fs, registry, logs, pfn, depth + 1, executed) {
                         Flow::Continue => {
                             if is_e && proc.cpu.eax != 0 {
                                 // For _initterm_e, a non-zero return aborts the chain.
@@ -226,7 +230,7 @@ fn handle_trampoline(
             ret_args,
         }) => {
             // Call the guest function (stdcall: callee cleans its own args).
-            match call_guest_fn_args(proc, api, fs, logs, func, &args, depth + 1, executed) {
+            match call_guest_fn_args(proc, api, fs, registry, logs, func, &args, depth + 1, executed) {
                 Flow::Continue => {}
                 other => return other,
             }
@@ -266,12 +270,13 @@ fn call_guest_fn(
     proc: &mut GuestProcess,
     api: &WinApiRegistry,
     fs: &mut VirtualFileSystem,
+    registry: &mut Registry,
     logs: &mut LogBuffer,
     target: u32,
     depth: u32,
     executed: &mut u32,
 ) -> Flow {
-    call_guest_fn_args(proc, api, fs, logs, target, &[], depth, executed)
+    call_guest_fn_args(proc, api, fs, registry, logs, target, &[], depth, executed)
 }
 
 /// Call a guest function `target(args...)` and run until it returns.
@@ -282,6 +287,7 @@ fn call_guest_fn_args(
     proc: &mut GuestProcess,
     api: &WinApiRegistry,
     fs: &mut VirtualFileSystem,
+    registry: &mut Registry,
     logs: &mut LogBuffer,
     target: u32,
     args: &[u32],
@@ -310,7 +316,7 @@ fn call_guest_fn_args(
         }
 
         if proc.cpu.eip >= TRAMPOLINE_BASE {
-            match handle_trampoline(proc, api, fs, logs, depth, executed) {
+            match handle_trampoline(proc, api, fs, registry, logs, depth, executed) {
                 Flow::Continue => {
                     internal += 1;
                     *executed += 1;
@@ -358,6 +364,7 @@ fn try_seh(
     proc: &mut GuestProcess,
     api: &WinApiRegistry,
     fs: &mut VirtualFileSystem,
+    registry: &mut Registry,
     logs: &mut LogBuffer,
     reason: &str,
     executed: &mut u32,
@@ -429,6 +436,7 @@ fn try_seh(
                             proc,
                             api,
                             fs,
+                            registry,
                             logs,
                             filter,
                             &[],
@@ -531,7 +539,7 @@ fn try_seh(
         proc.cpu.eip = fault_eip; // in case handler reads it (shouldn't matter)
         proc.cpu.esp = esp_for_handler;
 
-        let flow = call_guest_fn_args(proc, api, fs, logs, handler, &args, 1, executed);
+        let flow = call_guest_fn_args(proc, api, fs, registry, logs, handler, &args, 1, executed);
 
         // Check if longjmp fired
         // If _except_handler4_common called longjmp, our longjmp_fn already

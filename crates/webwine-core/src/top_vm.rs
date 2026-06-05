@@ -1,5 +1,6 @@
 use crate::error::{Result, VmError};
 use crate::fs::vfs::{DirEntry, VirtualFileSystem};
+use crate::registry::Registry;
 use crate::logs::{LogBuffer, LogEvent, LogLevel};
 use crate::pe::inspector::{inspect_bytes, PeInfo};
 use crate::pe::loader::load_pe;
@@ -7,9 +8,22 @@ use crate::vm::executor::SliceResult;
 use crate::vm::process::{GuestProcess, ProcessInfo, ProcessState, ProcessTable, UiEvent};
 use crate::clr::{is_managed, ClrImage, ClrRuntime};
 use crate::winapi::{register_all, WinApiRegistry};
+use serde::{Deserialize, Serialize};
+
+/// A client-defined virtual app / shell "quick action". The frontend owns the
+/// list and maps each `action` to a UI component; the core only uses these
+/// fields to lay down the placeholder exe + Start Menu shortcut. UI-only metadata
+/// (e.g. icon) is intentionally not part of this — it stays in the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppRegistration {
+    pub name: String,
+    pub exe_path: String,
+    pub action: String,
+}
 
 pub struct WebWineVm {
     pub fs:        VirtualFileSystem,
+    pub registry:  Registry,
     pub logs:      LogBuffer,
     pub api:       WinApiRegistry,
     pub processes: ProcessTable,
@@ -22,6 +36,7 @@ impl WebWineVm {
 
         let mut vm = WebWineVm {
             fs: VirtualFileSystem::new(),
+            registry: Registry::new(),
             logs: LogBuffer::default(),
             api,
             processes: ProcessTable::new(),
@@ -92,9 +107,21 @@ impl WebWineVm {
         Ok(())
     }
 
-    pub fn register_app(&mut self, app: &crate::fs::vfs::AppRegistration) -> Result<()> {
-        self.fs.register_app(app)?;
-        self.logs.log(LogLevel::Info, "fs", &format!("registered app {}", app.name), None);
+    /// Materialize a client-defined virtual app ("quick action") in the guest
+    /// filesystem: a placeholder exe carrying a `special:<action>` marker plus a
+    /// Start Menu shortcut pointing at it. The *list* of apps lives in the client
+    /// (it maps each action to a UI component); the core only reserves the slot.
+    pub fn register_app(&mut self, app: &AppRegistration) -> Result<()> {
+        let marker = format!("special:{}", app.action);
+        let _ = self.fs.mount_file(&app.exe_path, marker.into_bytes());
+
+        let lnk_path = format!(
+            "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\{}.lnk",
+            app.name
+        );
+        let _ = self.fs.mount_file(&lnk_path, app.exe_path.as_bytes().to_vec());
+
+        self.logs.log(LogLevel::Info, "shell", &format!("registered app {}", app.name), None);
         Ok(())
     }
 
@@ -201,7 +228,7 @@ impl WebWineVm {
             let r = if proc.cpu.eip == 0 {
                 crate::vm::executor::SliceResult::done(proc, 0)
             } else {
-                crate::vm::executor::run_slice(proc, budget, &self.api, &mut self.fs, &mut self.logs)?
+                crate::vm::executor::run_slice(proc, budget, &self.api, &mut self.fs, &mut self.registry, &mut self.logs)?
             };
             let spawns = std::mem::take(&mut proc.spawns);
             (r, spawns)
