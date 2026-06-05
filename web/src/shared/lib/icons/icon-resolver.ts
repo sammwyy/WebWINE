@@ -4,6 +4,7 @@ import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import { parseShortcutTarget, shortcutActionForName, shellActionForPath } from "../shortcut-target";
 import { normaliseImageBytes, extractPeIcon } from "./icon-extractor";
 import { ICON_REGISTRY, ICON_PLACEHOLDER, ICON_CANVAS_PX } from "./icon-registry";
+import { AppRegistry } from "../app-registry";
 
 export interface ResolvedIcon {
   src: string;
@@ -139,6 +140,11 @@ async function resolveLnk(
 }
 
 async function shortcutActionIcon(action: string): Promise<string> {
+  const app = AppRegistry.getAppByAction(action);
+  if (app) {
+    return (await themeAsset(app.icon)) ?? ICON_PLACEHOLDER;
+  }
+
   switch (action) {
     case "this-pc":
       return (await themeAsset("places/thispc.webp")) ?? ICON_PLACEHOLDER;
@@ -150,12 +156,6 @@ async function shortcutActionIcon(action: string): Promise<string> {
       return (await themeAsset("places/music.webp")) ?? ICON_PLACEHOLDER;
     case "videos":
       return (await themeAsset("places/video.webp")) ?? ICON_PLACEHOLDER;
-    case "explorer":
-      return (await themeAsset("apps/explorer.webp")) ?? ICON_PLACEHOLDER;
-    case "upload-file":
-      return (await themeAsset("apps/upload-file.webp")) ?? ICON_PLACEHOLDER;
-    case "upload-folder":
-      return (await themeAsset("apps/upload-folder.webp")) ?? ICON_PLACEHOLDER;
     default:
       return ICON_PLACEHOLDER;
   }

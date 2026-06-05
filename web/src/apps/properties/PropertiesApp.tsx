@@ -5,6 +5,7 @@ import type { DirectoryEntry } from "@/core/wasm/worker";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import { formatSize } from "@/shared/lib/utils";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
+import { AppRegistry } from "@/shared/lib/app-registry";
 
 type PropertiesTab = "general" | "details";
 
@@ -296,16 +297,21 @@ function getEntryInfo(entry: DirectoryEntry) {
         ? `${extension.toUpperCase()} File`
         : "File";
 
-  const opensWith =
-    entry.kind === "directory"
-      ? "File Explorer"
-      : extension === "exe"
-        ? "Application"
-        : extension === "lnk"
-          ? "Windows Shortcut"
-          : extension === "txt"
-            ? "Notepad"
-            : "Unknown application";
+  let opensWith = "Unknown application";
+  if (entry.kind === "directory" || entry.kind === "link") {
+    opensWith = AppRegistry.getAppByAction("explorer")?.name || "WW Explorer";
+  } else if (extension === "exe" || extension === "dll") {
+    opensWith = "Application";
+  } else if (extension === "lnk") {
+    opensWith = "Windows Shortcut";
+  } else if (extension) {
+    const apps = AppRegistry.getAppsForExtension(extension);
+    if (apps.length > 0) {
+      opensWith = apps[0].name;
+    } else {
+      opensWith = AppRegistry.getAppByAction("editor")?.name || "WW Editor";
+    }
+  }
 
   const sizeLabel =
     entry.kind === "file"

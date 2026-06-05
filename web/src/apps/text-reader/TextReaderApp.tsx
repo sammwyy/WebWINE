@@ -5,7 +5,7 @@ import { basename } from "@/shared/lib/utils";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 
 export async function openTextReader(path: string, runtime: RuntimeBridge) {
-  const name = basename(path);
+  const name = path ? basename(path) : "Untitled";
 
   const resolved = await resolveIcon(
     { name, path, kind: "file", size: 0 },
@@ -17,7 +17,7 @@ export async function openTextReader(path: string, runtime: RuntimeBridge) {
   let winId = "";
 
   winId = useWindowStore.getState().openWindow({
-    title: `${name} — Text Reader`,
+    title: `${name} — WW Editor`,
     icon,
     width: 720,
     height: 520,
@@ -40,7 +40,7 @@ function TextEditorApp({
   runtime: RuntimeBridge;
   winId?: () => string;
 }) {
-  const name = useMemo(() => basename(path), [path]);
+  const name = useMemo(() => path ? basename(path) : "Untitled", [path]);
 
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
@@ -62,6 +62,13 @@ function TextEditorApp({
     setStatus("Loading…");
     setContent("");
     setOriginalContent("");
+
+    if (!path) {
+      setLoading(false);
+      setReadonly(false);
+      setStatus("New file");
+      return;
+    }
 
     runtime
       .readFile(path)
@@ -115,7 +122,7 @@ function TextEditorApp({
 
     useWindowStore
       .getState()
-      .setTitle(id, `${dirty ? "*" : ""}${name} — Notepad`);
+      .setTitle(id, `${dirty ? "*" : ""}${name} — WW Editor`);
   }, [dirty, name, winId]);
 
   const save = async () => {
@@ -126,10 +133,11 @@ function TextEditorApp({
     setStatus("Saving…");
 
     try {
+      const savePath = path || "C:\\Users\\guest\\Documents\\Untitled.txt";
       const encoder = new TextEncoder();
       const bytes = encoder.encode(content);
 
-      await runtime.mountFile(path, bytes.buffer);
+      await runtime.mountFile(savePath, bytes.buffer);
 
       setOriginalContent(content);
       setStatus(`${bytes.length.toLocaleString()} bytes · saved`);

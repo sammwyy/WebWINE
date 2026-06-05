@@ -10,15 +10,16 @@ import {
   type ShellActionDetail,
   isShellActionPath,
 } from "./shortcut-target";
+import { AppRegistry } from "./app-registry";
 
 export const SHELL_ACTION_EVENT = "webwine:shell-action";
 
 const GUEST_HOME = "C:\\Users\\guest";
 
-export function requestShellAction(action: ShellActionDetail["action"]): void {
+export function requestShellAction(action: ShellActionDetail["action"], target?: string): void {
   window.dispatchEvent(
     new CustomEvent<ShellActionDetail>(SHELL_ACTION_EVENT, {
-      detail: { action },
+      detail: { action, target },
     }),
   );
 }
@@ -74,10 +75,28 @@ export async function launchGuestPath(path: string, runtime: RuntimeBridge): Pro
     return;
   }
 
+  // Handle extensions via AppRegistry
+  const extMatch = lower.match(/\.([^.\\]+)$/);
+  if (extMatch) {
+    const ext = extMatch[1];
+    const apps = AppRegistry.getAppsForExtension(ext);
+    if (apps.length > 0) {
+      const app = apps[0];
+      if (isShellActionPath(app.exePath)) {
+         const action = shellActionForPath(app.exePath);
+         if (action) await launchShellAction(action, runtime, normalized);
+         return;
+      }
+      // If it's a real binary, launch it with the path as an argument
+      await runtime.launchProcessWithArgs(app.exePath, normalized);
+      return;
+    }
+  }
+
   await openTextReader(normalized, runtime);
 }
 
-async function launchShellAction(action: ShellAction, runtime: RuntimeBridge): Promise<void> {
+async function launchShellAction(action: ShellAction, runtime: RuntimeBridge, targetPath?: string): Promise<void> {
   switch (action) {
     case "this-pc":
       openExplorer("", runtime);
@@ -95,11 +114,14 @@ async function launchShellAction(action: ShellAction, runtime: RuntimeBridge): P
       openExplorer(`${GUEST_HOME}\\Videos`, runtime);
       return;
     case "explorer":
-      openExplorer("", runtime);
+      openExplorer(targetPath ?? "", runtime);
       return;
-    case "upload-file":
-    case "upload-folder":
-      requestShellAction(action);
+    case "editor":
+      await openTextReader(targetPath ?? "", runtime);
+      return;
+    default:
+      // Delegate any unhandled or custom virtualApp actions to the client
+      requestShellAction(action as ShellActionDetail["action"], targetPath);
       return;
   }
 }

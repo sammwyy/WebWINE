@@ -1,0 +1,95 @@
+import { RuntimeBridge } from "@/core/bridge/runtime-bridge";
+
+export interface AppRegistration {
+  name: string;
+  exePath: string;
+  icon: string;
+  action: string;
+}
+
+class AppRegistryImpl {
+  private registry: AppRegistration[] = [];
+
+  /**
+   * Registers an application in the system.
+   * If it's a virtual application, it creates a placeholder .exe file with a "special:" marker.
+   * It also creates a Start Menu shortcut for the application.
+   */
+  async registerApp(app: AppRegistration, runtime?: RuntimeBridge) {
+    this.registry.push(app);
+
+    if (runtime) {
+      await runtime.registerApp(app);
+    }
+  }
+
+  getAppByExe(exePath: string): AppRegistration | undefined {
+    const lower = exePath.toLowerCase();
+    return this.registry.find((a) => a.exePath.toLowerCase() === lower);
+  }
+
+  getAppByName(name: string): AppRegistration | undefined {
+    const lower = name.toLowerCase();
+    return this.registry.find((a) => a.name.toLowerCase() === lower);
+  }
+  
+  getAppByAction(action: string): AppRegistration | undefined {
+    return this.registry.find((a) => a.action === action);
+  }
+
+  getAppsForExtension(ext: string): AppRegistration[] {
+    const target = `ext:${ext.toLowerCase()}`;
+    return this.registry.filter((a) => {
+      if (!a.action.startsWith("ext:")) return false;
+      const exts = a.action.substring(4).split(",").map((e) => e.trim().toLowerCase());
+      return exts.includes(ext.toLowerCase());
+    });
+  }
+
+  getAll(): AppRegistration[] {
+    return this.registry;
+  }
+}
+
+export const AppRegistry = new AppRegistryImpl();
+
+// Register built-in applications
+AppRegistry.registerApp(
+  {
+    name: "WW Explorer",
+    exePath: "C:\\Windows\\System32\\WWExplorer.exe",
+    icon: "apps/explorer.webp",
+    action: "explorer",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "WW Editor",
+    exePath: "C:\\Windows\\System32\\WWEditor.exe",
+    icon: "apps/notepad.webp",
+    action: "editor",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "Upload File",
+    exePath: "C:\\Windows\\System32\\uploadfile.exe",
+    icon: "apps/upload-file.webp",
+    action: "upload-file",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "Upload Folder",
+    exePath: "C:\\Windows\\System32\\uploadfolder.exe",
+    icon: "apps/upload-folder.webp",
+    action: "upload-folder",
+  },
+  undefined,
+);

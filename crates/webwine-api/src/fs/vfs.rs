@@ -105,6 +105,14 @@ pub enum EntryKind {
     Directory,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppRegistration {
+    pub name: String,
+    pub exe_path: String,
+    pub icon_path: String,
+    pub action: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VirtualFileSystem {
     root: IndexMap<char, VfsDirectory>,
@@ -140,6 +148,28 @@ impl VirtualFileSystem {
         Some(drive)
     }
 
+    /// Register an application in the virtual filesystem.
+    /// This creates the executable file with its action marker,
+    /// and a corresponding shortcut in the Start Menu.
+    pub fn register_app(&mut self, app: &AppRegistration) -> Result<()> {
+        let marker = if app.action.starts_with("ext:") {
+            format!("special:{}", app.action)
+        } else {
+            format!("special:{}", app.action)
+        };
+        
+        // Ensure path to exe exists and mount it
+        let _ = self.mount_file(&app.exe_path, marker.into_bytes());
+
+        let lnk_path = format!(
+            "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\{}.lnk",
+            app.name
+        );
+        let _ = self.mount_file(&lnk_path, app.exe_path.as_bytes().to_vec());
+
+        Ok(())
+    }
+
     /// Initialise a disk's default Windows layout — the standard profile and
     /// system folders plus the WebWINE shell helper exes — creating only what is
     /// missing (idempotent). Writes go through normal ops, so on a driver-backed
@@ -169,15 +199,37 @@ impl VirtualFileSystem {
                 let _ = self.create_dir(&acc); // ignore AlreadyExists
             }
         }
-        for (name, marker) in [
-            ("explorer.exe", "special:explorer"),
-            ("uploadfile.exe", "special:upload-file"),
-            ("uploadfolder.exe", "special:upload-folder"),
-        ] {
-            let path = format!("{drive}:\\Windows\\System32\\{name}");
-            if !self.node_exists(&path) {
-                let _ = self.mount_file(&path, marker.as_bytes().to_vec());
-            }
+        
+        // Define default applications dynamically without hardcoded files
+        let apps = vec![
+            AppRegistration {
+                name: "WW Explorer".to_string(),
+                exe_path: format!("{drive}:\\Windows\\System32\\WWExplorer.exe"),
+                icon_path: "apps/explorer.webp".to_string(),
+                action: "explorer".to_string(),
+            },
+            AppRegistration {
+                name: "WW Editor".to_string(),
+                exe_path: format!("{drive}:\\Windows\\System32\\WWEditor.exe"),
+                icon_path: "apps/notepad.webp".to_string(),
+                action: "editor".to_string(),
+            },
+            AppRegistration {
+                name: "Upload File".to_string(),
+                exe_path: format!("{drive}:\\Windows\\System32\\uploadfile.exe"),
+                icon_path: "apps/upload-file.webp".to_string(),
+                action: "upload-file".to_string(),
+            },
+            AppRegistration {
+                name: "Upload Folder".to_string(),
+                exe_path: format!("{drive}:\\Windows\\System32\\uploadfolder.exe"),
+                icon_path: "apps/upload-folder.webp".to_string(),
+                action: "upload-folder".to_string(),
+            },
+        ];
+
+        for app in apps {
+            let _ = self.register_app(&app);
         }
     }
 
@@ -245,81 +297,8 @@ impl VirtualFileSystem {
             ],
         );
         Self::ensure_dir_chain(&mut c, &["Windows", "System32"]);
-        Self::ensure_file(
-            &mut c,
-            &["Windows", "System32", "explorer.exe"],
-            b"special:explorer".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &["Windows", "System32", "uploadfile.exe"],
-            b"special:upload-file".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &["Windows", "System32", "uploadfolder.exe"],
-            b"special:upload-folder".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &[
-                "Users",
-                "guest",
-                "AppData",
-                "Roaming",
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "Your PC.lnk",
-            ],
-            b"action:this-pc".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &[
-                "Users",
-                "guest",
-                "AppData",
-                "Roaming",
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "File Explorer.lnk",
-            ],
-            b"C:\\Windows\\System32\\explorer.exe".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &[
-                "Users",
-                "guest",
-                "AppData",
-                "Roaming",
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "Upload File.lnk",
-            ],
-            b"C:\\Windows\\System32\\uploadfile.exe".to_vec(),
-        );
-        Self::ensure_file(
-            &mut c,
-            &[
-                "Users",
-                "guest",
-                "AppData",
-                "Roaming",
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "Upload Folder.lnk",
-            ],
-            b"C:\\Windows\\System32\\uploadfolder.exe".to_vec(),
-        );
+        
+        // Ensure Places shortcuts
         Self::ensure_file(
             &mut c,
             &[
@@ -392,6 +371,38 @@ impl VirtualFileSystem {
         );
         Self::ensure_dir_chain(&mut c, &["Temp"]);
         self.root.insert('C', c);
+        
+        // Temporarily put the default apps in here for bootstrap
+        let default_apps = vec![
+            AppRegistration {
+                name: "WW Explorer".to_string(),
+                exe_path: "C:\\Windows\\System32\\WWExplorer.exe".to_string(),
+                icon_path: "apps/explorer.webp".to_string(),
+                action: "explorer".to_string(),
+            },
+            AppRegistration {
+                name: "WW Editor".to_string(),
+                exe_path: "C:\\Windows\\System32\\WWEditor.exe".to_string(),
+                icon_path: "apps/notepad.webp".to_string(),
+                action: "editor".to_string(),
+            },
+            AppRegistration {
+                name: "Upload File".to_string(),
+                exe_path: "C:\\Windows\\System32\\uploadfile.exe".to_string(),
+                icon_path: "apps/upload-file.webp".to_string(),
+                action: "upload-file".to_string(),
+            },
+            AppRegistration {
+                name: "Upload Folder".to_string(),
+                exe_path: "C:\\Windows\\System32\\uploadfolder.exe".to_string(),
+                icon_path: "apps/upload-folder.webp".to_string(),
+                action: "upload-folder".to_string(),
+            },
+        ];
+        
+        for app in default_apps {
+            let _ = self.register_app(&app);
+        }
     }
 
     fn ensure_dir_chain(dir: &mut VfsDirectory, parts: &[&str]) {
@@ -830,27 +841,27 @@ mod tests {
                 "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\",
             )
             .unwrap();
-        assert!(start_menu.iter().any(|e| e.name == "File Explorer.lnk"));
+        assert!(start_menu.iter().any(|e| e.name == "WW Explorer.lnk"));
         let places = fs
             .list_dir("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Places\\")
             .unwrap();
         assert!(places.iter().any(|e| e.name == "Your PC.lnk"));
         let system32 = fs.list_dir("C:\\Windows\\System32\\").unwrap();
-        assert!(system32.iter().any(|e| e.name == "explorer.exe"));
+        assert!(system32.iter().any(|e| e.name == "WWExplorer.exe"));
     }
 
     #[test]
     fn lnk_reads_follow_target_but_raw_is_preserved() {
         let fs = VirtualFileSystem::new();
         let resolved = fs
-            .read_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk")
+            .read_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\WW Explorer.lnk")
             .unwrap();
         assert_eq!(resolved, b"special:explorer");
 
         let raw = fs
-            .read_raw_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk")
+            .read_raw_file("C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\WW Explorer.lnk")
             .unwrap();
-        assert_eq!(raw, b"C:\\Windows\\System32\\explorer.exe");
+        assert_eq!(raw, b"C:\\Windows\\System32\\WWExplorer.exe");
     }
 
     #[test]

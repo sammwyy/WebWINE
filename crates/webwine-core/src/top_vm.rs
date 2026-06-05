@@ -92,6 +92,12 @@ impl WebWineVm {
         Ok(())
     }
 
+    pub fn register_app(&mut self, app: &crate::fs::vfs::AppRegistration) -> Result<()> {
+        self.fs.register_app(app)?;
+        self.logs.log(LogLevel::Info, "fs", &format!("registered app {}", app.name), None);
+        Ok(())
+    }
+
     pub fn inspect_pe(&mut self, guest_path: &str) -> Result<PeInfo> {
         let bytes = self.fs.read_file(guest_path)?;
         let info = inspect_bytes(&bytes)?;

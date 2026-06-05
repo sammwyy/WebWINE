@@ -247,8 +247,16 @@ export class RuntimeBridge {
     });
   }
 
-  runProcess(pid: number): void {
+  async runProcessSlice(pid: number): Promise<void> {
     this.send({ type: "run_process", pid });
+  }
+
+  async registerApp(app: { name: string; exePath: string; icon: string; action: string }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const requestId = Math.random().toString(36).slice(2);
+      this.pendingRequests.set(requestId, { resolve, reject });
+      this.send({ type: "register_app", requestId, app });
+    });
   }
 
   writeStdin(pid: number, text: string): void {

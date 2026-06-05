@@ -4,17 +4,16 @@ import { useRuntimeStore } from "@/state/runtimeStore";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { DirectoryEntry } from "@/core/wasm/worker";
 import { ICON_PLACEHOLDER, resolveIcon } from "@/shared/lib/icons/icon-resolver";
-import { launchGuestPath } from "@/shared/lib/guest-launch";
 import { exportVfsToFile, importVfsFromFile } from "@/shared/lib/vfs-storage";
+import { launchGuestPath } from "@/shared/lib/guest-launch";
+import { AppRegistry } from "@/shared/lib/app-registry";
 
 const START_MENU_PROGRAMS_ROOT =
   "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";
 
-const DEFAULT_START_MENU_ENTRIES: DirectoryEntry[] = [
-  mkLink("File Explorer.lnk", "C:\\Windows\\System32\\explorer.exe"),
-  mkLink("Upload File.lnk", "C:\\Windows\\System32\\uploadfile.exe"),
-  mkLink("Upload Folder.lnk", "C:\\Windows\\System32\\uploadfolder.exe"),
-];
+function getDefaultStartMenuEntries(): DirectoryEntry[] {
+  return AppRegistry.getAll().map((app) => mkLink(`${app.name}.lnk`, app.exePath));
+}
 
 const PLACE_TILE_ENTRIES: DirectoryEntry[] = [
   mkLink("Your PC.lnk", "action:this-pc"),
@@ -104,7 +103,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
       } catch {
         if (!alive) return;
 
-        setEntries(DEFAULT_START_MENU_ENTRIES);
+        setEntries(getDefaultStartMenuEntries());
       }
     };
 
@@ -121,7 +120,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
   }, [runtime]);
 
   const visibleEntries = useMemo(
-    () => (entries.length > 0 ? sortEntries(entries) : DEFAULT_START_MENU_ENTRIES),
+    () => (entries.length > 0 ? sortEntries(entries) : getDefaultStartMenuEntries()),
     [entries],
   );
 

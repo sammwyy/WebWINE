@@ -17,7 +17,8 @@ type InMsg =
   | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
   | { type: "kill_process"; pid: number }
   | { type: "export_vfs"; requestId: string }
-  | { type: "import_vfs"; bytes: ArrayBuffer };
+  | { type: "import_vfs"; bytes: ArrayBuffer }
+  | { type: "register_app"; requestId: string; app: { name: string; exePath: string; icon: string; action: string } };
 
 type OutMsg =
   | { type: "ready" }
@@ -35,7 +36,8 @@ type OutMsg =
   | { type: "process_crashed"; pid: number; reason: string }
   | { type: "logs"; events: LogEvent[] }
   | { type: "vfs_exported"; requestId: string; bytes: ArrayBuffer }
-  | { type: "vfs_changed" };
+  | { type: "vfs_changed" }
+  | { type: "app_registered"; requestId: string };
 
 export interface DirectoryEntry {
   name: string;
@@ -270,6 +272,16 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
     } else if (msg.type === "import_vfs") {
       runtime.importVfs(new Uint8Array(msg.bytes));
       flushLogs();
+    } else if (msg.type === "register_app") {
+      runtime.registerApp({
+        name: msg.app.name,
+        exe_path: msg.app.exePath,
+        icon_path: msg.app.icon,
+        action: msg.app.action,
+      });
+      flushLogs();
+      send({ type: "app_registered", requestId: msg.requestId });
+      send({ type: "vfs_changed" });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

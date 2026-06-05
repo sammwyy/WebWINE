@@ -153,13 +153,18 @@ impl Runtime {
             .post_window_message(pid, hwnd, message, wparam, lparam)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
-
     #[wasm_bindgen(js_name = drainLogs)]
     pub fn drain_logs(&mut self) -> Result<JsValue, JsValue> {
         let events: Vec<LogEvent> = self.vm.drain_logs();
         serde_wasm_bindgen::to_value(&events).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
-    // VFS persistence is no longer a core snapshot; it is the frontend's job via
-    // a storage driver (e.g. IndexedDB/OPFS). exportVfs/importVfs were removed.
+    #[wasm_bindgen(js_name = registerApp)]
+    pub fn register_app(&mut self, app_json: &JsValue) -> Result<(), JsValue> {
+        let app: webwine_core::fs::vfs::AppRegistration = serde_wasm_bindgen::from_value(app_json.clone())
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.vm
+            .register_app(&app)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
 }

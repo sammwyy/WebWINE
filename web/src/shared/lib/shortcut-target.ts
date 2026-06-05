@@ -1,15 +1,16 @@
+import { AppRegistry } from "./app-registry";
+
 export type ShellAction =
   | "this-pc"
   | "documents"
   | "pictures"
   | "music"
   | "videos"
-  | "explorer"
-  | "upload-file"
-  | "upload-folder";
+  | string; // Allow any string for dynamic actions
 
 export interface ShellActionDetail {
-  action: "upload-file" | "upload-folder";
+  action: "upload-file" | "upload-folder" | string;
+  target?: string;
 }
 
 export type ShortcutTarget =
@@ -33,27 +34,23 @@ export function parseShortcutTarget(text: string): ShortcutTarget | null {
 }
 
 export function isShellAction(action: string): action is ShellAction {
-  return [
+  if ([
     "this-pc",
     "documents",
     "pictures",
     "music",
     "videos",
-    "explorer",
-    "upload-file",
-    "upload-folder",
-  ].includes(action);
+  ].includes(action)) return true;
+  
+  return AppRegistry.getAppByAction(action) !== undefined;
 }
 
 export function shellActionForPath(path: string): ShellAction | null {
+  const app = AppRegistry.getAppByExe(path);
+  if (app) return app.action;
+
   const base = path.split("\\").pop()?.toLowerCase() ?? "";
   switch (base) {
-    case "explorer.exe":
-      return "explorer";
-    case "uploadfile.exe":
-      return "upload-file";
-    case "uploadfolder.exe":
-      return "upload-folder";
     default:
       return null;
   }
@@ -65,6 +62,9 @@ export function isShellActionPath(path: string): boolean {
 
 export function shortcutActionForName(name: string): ShellAction | null {
   const base = name.toLowerCase().replace(/\.lnk$/, "");
+  const app = AppRegistry.getAppByName(base);
+  if (app) return app.action;
+
   switch (base) {
     case "your pc":
       return "this-pc";
@@ -76,12 +76,6 @@ export function shortcutActionForName(name: string): ShellAction | null {
       return "music";
     case "videos":
       return "videos";
-    case "file explorer":
-      return "explorer";
-    case "upload file":
-      return "upload-file";
-    case "upload folder":
-      return "upload-folder";
     default:
       return null;
   }
