@@ -7,13 +7,16 @@
     "build:wasm": "wasm-pack build ../crates/webwine-wasm --target web --out-dir ../../web/src/pkg",
     "build": "vite build",
     "preview": "vite preview",
-    "build:icons": "node scripts/build-icons.js"
+    "build:icons": "node scripts/build-icons.js",
+    "predeploy": "npm run build:wasm && npm run build:icons && npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "gh-pages": "^6.3.0",
     "icojs": "^1.0.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.3.0",
