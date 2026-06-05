@@ -4,7 +4,7 @@ use crate::logs::{LogBuffer, LogEvent, LogLevel};
 use crate::pe::inspector::{inspect_bytes, PeInfo};
 use crate::pe::loader::load_pe;
 use crate::vm::executor::SliceResult;
-use crate::vm::process::{GuestProcess, ProcessInfo, ProcessState, ProcessTable};
+use crate::vm::process::{GuestProcess, ProcessInfo, ProcessState, ProcessTable, UiEvent};
 use crate::clr::{is_managed, ClrImage, ClrRuntime};
 use crate::winapi::{register_all, WinApiRegistry};
 
@@ -43,7 +43,8 @@ impl WebWineVm {
                 continue;
             }
             let path = format!("C:\\Windows\\System32\\{name}");
-            let _ = self.fs.mount_file(&path, b"MZ\0WEBWINE virtual system DLL stub".to_vec());
+            // Virtual ghost: exists for FS probes, no content, never persisted.
+            let _ = self.fs.mount_virtual_file(&path);
         }
     }
 
@@ -58,6 +59,13 @@ impl WebWineVm {
         self.fs.create_dir(guest_path)?;
         self.logs.log(LogLevel::Info, "fs", &format!("created dir {guest_path}"), None);
         Ok(())
+    }
+
+    /// Seed a disk's default Windows folders/files (idempotent). The host calls
+    /// this when it wants the skeleton on a (possibly driver-persisted) drive;
+    /// persistence itself is the driver's responsibility, not the core's.
+    pub fn init_disk_defaults(&mut self, drive: char) {
+        self.fs.init_disk_defaults(drive);
     }
 
     pub fn list_dir(&self, guest_path: &str) -> Result<Vec<DirEntry>> {
@@ -145,14 +153,6 @@ impl WebWineVm {
         Ok(pid)
     }
 
-    pub fn export_vfs(&self) -> Result<Vec<u8>> {
-        self.fs.export_snapshot()
-    }
-
-    pub fn import_vfs(&mut self, bytes: &[u8]) -> Result<()> {
-        self.fs = VirtualFileSystem::import_snapshot(bytes)?;
-        Ok(())
-    }
 
     /// Run a managed process's entry point to completion via the CLR interpreter,
     /// buffering its output into the process console.
@@ -212,6 +212,24 @@ impl WebWineVm {
                 Err(e) => {
                     self.logs.log(LogLevel::Warn, "process",
                         &format!("CreateProcess failed for {}: {e}", sp.path), Some(pid));
+                }
+            }
+        }
+
+        // When a process dies, close any windows it left open: emit a
+        // DestroyWindow per window so the shell driver (frontend) tears them down.
+        // Otherwise a crashed/exited app's windows would linger on the desktop.
+        if matches!(result.state, ProcessState::Exited { .. } | ProcessState::Crashed { .. }) {
+            if let Some(proc) = self.processes.get_mut(pid) {
+                if !proc.gui.windows.is_empty() {
+                    let mut hwnds: Vec<u32> = proc.gui.windows.keys().copied().collect();
+                    hwnds.sort_unstable();
+                    for hwnd in hwnds {
+                        result.ui_events.push(UiEvent::DestroyWindow { hwnd });
+                    }
+                    proc.gui.windows.clear();
+                    self.logs.log(LogLevel::Info, "process",
+                        &format!("pid={pid} died — closed its windows"), Some(pid));
                 }
             }
         }

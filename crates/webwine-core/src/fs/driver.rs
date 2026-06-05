@@ -15,12 +15,23 @@
 //! which is the host-implemented seam for rendering and shell/sound events.
 
 use crate::error::Result;
-use crate::fs::vfs::DirEntry;
+use crate::fs::vfs::{DirEntry, FileStat};
 
-/// Host-provided backend for one mounted disk. Paths are full guest paths
-/// (e.g. `C:\\Windows\\System32\\foo.dll`); the driver maps them however it
-/// likes (a real directory, an IndexedDB store, …).
+/// Host-provided backend for one or more mounted disks. Each driver, at
+/// registration, declares the drive letters it owns via [`drives`]; the core
+/// then routes every file op on those drives to it. Metadata ops (exists /
+/// is_dir / list / stat / mkdir / rename / delete) are separate from content
+/// (read / read_range), so a driver can answer metadata without fetching bytes.
+///
+/// Paths are full guest paths (e.g. `C:\\Windows\\System32\\foo.dll`); the
+/// driver maps them however it likes (a real directory, an IndexedDB store, …).
 pub trait StorageDriver: std::fmt::Debug + Send {
+    /// Drive letters this driver exposes (e.g. `vec!['C']`). The core registers
+    /// the driver for each. Empty means "register me explicitly".
+    fn drives(&self) -> Vec<char> {
+        Vec::new()
+    }
+
     fn exists(&self, path: &str) -> bool;
     fn is_dir(&self, path: &str) -> bool;
     fn read(&self, path: &str) -> Result<Vec<u8>>;
@@ -29,6 +40,17 @@ pub trait StorageDriver: std::fmt::Debug + Send {
     fn create_dir(&mut self, path: &str) -> Result<()>;
     fn delete(&mut self, path: &str) -> Result<()>;
     fn rename(&mut self, path: &str, new_name: &str) -> Result<()>;
+
+    /// Metadata for a path without reading content. Default composes the other
+    /// queries; drivers can override with a single host stat call.
+    fn stat(&self, path: &str) -> Result<FileStat> {
+        if !self.exists(path) {
+            return Err(crate::error::VmError::NotFound(path.to_string()));
+        }
+        let is_dir = self.is_dir(path);
+        let size = if is_dir { 0 } else { self.len(path).unwrap_or(0) as u64 };
+        Ok(FileStat { size, is_dir, is_virtual: false })
+    }
 
     /// File length. Default reads the whole file; override for efficiency.
     fn len(&self, path: &str) -> Result<usize> {

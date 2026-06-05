@@ -361,7 +361,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "InterlockedPushEntrySList", r0_2),
         ("kernel32.dll", "InterlockedFlushSList", r0_1),
         ("kernel32.dll", "GetProcessAffinityMask", r1_3),
-        ("kernel32.dll", "GetNativeSystemInfo", r0_1),
+        ("kernel32.dll", "GetNativeSystemInfo", get_system_info),
         (
             "kernel32.dll",
             "GetCurrentDirectoryW",
@@ -395,6 +395,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetCommandLineW", get_command_line_w),
         ("kernel32.dll", "GetStartupInfoA", get_startup_info),
         ("kernel32.dll", "GetStartupInfoW", get_startup_info),
+        ("kernel32.dll", "GlobalMemoryStatus", global_memory_status),
+        ("kernel32.dll", "GlobalMemoryStatusEx", global_memory_status_ex),
         (
             "kernel32.dll",
             "GetCurrentProcessId",
@@ -403,8 +405,14 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetCurrentThreadId", get_current_thread_id),
         ("kernel32.dll", "GetCurrentProcess", get_current_process),
         ("kernel32.dll", "GetCurrentThread", get_current_thread),
-        ("kernel32.dll", "GetSystemInfo", r0_1),
+        ("kernel32.dll", "GetSystemInfo", get_system_info),
         ("kernel32.dll", "GetSystemTimeAsFileTime", get_system_time),
+        ("kernel32.dll", "GetSystemTime", get_system_time_struct),
+        ("kernel32.dll", "GetLocalTime", get_system_time_struct),
+        ("kernel32.dll", "GetComputerNameA", get_computer_name_a),
+        ("kernel32.dll", "GetComputerNameW", get_computer_name_w),
+        ("advapi32.dll", "GetUserNameA", get_user_name_a),
+        ("advapi32.dll", "GetUserNameW", get_user_name_w),
         (
             "kernel32.dll",
             "QueryPerformanceCounter",
@@ -2875,12 +2883,170 @@ fn get_current_thread(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// FILETIME (100ns since 1601-01-01) for a fixed base date, advanced by the
+// shared virtual clock so successive reads differ. Base = 2024-01-01 00:00 UTC.
+fn fake_filetime() -> u64 {
+    const BASE_2024: u64 = 133_485_408_000_000_000;
+    BASE_2024 + crate::winapi::winmm::tick_ms() as u64 * 10_000
+}
+
+// GetSystemTimeAsFileTime / GetSystemTimePreciseAsFileTime(LPFILETIME): write a
+// plausible, monotonically-advancing 64-bit FILETIME (was all-zero = year 1601,
+// which breaks elapsed-time math and RNG seeding).
 fn get_system_time(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
-        let _ = ctx.memory.write_bytes(p, &[0u8; 8]);
+        let ft = fake_filetime();
+        let _ = ctx.memory.write_u32(p, ft as u32);
+        let _ = ctx.memory.write_u32(p + 4, (ft >> 32) as u32);
     }
     ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+// GetSystemTime / GetLocalTime(LPSYSTEMTIME): fill the 16-byte SYSTEMTIME with a
+// fixed, valid date (2024-01-01 12:00:00, a Monday). We have no real clock.
+fn get_system_time_struct(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    if p != 0 {
+        // wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds
+        let ms = (crate::winapi::winmm::tick_ms() % 1000) as u16;
+        for (off, v) in [(0, 2024u16), (2, 1), (4, 1), (6, 1), (8, 12), (10, 0), (12, 0), (14, ms)] {
+            let _ = ctx.memory.write_u16(p + off, v);
+        }
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+// GlobalMemoryStatus(LPMEMORYSTATUS): 32-bit fields, so report ~2 GB to avoid
+// overflow. Reports 25% load, 2 GB phys (1.5 GB free), 2 GB virtual.
+fn global_memory_status(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    if p != 0 {
+        const G2: u32 = 2 * 1024 * 1024 * 1024 - 1; // ~2 GB (fits in u32)
+        let _ = ctx.memory.write_u32(p, 32);          // dwLength
+        let _ = ctx.memory.write_u32(p + 4, 25);      // dwMemoryLoad
+        let _ = ctx.memory.write_u32(p + 8, G2);      // dwTotalPhys
+        let _ = ctx.memory.write_u32(p + 12, G2 / 4 * 3); // dwAvailPhys (~1.5 GB)
+        let _ = ctx.memory.write_u32(p + 16, G2);     // dwTotalPageFile
+        let _ = ctx.memory.write_u32(p + 20, G2 / 4 * 3); // dwAvailPageFile
+        let _ = ctx.memory.write_u32(p + 24, G2);     // dwTotalVirtual
+        let _ = ctx.memory.write_u32(p + 28, G2 / 4 * 3); // dwAvailVirtual
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+// GlobalMemoryStatusEx(LPMEMORYSTATUSEX): 64-bit fields. Reports 4 GB phys.
+fn global_memory_status_ex(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    if p != 0 {
+        let write_u64 = |c: &mut ApiContext, off: u32, v: u64| {
+            let _ = c.memory.write_u32(p + off, v as u32);
+            let _ = c.memory.write_u32(p + off + 4, (v >> 32) as u32);
+        };
+        const G4: u64 = 4 * 1024 * 1024 * 1024;
+        // dwLength (+0) is set by the caller; leave it. dwMemoryLoad (+4).
+        let _ = ctx.memory.write_u32(p + 4, 25);
+        write_u64(ctx, 8, G4);          // ullTotalPhys
+        write_u64(ctx, 16, G4 / 4 * 3); // ullAvailPhys
+        write_u64(ctx, 24, G4);         // ullTotalPageFile
+        write_u64(ctx, 32, G4 / 4 * 3); // ullAvailPageFile
+        write_u64(ctx, 40, G4);         // ullTotalVirtual
+        write_u64(ctx, 48, G4 / 4 * 3); // ullAvailVirtual
+        write_u64(ctx, 56, 0);          // ullAvailExtendedVirtual
+    }
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+// GetSystemInfo / GetNativeSystemInfo(LPSYSTEM_INFO): fill the 36-byte struct so
+// apps reading dwPageSize / dwNumberOfProcessors / dwAllocationGranularity /
+// address bounds get sane values instead of garbage.
+fn get_system_info(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    if p != 0 {
+        let _ = ctx.memory.write_u16(p, 0);            // wProcessorArchitecture = INTEL
+        let _ = ctx.memory.write_u16(p + 2, 0);        // wReserved
+        let _ = ctx.memory.write_u32(p + 4, 0x1000);   // dwPageSize = 4 KB
+        let _ = ctx.memory.write_u32(p + 8, 0x0001_0000);   // lpMinimumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 12, 0x7FFE_FFFF);  // lpMaximumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 16, 1);       // dwActiveProcessorMask
+        let _ = ctx.memory.write_u32(p + 20, 1);       // dwNumberOfProcessors
+        let _ = ctx.memory.write_u32(p + 24, 586);     // dwProcessorType = PENTIUM
+        let _ = ctx.memory.write_u32(p + 28, 0x0001_0000); // dwAllocationGranularity = 64 KB
+        let _ = ctx.memory.write_u16(p + 32, 6);       // wProcessorLevel
+        let _ = ctx.memory.write_u16(p + 34, 0x0E08);  // wProcessorRevision
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+// GetComputerName(lpBuffer, lpnSize): write "WEBWINE" + update the size in/out.
+fn get_computer_name_a(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
+    let size_ptr = ctx.arg(1);
+    let name = b"WEBWINE";
+    if buf != 0 {
+        let _ = ctx.memory.write_bytes(buf, name);
+        let _ = ctx.memory.write_u8(buf + name.len() as u32, 0);
+    }
+    if size_ptr != 0 {
+        let _ = ctx.memory.write_u32(size_ptr, name.len() as u32);
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn get_computer_name_w(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
+    let size_ptr = ctx.arg(1);
+    let name = "WEBWINE";
+    if buf != 0 {
+        for (i, c) in name.encode_utf16().enumerate() {
+            let _ = ctx.memory.write_u16(buf + i as u32 * 2, c);
+        }
+        let _ = ctx.memory.write_u16(buf + name.len() as u32 * 2, 0);
+    }
+    if size_ptr != 0 {
+        let _ = ctx.memory.write_u32(size_ptr, name.len() as u32);
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+// GetUserName(lpBuffer, lpnSize): write "guest" + the size INCLUDING the null
+// (per the Win32 contract), unlike GetComputerName.
+fn get_user_name_a(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
+    let size_ptr = ctx.arg(1);
+    let name = b"guest";
+    if buf != 0 {
+        let _ = ctx.memory.write_bytes(buf, name);
+        let _ = ctx.memory.write_u8(buf + name.len() as u32, 0);
+    }
+    if size_ptr != 0 {
+        let _ = ctx.memory.write_u32(size_ptr, name.len() as u32 + 1);
+    }
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn get_user_name_w(ctx: &mut ApiContext) -> Handled {
+    let buf = ctx.arg(0);
+    let size_ptr = ctx.arg(1);
+    let name = "guest";
+    if buf != 0 {
+        for (i, c) in name.encode_utf16().enumerate() {
+            let _ = ctx.memory.write_u16(buf + i as u32 * 2, c);
+        }
+        let _ = ctx.memory.write_u16(buf + name.len() as u32 * 2, 0);
+    }
+    if size_ptr != 0 {
+        let _ = ctx.memory.write_u32(size_ptr, name.len() as u32 + 1);
+    }
+    ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
 

@@ -54,8 +54,9 @@ fn main() {
     let guest_exe = format!("{disk}:\\{exe_name}");
 
     let mut vm = WebWineVm::new();
-    // Register the real directory as the chosen drive — 1:1, no copy.
-    vm.fs.register_driver(disk, Box::new(PassthroughStorageDriver::new(&host_dir)));
+    // Register the real directory as the chosen drive — 1:1, no copy. The driver
+    // exposes its own unit via drives().
+    vm.fs.register_storage_driver(Box::new(PassthroughStorageDriver::new(disk, &host_dir)));
     eprintln!("[webwine] {} -> {disk}:\\  (passthrough, no copy)", host_dir.display());
     eprintln!("[webwine] launching {guest_exe}");
 

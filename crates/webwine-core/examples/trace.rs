@@ -116,12 +116,42 @@ fn main() {
     }
     let mut history: Vec<String> = Vec::new();
     let mut stdout = String::new();
+    // WATCH=0xADDR[,0xADDR2] prints regs + key derefs every time EIP hits the
+    // address (capped by WATCHMAX). For single-stepping hot routines like the
+    // PBG3 bit reader. WATCHMAX default 200.
+    let watch: Vec<u32> = std::env::var("WATCH").ok().map(|s| s.split(',')
+        .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+        .collect()).unwrap_or_default();
+    let watch_max: usize = std::env::var("WATCHMAX").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
+    let mut watch_hits = 0usize;
 
     // Drive execution one instruction at a time through the real VM so API
     // dispatch uses the actual registered handlers.
     for i in 0..max_steps {
         let proc = vm.processes.get(pid).unwrap();
         let eip = proc.cpu.eip;
+        if watch.contains(&eip) && watch_hits < watch_max {
+            watch_hits += 1;
+            let c = &proc.cpu;
+            let m = &proc.memory;
+            // For the PBG3 reader (ESI=reader): mask@+0x10, byte@+0xC, cnt@+0x4,
+            // checksum@+0x14, eof-flag@+0x1C.
+            let mask = m.read_u32(c.esi + 0x10).unwrap_or(0xDEAD);
+            let byte = m.read_u32(c.esi + 0xC).unwrap_or(0xDEAD);
+            let cnt = m.read_u32(c.esi + 0x4).unwrap_or(0xDEAD);
+            let flag = m.read_u32(c.esi + 0x1C).unwrap_or(0xDEAD);
+            let _ = (mask, byte, cnt, flag);
+            let rdstr = |addr: u32| -> String {
+                let p = m.read_u32(addr).unwrap_or(0);
+                (0..40).filter_map(|k| m.read_u8(p.wrapping_add(k)).ok())
+                    .take_while(|&b| b != 0).map(|b| b as char).collect()
+            };
+            let arg1 = rdstr(c.esp + 4); // string at [esp+4]
+            let ecx8 = m.read_u32(c.ecx + 8).unwrap_or(0xDEAD);
+            let ecx10 = m.read_u32(c.ecx + 0x10).unwrap_or(0xDEAD);
+            println!("[watch {i}] eip=0x{eip:08X} eax=0x{:08X} ecx=0x{:08X} esi=0x{:08X} arg1@[esp+4]={arg1:?} [ecx+8]=0x{ecx8:08X} [ecx+0x10]=0x{ecx10:08X}",
+                c.eax, c.ecx, c.esi);
+        }
         let disasm = if eip >= TRAMPOLINE_BASE {
             let name = vm.api.lookup_name(eip)
                 .map(|(d, n)| format!("{d}!{n}"))

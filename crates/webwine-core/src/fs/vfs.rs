@@ -7,10 +7,56 @@ use crate::error::{Result, VmError};
 use crate::fs::driver::StorageDriver;
 use crate::fs::path::GuestPath;
 
+/// A file's metadata (name + flags), kept separate from its content. Content for
+/// the in-memory disk lives in `bytes`; driver-backed disks keep content on the
+/// host and fetch it lazily, so callers must go through `content()` rather than
+/// reading a field directly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VfsFile {
     pub name: String,
-    pub bytes: Vec<u8>,
+    /// Ghost file: appears in listings and `stat`, but has no content — reading
+    /// errors, it is never persisted, and it cannot be updated. Used for the
+    /// virtual System32 DLL placeholders so the FS resembles Windows.
+    #[serde(default)]
+    pub is_virtual: bool,
+    // In-memory content. Empty for virtual ghosts. Access via `content()`.
+    #[serde(default)]
+    bytes: Vec<u8>,
+}
+
+impl VfsFile {
+    /// A real file holding `bytes` in memory.
+    pub fn real(name: impl Into<String>, bytes: Vec<u8>) -> Self {
+        VfsFile { name: name.into(), is_virtual: false, bytes }
+    }
+
+    /// A virtual ghost: it exists (listings/stat) but has no readable content.
+    pub fn ghost(name: impl Into<String>) -> Self {
+        VfsFile { name: name.into(), is_virtual: true, bytes: Vec::new() }
+    }
+
+    /// Reported size in bytes (0 for ghosts).
+    pub fn size(&self) -> u64 {
+        if self.is_virtual { 0 } else { self.bytes.len() as u64 }
+    }
+
+    /// Borrow the content. Errors for a virtual ghost ("exists but no content").
+    pub fn content(&self) -> Result<&[u8]> {
+        if self.is_virtual {
+            Err(VmError::NotFound(format!("{}: virtual file has no content", self.name)))
+        } else {
+            Ok(&self.bytes)
+        }
+    }
+}
+
+/// Metadata for a path: the result of a `stat`/`fstat`, returned without reading
+/// content (so driver-backed disks needn't fetch the whole file).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileStat {
+    pub size: u64,
+    pub is_dir: bool,
+    pub is_virtual: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +94,8 @@ pub struct DirEntry {
     pub path: String,
     pub kind: EntryKind,
     pub size: u64,
+    #[serde(default)]
+    pub is_virtual: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,9 +132,81 @@ impl VirtualFileSystem {
         self.drivers.insert(drive.to_ascii_uppercase(), driver);
     }
 
+    /// Register a driver under the drive letter it exposes via `drives()`. Each
+    /// storage driver owns one unit (C:, D:, …) and manages all of its ops.
+    pub fn register_storage_driver(&mut self, driver: Box<dyn StorageDriver>) -> Option<char> {
+        let drive = driver.drives().first().copied()?.to_ascii_uppercase();
+        self.drivers.insert(drive, driver);
+        Some(drive)
+    }
+
+    /// Initialise a disk's default Windows layout — the standard profile and
+    /// system folders plus the WebWINE shell helper exes — creating only what is
+    /// missing (idempotent). Writes go through normal ops, so on a driver-backed
+    /// drive the driver persists them (persistence is the driver's job, not the
+    /// core's). Virtual ghost files are NOT seeded here; they are core-only and
+    /// never persisted. The host decides when to call this (e.g. a persistent
+    /// browser disk on first run); a 1:1 debug passthrough should not, to avoid
+    /// polluting the real directory.
+    pub fn init_disk_defaults(&mut self, drive: char) {
+        const DIRS: &[&[&str]] = &[
+            &["Users", "guest", "Desktop"],
+            &["Users", "guest", "Documents"],
+            &["Users", "guest", "Pictures"],
+            &["Users", "guest", "Music"],
+            &["Users", "guest", "Videos"],
+            &["Users", "guest", "AppData", "Roaming"],
+            &["Users", "guest", "AppData", "Local", "Temp"],
+            &["Windows", "System32"],
+            &["Windows", "Temp"],
+            &["Temp"],
+        ];
+        for chain in DIRS {
+            let mut acc = format!("{drive}:");
+            for seg in *chain {
+                acc.push('\\');
+                acc.push_str(seg);
+                let _ = self.create_dir(&acc); // ignore AlreadyExists
+            }
+        }
+        for (name, marker) in [
+            ("explorer.exe", "special:explorer"),
+            ("uploadfile.exe", "special:upload-file"),
+            ("uploadfolder.exe", "special:upload-folder"),
+        ] {
+            let path = format!("{drive}:\\Windows\\System32\\{name}");
+            if !self.node_exists(&path) {
+                let _ = self.mount_file(&path, marker.as_bytes().to_vec());
+            }
+        }
+    }
+
     /// True if `guest_path`'s drive is backed by a host storage driver.
     fn driver_drive(guest_path: &str) -> Option<char> {
         GuestPath::parse(guest_path).ok().map(|p| p.drive.to_ascii_uppercase())
+    }
+
+    /// Metadata for a path (size / is_dir / is_virtual) without reading content.
+    /// Backs Win32 GetFileAttributes / stat / fstat.
+    pub fn stat(&self, guest_path: &str) -> Result<FileStat> {
+        if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get(&dr)) {
+            return d.stat(guest_path);
+        }
+        let path = GuestPath::parse(guest_path)?;
+        let drive = self.get_drive(path.drive)?;
+        if path.components.is_empty() {
+            return Ok(FileStat { size: 0, is_dir: true, is_virtual: false });
+        }
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
+        let name = path.file_name().ok_or_else(|| VmError::Path("no filename".into()))?;
+        let dir = Self::resolve_dir(drive, &parent_components)?;
+        match dir.children.get(&name.to_ascii_uppercase()) {
+            Some(VfsNode::File(f)) =>
+                Ok(FileStat { size: f.size(), is_dir: false, is_virtual: f.is_virtual }),
+            Some(VfsNode::Directory(_)) =>
+                Ok(FileStat { size: 0, is_dir: true, is_virtual: false }),
+            None => Err(VmError::NotFound(guest_path.to_string())),
+        }
     }
 
     fn bootstrap(&mut self) {
@@ -299,10 +419,7 @@ impl VirtualFileSystem {
             let key = parts[0].to_ascii_uppercase();
             dir.children.insert(
                 key,
-                VfsNode::File(VfsFile {
-                    name: parts[0].to_string(),
-                    bytes,
-                }),
+                VfsNode::File(VfsFile::real(parts[0].to_string(), bytes)),
             );
             return;
         }
@@ -359,6 +476,26 @@ impl VirtualFileSystem {
         }
     }
 
+    /// Insert a virtual ghost file (exists in listings/stat, errors on read,
+    /// never persisted). No-op if a real file already occupies the path. Always
+    /// targets the in-memory tree — ghosts are core-managed, not driver state.
+    pub fn mount_virtual_file(&mut self, guest_path: &str) -> Result<()> {
+        let path = GuestPath::parse(guest_path)?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| VmError::Path("path has no filename".into()))?
+            .to_string();
+        let parent_components = path.parent().map(|p| p.components).unwrap_or_default();
+        let drive = self.get_drive_mut(path.drive)?;
+        let dir = Self::resolve_dir_mut(drive, &parent_components)?;
+        let key = file_name.to_ascii_uppercase();
+        if matches!(dir.children.get(&key), Some(VfsNode::File(f)) if !f.is_virtual) {
+            return Ok(()); // don't shadow a real file with a ghost
+        }
+        dir.children.insert(key, VfsNode::File(VfsFile::ghost(file_name)));
+        Ok(())
+    }
+
     pub fn mount_file(&mut self, guest_path: &str, bytes: Vec<u8>) -> Result<()> {
         if let Some(d) = Self::driver_drive(guest_path).and_then(|dr| self.drivers.get_mut(&dr)) {
             return d.write(guest_path, &bytes);
@@ -375,13 +512,13 @@ impl VirtualFileSystem {
         let dir = Self::resolve_dir_mut(drive, &parent_components)?;
 
         let key = file_name.to_ascii_uppercase();
-        dir.children.insert(
-            key,
-            VfsNode::File(VfsFile {
-                name: file_name,
-                bytes,
-            }),
-        );
+        // A virtual ghost cannot be updated or replaced through normal writes.
+        if let Some(VfsNode::File(f)) = dir.children.get(&key) {
+            if f.is_virtual {
+                return Err(VmError::Path(format!("{file_name}: virtual file is read-only")));
+            }
+        }
+        dir.children.insert(key, VfsNode::File(VfsFile::real(file_name, bytes)));
         Ok(())
     }
 
@@ -426,9 +563,9 @@ impl VirtualFileSystem {
             .children
             .values()
             .map(|node| {
-                let (kind, size) = match node {
-                    VfsNode::File(f) => (EntryKind::File, f.bytes.len() as u64),
-                    VfsNode::Directory(_) => (EntryKind::Directory, 0),
+                let (kind, size, is_virtual) = match node {
+                    VfsNode::File(f) => (EntryKind::File, f.size(), f.is_virtual),
+                    VfsNode::Directory(_) => (EntryKind::Directory, 0, false),
                 };
                 let entry_path = if path.components.is_empty() {
                     format!("{}:\\{}", path.drive, node.name())
@@ -445,6 +582,7 @@ impl VirtualFileSystem {
                     path: entry_path,
                     kind,
                     size,
+                    is_virtual,
                 }
             })
             .collect();
@@ -477,17 +615,18 @@ impl VirtualFileSystem {
         let key = file_name.to_ascii_uppercase();
         match dir.children.get(&key) {
             Some(VfsNode::File(f)) if file_name.to_lowercase().ends_with(".lnk") => {
-                if let Some(target) = Self::shortcut_target(&f.bytes) {
+                let bytes = f.content()?;
+                if let Some(target) = Self::shortcut_target(bytes) {
                     if target.to_lowercase().starts_with("action:") {
-                        return Ok(f.bytes.clone());
+                        return Ok(bytes.to_vec());
                     }
                     if self.node_exists(&target) {
                         return self.read_file_internal(&target, depth + 1);
                     }
                 }
-                Ok(f.bytes.clone())
+                Ok(bytes.to_vec())
             }
-            Some(VfsNode::File(f)) => Ok(f.bytes.clone()),
+            Some(VfsNode::File(f)) => Ok(f.content()?.to_vec()),
             Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
             None => Err(VmError::NotFound(guest_path.to_string())),
         }
@@ -504,7 +643,7 @@ impl VirtualFileSystem {
         let drive = self.get_drive(path.drive)?;
         let dir = Self::resolve_dir(drive, &parent_components)?;
         match dir.children.get(&file_name.to_ascii_uppercase()) {
-            Some(VfsNode::File(f)) => Ok(&f.bytes),
+            Some(VfsNode::File(f)) => f.content(),
             Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
             None => Err(VmError::NotFound(guest_path.to_string())),
         }
@@ -542,7 +681,7 @@ impl VirtualFileSystem {
 
         let key = file_name.to_ascii_uppercase();
         match dir.children.get(&key) {
-            Some(VfsNode::File(f)) => Ok(f.bytes.clone()),
+            Some(VfsNode::File(f)) => f.content().map(|b| b.to_vec()),
             Some(VfsNode::Directory(_)) => Err(VmError::NotAFile(guest_path.to_string())),
             None => Err(VmError::NotFound(guest_path.to_string())),
         }
@@ -644,13 +783,6 @@ impl VirtualFileSystem {
         }
     }
 
-    pub fn export_snapshot(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| VmError::Internal(format!("VFS serialize failed: {e}")))
-    }
-
-    pub fn import_snapshot(bytes: &[u8]) -> Result<Self> {
-        bincode::deserialize(bytes).map_err(|e| VmError::Internal(format!("VFS deserialize failed: {e}")))
-    }
 }
 
 impl Default for VirtualFileSystem {
@@ -662,6 +794,27 @@ impl Default for VirtualFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn virtual_files_exist_but_error_on_read_and_are_not_persisted() {
+        let mut fs = VirtualFileSystem::new();
+        let p = "C:\\Windows\\System32\\kernel32.dll";
+        fs.mount_virtual_file(p).unwrap();
+
+        // Exists in listings and stat, with is_virtual + zero size.
+        assert!(fs.node_exists(p));
+        let st = fs.stat(p).unwrap();
+        assert!(st.is_virtual && st.size == 0);
+        assert!(fs.list_dir("C:\\Windows\\System32\\").unwrap()
+            .iter().any(|e| e.name == "kernel32.dll" && e.is_virtual));
+
+        // Accessing content errors ("exists but no content").
+        assert!(fs.read_file(p).is_err());
+        assert!(fs.read_range(p, 0, 16).is_err());
+
+        // A virtual ghost cannot be overwritten by a normal write.
+        assert!(fs.mount_file(p, b"real".to_vec()).is_err());
+    }
 
     #[test]
     fn bootstrap_creates_guest_profile_folders() {

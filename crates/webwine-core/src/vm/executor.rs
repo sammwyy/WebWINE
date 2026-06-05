@@ -653,6 +653,11 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
     use Mnemonic::*;
     match instr.mnemonic() {
         Nop | Pause => StepResult::Continue,
+        // Direction flag. Without these, the CRT's strrchr/memchr backward
+        // `std; repne scasb` scans forward and never finds the char — which broke
+        // Touhou 6's archive lookup (it strips "data/..." via strrchr('/')).
+        Cld => { cpu.eflags &= !crate::vm::cpu::DF; StepResult::Continue }
+        Std => { cpu.eflags |= crate::vm::cpu::DF; StepResult::Continue }
 
         Mov => exec_mov(instr, cpu, mem),
         Movzx => exec_movzx(instr, cpu, mem),

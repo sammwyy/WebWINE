@@ -13,12 +13,13 @@ use webwine_core::fs::vfs::{DirEntry, EntryKind};
 
 #[derive(Debug)]
 pub struct PassthroughStorageDriver {
+    drive: char,
     root: PathBuf,
 }
 
 impl PassthroughStorageDriver {
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        PassthroughStorageDriver { root: root.into() }
+    pub fn new(drive: char, root: impl Into<PathBuf>) -> Self {
+        PassthroughStorageDriver { drive: drive.to_ascii_uppercase(), root: root.into() }
     }
 
     /// Map a guest path (`X:\a\b`) to a host path under `root`. The drive letter
@@ -45,6 +46,10 @@ impl PassthroughStorageDriver {
 }
 
 impl StorageDriver for PassthroughStorageDriver {
+    fn drives(&self) -> Vec<char> {
+        vec![self.drive]
+    }
+
     fn exists(&self, path: &str) -> bool {
         self.host(path).exists()
     }
@@ -80,6 +85,7 @@ impl StorageDriver for PassthroughStorageDriver {
                 path: Self::child_guest_path(path, &name),
                 kind: if is_dir { EntryKind::Directory } else { EntryKind::File },
                 size: md.map(|m| m.len()).unwrap_or(0),
+                is_virtual: false,
             });
         }
         Ok(out)

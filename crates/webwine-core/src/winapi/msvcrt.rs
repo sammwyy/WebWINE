@@ -77,8 +77,14 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "itoa", |c| itoa_radix(c, true)),
         // CRT fd <-> Win32 HANDLE mapping (cmd.exe queries its std handles).
         ("msvcrt.dll", "_get_osfhandle", get_osfhandle),
+        ("msvcrt.dll", "_open_osfhandle", open_osfhandle),
         ("msvcrt.dll", "_isatty", |c| { let fd = c.arg(0); c.ret_cdecl(if fd <= 2 { 1 } else { 0 }); Handled::Ok }),
         ("msvcrt.dll", "_fileno", |c| { let s = c.arg(0); c.ret_cdecl(s); Handled::Ok }),
+        // fd lifecycle (stdio redirection). We don't keep a real fd table, so
+        // _dup returns the same fd, _dup2/_close report success.
+        ("msvcrt.dll", "_dup", |c| { let fd = c.arg(0); c.ret_cdecl(fd); Handled::Ok }),
+        ("msvcrt.dll", "_dup2", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcrt.dll", "_close", |c| { c.ret_cdecl(0); Handled::Ok }),
         ("msvcrt.dll", "atof", stub_zero_cdecl_1),
         ("msvcrt.dll", "puts", puts),
         ("msvcrt.dll", "putchar", putchar),
@@ -726,6 +732,22 @@ fn to_radix(mut v: u64, radix: u32) -> String {
     }
     buf.reverse();
     String::from_utf8(buf).unwrap()
+}
+
+// _open_osfhandle(osfhandle, flags): inverse of _get_osfhandle — wrap a Win32
+// HANDLE in a CRT fd. The std handles map back to fds 0/1/2; anything else gets
+// a generic non-std fd (3), enough for apps that wrap a console handle for
+// stdio redirection.
+fn open_osfhandle(ctx: &mut ApiContext) -> Handled {
+    let fd = match ctx.arg(0) {
+        0xFFFF_FFF6 => 0, // stdin
+        0xFFFF_FFF5 => 1, // stdout
+        0xFFFF_FFF4 => 2, // stderr
+        0xFFFF_FFFF => -1i32 as u32, // INVALID_HANDLE_VALUE -> error
+        _ => 3,
+    };
+    ctx.ret_cdecl(fd);
+    Handled::Ok
 }
 
 // _get_osfhandle(fd): map CRT fd 0/1/2 to the std Win32 HANDLEs.
