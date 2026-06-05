@@ -249,10 +249,19 @@ impl WebWineVm {
             }
         }
 
-        // When a process dies, close any windows it left open: emit a
-        // DestroyWindow per window so the shell driver (frontend) tears them down.
-        // Otherwise a crashed/exited app's windows would linger on the desktop.
-        if matches!(result.state, ProcessState::Exited { .. } | ProcessState::Crashed { .. }) {
+        // Window teardown on process death. A CLEAN exit (the app called
+        // ExitProcess normally) closes its windows. An ABNORMAL death — a crash,
+        // or the graceful halt on control-flow corruption (exit code
+        // STATUS_ACCESS_VIOLATION) — instead leaves the last frame frozen on
+        // screen rather than making the window vanish, which is friendlier for
+        // debugging and for apps that die mid-render (e.g. a game still bringing
+        // up its UI). The frontend just stops feeding it; the window persists.
+        const STATUS_ACCESS_VIOLATION: u32 = 0xC000_0005;
+        let clean_exit = matches!(
+            result.state,
+            ProcessState::Exited { exit_code } if exit_code != STATUS_ACCESS_VIOLATION
+        );
+        if clean_exit {
             if let Some(proc) = self.processes.get_mut(pid) {
                 if !proc.gui.windows.is_empty() {
                     let mut hwnds: Vec<u32> = proc.gui.windows.keys().copied().collect();
@@ -262,7 +271,7 @@ impl WebWineVm {
                     }
                     proc.gui.windows.clear();
                     self.logs.log(LogLevel::Info, "process",
-                        &format!("pid={pid} died — closed its windows"), Some(pid));
+                        &format!("pid={pid} exited — closed its windows"), Some(pid));
                 }
             }
         }

@@ -5,6 +5,7 @@ import { showMessageBox } from "../message-box/MessageBoxApp";
 import { beep } from "@/shared/lib/beep";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { UiEvent } from "@/core/wasm/worker";
+import { WebGLVideoDriver, type GpuCommand } from "@/core/gpu/video-driver";
 
 const WM_CLOSE = 0x0010;
 
@@ -13,9 +14,35 @@ const WM_CLOSE = 0x0010;
 interface GuestWindowRecord {
   winId: string;
   canvas: HTMLCanvasElement;
-  ctx2d: CanvasRenderingContext2D;
+  // A window is either GDI (2D canvas) or Direct3D8 (WebGL) — a canvas can hold
+  // only one context type, so we pick lazily on the first event.
+  ctx2d: CanvasRenderingContext2D | null;
+  gl: WebGLVideoDriver | null;
   destroyed: boolean;
   queue: UiEvent[];
+}
+
+/** Route one event to the window's 2D or WebGL backend, creating it lazily. */
+function paint(rec: GuestWindowRecord, ev: UiEvent) {
+  if (ev.kind.startsWith("gpu_")) {
+    if (!rec.gl && !rec.ctx2d) {
+      try {
+        rec.gl = new WebGLVideoDriver(rec.canvas, rec.canvas.width, rec.canvas.height);
+      } catch {
+        return; // WebGL unavailable
+      }
+    }
+    rec.gl?.submit(ev as GpuCommand);
+    return;
+  }
+  if (!rec.ctx2d && !rec.gl) {
+    rec.ctx2d = rec.canvas.getContext("2d");
+    if (rec.ctx2d) {
+      rec.ctx2d.fillStyle = "#fff";
+      rec.ctx2d.fillRect(0, 0, rec.canvas.width, rec.canvas.height);
+    }
+  }
+  if (rec.ctx2d) draw(rec.ctx2d, ev);
 }
 
 const guestWindows = new Map<string, GuestWindowRecord>();
@@ -75,7 +102,7 @@ export function handleUiEvents(
       default: {
         const g = guestWindows.get(key(pid, ev.hwnd as number));
         if (g) {
-          if (g.ctx2d) draw(g.ctx2d, ev);
+          if (g.canvas) paint(g, ev);
           else g.queue.push(ev);
         }
       }
@@ -182,7 +209,8 @@ function createGuestWindow(
   guestWindows.set(k, {
     winId,
     canvas: null as unknown as HTMLCanvasElement,
-    ctx2d: null as unknown as CanvasRenderingContext2D,
+    ctx2d: null,
+    gl: null,
     destroyed: false,
     queue: [],
   });
@@ -207,12 +235,9 @@ function GuestWindowApp({
     if (!rec || !canvasRef.current) return;
 
     rec.canvas = canvasRef.current;
-    rec.ctx2d = canvasRef.current.getContext("2d")!;
-    rec.ctx2d.fillStyle = "#fff";
-    rec.ctx2d.fillRect(0, 0, rec.canvas.width, rec.canvas.height);
-
+    // Context (2D vs WebGL) is chosen lazily by the first queued/live event.
     for (const queuedEv of rec.queue) {
-      draw(rec.ctx2d, queuedEv);
+      paint(rec, queuedEv);
     }
     rec.queue = [];
 

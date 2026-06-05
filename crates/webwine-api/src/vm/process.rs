@@ -63,6 +63,23 @@ pub enum UiEvent {
     Blit { hwnd: u32, x: i32, y: i32, w: i32, h: i32, src_w: i32, src_h: i32, pixels: Vec<u8> },
     // System sounds.
     Beep { freq: u32, duration: u32 },
+
+    // ── Direct3D8 GPU command stream ──────────────────────────────────────────
+    // Emitted by the directx crate's D3D8 state tracker; consumed by the host
+    // VideoDriver (WebGL/WebGPU). The guest-side D3D8 COM layer translates draw
+    // calls into these backend-agnostic commands. `hwnd` is the device's window.
+    //
+    // Clear the backbuffer to `color` (D3DCOLOR = 0x00AARRGGBB... actually ARGB).
+    GpuClear { hwnd: u32, color: u32 },
+    // Define/upload a texture `id` with RGBA8888 `pixels` (w*h*4 bytes).
+    GpuTexture { hwnd: u32, id: u32, w: u32, h: u32, pixels: Vec<u8> },
+    // Draw textured/colored triangles. `verts` is a flat list of
+    // [x, y, u, v, r, g, b, a] per vertex (screen-space px, 0..1 uv, 0..1 rgba);
+    // every 3 verts = a triangle. `texture` 0 = untextured. `blend` = a small
+    // blend-mode id (0 none, 1 alpha, 2 additive).
+    GpuDrawTris { hwnd: u32, texture: u32, blend: u32, verts: Vec<f32> },
+    // End of frame: flush/swap.
+    GpuPresent { hwnd: u32 },
 }
 
 /// High byte tag marking a GDI object handle (memory DC / DIB section), distinct

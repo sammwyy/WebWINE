@@ -85,6 +85,7 @@ pub fn run_slice(
                 break;
             }
             StepResult::Fault(r) => {
+                let fault_eip = proc.cpu.eip; // before SEH mutates it
                 let last = describe_instr(proc, prev_eip);
                 logs.log(
                     LogLevel::Error,
@@ -120,7 +121,24 @@ pub fn run_slice(
                     }
                     continue;
                 }
-                proc.state = ProcessState::Crashed { reason: r };
+                // Control-flow corruption: execution reached an impossibly-low
+                // address (a `ret`/`call` into a clobbered pointer, e.g. a guest
+                // stack-buffer overflow during asset loading). The app is already
+                // unrecoverable, but tearing the process down kills its window and
+                // surfaces as a "crash". For a GUI app it's friendlier to halt
+                // gracefully and leave the last frame on screen — so degrade to a
+                // clean stop (logged as a warning, still visible for debugging).
+                if fault_eip < 0x1_0000 {
+                    logs.log(
+                        LogLevel::Warn,
+                        "cpu",
+                        &format!("[cpu] halted: control flow corrupted (EIP=0x{fault_eip:08X}) — {r}"),
+                        Some(proc.pid),
+                    );
+                    proc.state = ProcessState::Exited { exit_code: 0xC000_0005 };
+                } else {
+                    proc.state = ProcessState::Crashed { reason: r };
+                }
                 break;
             }
         }

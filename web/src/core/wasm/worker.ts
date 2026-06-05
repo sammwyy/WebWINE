@@ -132,7 +132,12 @@ export type UiEvent =
   | { kind: "line"; hwnd: number; x1: number; y1: number; x2: number; y2: number; color: number }
   | { kind: "set_pixel"; hwnd: number; x: number; y: number; color: number }
   | { kind: "blit"; hwnd: number; x: number; y: number; w: number; h: number; src_w: number; src_h: number; pixels: number[] }
-  | { kind: "beep"; freq: number; duration: number };
+  | { kind: "beep"; freq: number; duration: number }
+  // Direct3D8 GPU command stream (consumed by a VideoDriver / WebGLVideoDriver).
+  | { kind: "gpu_clear"; hwnd: number; color: number }
+  | { kind: "gpu_texture"; hwnd: number; id: number; w: number; h: number; pixels: number[] }
+  | { kind: "gpu_draw_tris"; hwnd: number; texture: number; blend: number; verts: number[] }
+  | { kind: "gpu_present"; hwnd: number };
 
 export interface SliceResult {
   pid: number;
