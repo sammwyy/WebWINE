@@ -7,6 +7,7 @@ pub mod winmm;
 pub mod ddraw;
 pub mod dsound;
 pub mod dinput;
+pub mod extra_dlls;
 
 pub use context::{ApiContext, Handled};
 
@@ -165,6 +166,7 @@ pub fn register_all(r: &mut WinApiRegistry) {
     ddraw::register(r);
     dsound::register(r);
     dinput::register(r);
+    extra_dlls::register(r);
     r.finalize(); // allocate GetProcAddress trampolines for every registered name
 }
 

@@ -22,8 +22,8 @@ export const ICON_REGISTRY = {
     default: "exts/default.webp",
   },
   exts: {
-    dll: "shell/default_executable.webp",
     exe: "shell/default_executable.webp",
+    dll: "exts/dll.webp",
     txt: "exts/txt.webp",
   } as Record<string, string>,
   paths: {
