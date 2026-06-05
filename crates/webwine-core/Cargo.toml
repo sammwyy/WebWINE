@@ -7,6 +7,7 @@ edition = "2021"
 webwine-api = { path = "../webwine-api" }
 webwine-api-winapi = { path = "../webwine-api-winapi" }
 webwine-api-directx = { path = "../webwine-api-directx" }
+webwine-api-mediafoundation = { path = "../webwine-api-mediafoundation" }
 webwine-api-net20 = { path = "../webwine-api-net20" }
 thiserror = "1"
 indexmap = { version = "2", features = ["serde"] }

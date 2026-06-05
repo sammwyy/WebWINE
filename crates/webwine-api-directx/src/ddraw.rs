@@ -1,642 +1,177 @@
-﻿//! DirectDraw / Direct3D stub for WebWINE.
+//! DirectDraw 7 stub (ddraw.dll) — enough of the classic "blit-to-primary-surface"
+//! 2D path for games like Touhou 6. Output goes out as a `UiEvent::Blit` (RGBA8888),
+//! the same seam GDI uses, which the frontend paints onto the window canvas.
 //!
-//! Implements enough of the DDraw COM interface for 2D games that use the
-//! classic "blit-to-primary-surface" rendering loop (Touhou 6, Dune 2000,
-//! Warcraft II, etc.).  The output path is identical to GDI: we emit a
-//! `UiEvent::Blit` with an RGBA8888 pixel buffer that the frontend paints
-//! onto the guest window's canvas.
-//!
-//! ## How DDraw COM works (abridged)
-//!
-//! Every COM object is laid out in guest memory as:
-//!
-//!   [object VA]  â†’ [vtable ptr]  (4 bytes, points at vtable)
-//!   [vtable VA]  â†’ [slot 0 ptr]  (QueryInterface)
-//!                  [slot 1 ptr]  (AddRef)
-//!                  [slot 2 ptr]  (Release)
-//!                  [slot 3 ptr]  (first real method)
-//!                  ...
-//!
-//! The guest calls `object->Method(args)` as `CALL [vtable + N*4]`, which
-//! pushes `this` as the first stdcall argument.  Each vtable slot is a
-//! trampoline VA allocated by `WinApiRegistry::resolve_trampoline`, which the
-//! executor intercepts and routes to a handler here.
-//!
-//! ## Guest memory layout (all allocated on the guest heap)
-//!
-//! ```text
-//! IDirectDraw7 object  (4 bytes: vtable ptr)
-//!   â””â”€ IDirectDraw7 vtable  (N * 4 bytes: trampoline VAs)
-//!
-//! IDirectDrawSurface7 object  (8 bytes: vtable ptr + surface-id u32)
-//!   â””â”€ IDirectDrawSurface7 vtable  (M * 4 bytes: trampoline VAs)
-//!
-//! IDirectDrawClipper object  (4 bytes: vtable ptr)
-//!   â””â”€ IDirectDrawClipper vtable  (K * 4 bytes)
-//! ```
-//!
-//! The surface-id stored in the object at +4 is an index into
-//! `GuiState::ddraw_surfaces`, which lives in the guest process state.
-//!
-//! ## Supported operations
-//!
-//! - `DirectDrawCreate` / `DirectDrawCreateEx`  â†’  IDirectDraw7 object
-//! - `IDirectDraw7::SetCooperativeLevel`         â†’  S_OK
-//! - `IDirectDraw7::SetDisplayMode`              â†’  S_OK (records w/h/bpp)
-//! - `IDirectDraw7::CreateSurface`               â†’  IDirectDrawSurface7
-//!     - DDSCAPS_PRIMARYSURFACE  â†’  primary (front-buffer)
-//!     - DDSCAPS_OFFSCREENPLAIN  â†’  offscreen (back-buffer / sprite sheet)
-//!     - With DDSCAPS_FLIP / backBufferCount â†’ automatically creates a back surface
-//! - `IDirectDrawSurface7::Lock` / `Unlock`      â†’  direct pixel pointer
-//! - `IDirectDrawSurface7::Blt` / `BltFast`      â†’  surface-to-surface blit
-//! - `IDirectDrawSurface7::Flip`                 â†’  backâ†’primary, emits Blit event
-//! - `IDirectDrawSurface7::SetColorKey`          â†’  records transparent colour
-//! - `IDirectDrawSurface7::GetAttachedSurface`   â†’  back-buffer handle
-//! - `IDirectDrawSurface7::Release`              â†’  frees surface slot
-//! - `IDirectDraw7::CreateClipper`               â†’  IDirectDrawClipper (stub)
-//! - `IDirectDrawSurface7::SetClipper`           â†’  no-op
-//! - `IDirectDraw7::QueryInterface`              â†’  self (IID ignored, works for
-//!                                                   IDirectDraw â†’ IDirectDraw7 upgrades)
+//! COM layout / vtable mechanism: see the crate root. Each interface below is a
+//! `Vtable` table whose slots map to either a dedicated handler (real logic) or a
+//! shared `sV_N` stub (return value V, clean N args). The surface id is stored in
+//! the COM object at +4 (`extra`).
 
 use webwine_api::vm::process::{DDrawSurface, UiEvent};
 use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
+use crate::{
+    com_qi, make_object, register_vtable, s0_1, s0_2, s0_3, s0_4, s1_1, Vtable,
+};
+
 // HRESULT constants
 const S_OK: u32 = 0x0000_0000;
-const DDERR_GENERIC: u32 = 0x8876_03E8; // returned on real errors
+const DDERR_GENERIC: u32 = 0x8876_03E8;
 const DDERR_INVALIDPARAMS: u32 = 0x8876_0057;
 
-// DDSCAPS flags (from ddraw.h)
+// DDSCAPS flags (ddraw.h)
 const DDSCAPS_PRIMARYSURFACE: u32 = 0x0000_0200;
 const DDSCAPS_OFFSCREENPLAIN: u32 = 0x0000_0040;
-const DDSCAPS_FLIP: u32 = 0x0000_0400; // front/back flip chain
-const DDSCAPS_BACKBUFFER: u32 = 0x0000_0004;
+const DDSCAPS_FLIP: u32 = 0x0000_0400;
 
-// DDSURFACEDESC2 offsets (simplified flat layout we care about)
-// typedef struct { DWORD dwSize; DWORD dwFlags; DWORD dwHeight; DWORD dwWidth;
-//   LONG  lPitch; DWORD dwBackBufferCount; ... DDSCAPS2 ddsCaps; ... LPVOID lpSurface; }
+// DDSURFACEDESC2 field offsets (the subset we touch).
 const DESC_FLAGS: u32 = 4;
 const DESC_HEIGHT: u32 = 8;
 const DESC_WIDTH: u32 = 12;
 const DESC_PITCH: u32 = 16;
 const DESC_BACK_COUNT: u32 = 20;
-const DESC_SURFACE_PTR: u32 = 108; // lpSurface (varies by SDK; most common offset)
-const DESC_CAPS_CAPS1: u32 = 96; // DDSCAPS2.dwCaps (within DDSURFACEDESC2)
+const DESC_SURFACE_PTR: u32 = 108;
+const DESC_CAPS_CAPS1: u32 = 96;
 
 // DDSD flags
-const DDSD_CAPS: u32 = 0x0000_0001;
 const DDSD_HEIGHT: u32 = 0x0000_0002;
 const DDSD_WIDTH: u32 = 0x0000_0004;
 const DDSD_BACKBUFFERCOUNT: u32 = 0x0000_0020;
 const DDSD_PITCH: u32 = 0x0000_0008;
 
-// vtable slot counts
-// IDirectDraw7 has 33 methods (3 IUnknown + 30 DDraw-specific).
-const IDDRAW7_SLOTS: usize = 33;
-// IDirectDrawSurface7 has 37 methods.
-const IDDSURFACE7_SLOTS: usize = 37;
-// IDirectDrawClipper has 8 methods.
-const IDDCLIPPER_SLOTS: usize = 8;
+// ─── interface vtables ───────────────────────────────────────────────────────
 
-// "magic" surface IDs stored inside each surface object at offset +4
-// Surface ID 0 is reserved / "none".
-
-// vtable method name tables
-// Names are used as the trampoline key registered with WinApiRegistry.
-// The fake DLL name "ddraw.vtbl" separates them from IAT imports.
-const IDDRAW7_METHODS: &[&str] = &[
-    // IUnknown
-    "IDirectDraw7::QueryInterface", // 0
-    "IDirectDraw7::AddRef",         // 1
-    "IDirectDraw7::Release",        // 2
-    // IDirectDraw7
-    "IDirectDraw7::Compact",                // 3
-    "IDirectDraw7::CreateClipper",          // 4
-    "IDirectDraw7::CreatePalette",          // 5
-    "IDirectDraw7::CreateSurface",          // 6
-    "IDirectDraw7::DuplicateSurface",       // 7
-    "IDirectDraw7::EnumDisplayModes",       // 8
-    "IDirectDraw7::EnumSurfaces",           // 9
-    "IDirectDraw7::FlipToGDISurface",       // 10
-    "IDirectDraw7::GetCaps",                // 11
-    "IDirectDraw7::GetDisplayMode",         // 12
-    "IDirectDraw7::GetFourCCCodes",         // 13
-    "IDirectDraw7::GetGDISurface",          // 14
-    "IDirectDraw7::GetMonitorFrequency",    // 15
-    "IDirectDraw7::GetScanLine",            // 16
-    "IDirectDraw7::GetVerticalBlankStatus", //17
-    "IDirectDraw7::Initialize",             // 18
-    "IDirectDraw7::RestoreDisplayMode",     // 19
-    "IDirectDraw7::SetCooperativeLevel",    // 20
-    "IDirectDraw7::SetDisplayMode",         // 21
-    "IDirectDraw7::WaitForVerticalBlank",   //22
-    "IDirectDraw7::GetAvailableVidMem",     // 23
-    "IDirectDraw7::GetSurfaceFromDC",       // 24
-    "IDirectDraw7::RestoreAllSurfaces",     // 25
-    "IDirectDraw7::TestCooperativeLevel",   //26
-    "IDirectDraw7::GetDeviceIdentifier",    // 27
-    "IDirectDraw7::StartModeTest",          // 28
-    "IDirectDraw7::EvaluateMode",           // 29
-    // IDirectDraw4 extras promoted to 7 (some impls add these)
-    "IDirectDraw7::_reserved30", // 30
-    "IDirectDraw7::_reserved31", // 31
-    "IDirectDraw7::_reserved32", // 32
+pub(crate) const IDDRAW7: Vtable = &[
+    ("IDirectDraw7::QueryInterface", com_qi),
+    ("IDirectDraw7::AddRef", s1_1),
+    ("IDirectDraw7::Release", s1_1),
+    ("IDirectDraw7::Compact", s0_1),
+    ("IDirectDraw7::CreateClipper", iddraw7_create_clipper),
+    ("IDirectDraw7::CreatePalette", s0_4),
+    ("IDirectDraw7::CreateSurface", iddraw7_create_surface),
+    ("IDirectDraw7::DuplicateSurface", s0_1),
+    ("IDirectDraw7::EnumDisplayModes", s0_3),
+    ("IDirectDraw7::EnumSurfaces", s0_1),
+    ("IDirectDraw7::FlipToGDISurface", s0_1),
+    ("IDirectDraw7::GetCaps", iddraw7_get_caps),
+    ("IDirectDraw7::GetDisplayMode", iddraw7_get_display_mode),
+    ("IDirectDraw7::GetFourCCCodes", s0_1),
+    ("IDirectDraw7::GetGDISurface", s0_1),
+    ("IDirectDraw7::GetMonitorFrequency", iddraw7_get_monitor_frequency),
+    ("IDirectDraw7::GetScanLine", s0_1),
+    ("IDirectDraw7::GetVerticalBlankStatus", iddraw7_get_vblank_status),
+    ("IDirectDraw7::Initialize", s0_1),
+    ("IDirectDraw7::RestoreDisplayMode", s0_1),
+    ("IDirectDraw7::SetCooperativeLevel", s0_3),
+    ("IDirectDraw7::SetDisplayMode", iddraw7_set_display_mode),
+    ("IDirectDraw7::WaitForVerticalBlank", s0_3),
+    ("IDirectDraw7::GetAvailableVidMem", iddraw7_get_available_vidmem),
+    ("IDirectDraw7::GetSurfaceFromDC", s0_1),
+    ("IDirectDraw7::RestoreAllSurfaces", s0_1),
+    ("IDirectDraw7::TestCooperativeLevel", s0_1),
+    ("IDirectDraw7::GetDeviceIdentifier", iddraw7_get_device_identifier),
+    ("IDirectDraw7::StartModeTest", s0_1),
+    ("IDirectDraw7::EvaluateMode", s0_1),
+    ("IDirectDraw7::_reserved30", s0_1),
+    ("IDirectDraw7::_reserved31", s0_1),
+    ("IDirectDraw7::_reserved32", s0_1),
 ];
 
-const IDDSURFACE7_METHODS: &[&str] = &[
-    // IUnknown
-    "IDirectDrawSurface7::QueryInterface", // 0
-    "IDirectDrawSurface7::AddRef",         // 1
-    "IDirectDrawSurface7::Release",        // 2
-    // IDirectDrawSurface7
-    "IDirectDrawSurface7::AddAttachedSurface",    // 3
-    "IDirectDrawSurface7::AddOverlayDirtyRect",   // 4
-    "IDirectDrawSurface7::Blt",                   // 5
-    "IDirectDrawSurface7::BltBatch",              // 6
-    "IDirectDrawSurface7::BltFast",               // 7
-    "IDirectDrawSurface7::DeleteAttachedSurface", //8
-    "IDirectDrawSurface7::EnumAttachedSurfaces",  // 9
-    "IDirectDrawSurface7::EnumOverlayZOrders",    // 10
-    "IDirectDrawSurface7::Flip",                  // 11
-    "IDirectDrawSurface7::GetAttachedSurface",    // 12
-    "IDirectDrawSurface7::GetBltStatus",          // 13
-    "IDirectDrawSurface7::GetCaps",               // 14
-    "IDirectDrawSurface7::GetClipper",            // 15
-    "IDirectDrawSurface7::GetColorKey",           // 16
-    "IDirectDrawSurface7::GetDC",                 // 17
-    "IDirectDrawSurface7::GetFlipStatus",         // 18
-    "IDirectDrawSurface7::GetOverlayPosition",    // 19
-    "IDirectDrawSurface7::GetPalette",            // 20
-    "IDirectDrawSurface7::GetPixelFormat",        // 21
-    "IDirectDrawSurface7::GetSurfaceDesc",        // 22
-    "IDirectDrawSurface7::Initialize",            // 23
-    "IDirectDrawSurface7::IsLost",                // 24
-    "IDirectDrawSurface7::Lock",                  // 25
-    "IDirectDrawSurface7::ReleaseDC",             // 26
-    "IDirectDrawSurface7::Restore",               // 27
-    "IDirectDrawSurface7::SetClipper",            // 28
-    "IDirectDrawSurface7::SetColorKey",           // 29
-    "IDirectDrawSurface7::SetOverlayPosition",    // 30
-    "IDirectDrawSurface7::SetPalette",            // 31
-    "IDirectDrawSurface7::Unlock",                // 32
-    "IDirectDrawSurface7::UpdateOverlay",         // 33
-    "IDirectDrawSurface7::UpdateOverlayDisplay",  // 34
-    "IDirectDrawSurface7::UpdateOverlayZOrder",   // 35
-    "IDirectDrawSurface7::GetDDInterface",        // 36
+pub(crate) const IDDSURFACE7: Vtable = &[
+    ("IDirectDrawSurface7::QueryInterface", com_qi),
+    ("IDirectDrawSurface7::AddRef", s1_1),
+    ("IDirectDrawSurface7::Release", iddsurface7_release),
+    ("IDirectDrawSurface7::AddAttachedSurface", s0_1),
+    ("IDirectDrawSurface7::AddOverlayDirtyRect", s0_1),
+    ("IDirectDrawSurface7::Blt", iddsurface7_blt),
+    ("IDirectDrawSurface7::BltBatch", s0_1),
+    ("IDirectDrawSurface7::BltFast", iddsurface7_blt_fast),
+    ("IDirectDrawSurface7::DeleteAttachedSurface", s0_1),
+    ("IDirectDrawSurface7::EnumAttachedSurfaces", s0_1),
+    ("IDirectDrawSurface7::EnumOverlayZOrders", s0_1),
+    ("IDirectDrawSurface7::Flip", iddsurface7_flip),
+    ("IDirectDrawSurface7::GetAttachedSurface", iddsurface7_get_attached_surface),
+    ("IDirectDrawSurface7::GetBltStatus", s0_2),
+    ("IDirectDrawSurface7::GetCaps", s0_1),
+    ("IDirectDrawSurface7::GetClipper", s0_1),
+    ("IDirectDrawSurface7::GetColorKey", s0_1),
+    ("IDirectDrawSurface7::GetDC", s0_1),
+    ("IDirectDrawSurface7::GetFlipStatus", s0_2),
+    ("IDirectDrawSurface7::GetOverlayPosition", s0_1),
+    ("IDirectDrawSurface7::GetPalette", s0_1),
+    ("IDirectDrawSurface7::GetPixelFormat", s0_1),
+    ("IDirectDrawSurface7::GetSurfaceDesc", iddsurface7_get_surface_desc),
+    ("IDirectDrawSurface7::Initialize", s0_1),
+    ("IDirectDrawSurface7::IsLost", s0_1),
+    ("IDirectDrawSurface7::Lock", iddsurface7_lock),
+    ("IDirectDrawSurface7::ReleaseDC", s0_1),
+    ("IDirectDrawSurface7::Restore", s0_1),
+    ("IDirectDrawSurface7::SetClipper", s0_2),
+    ("IDirectDrawSurface7::SetColorKey", iddsurface7_set_color_key),
+    ("IDirectDrawSurface7::SetOverlayPosition", s0_1),
+    ("IDirectDrawSurface7::SetPalette", s0_1),
+    ("IDirectDrawSurface7::Unlock", iddsurface7_unlock),
+    ("IDirectDrawSurface7::UpdateOverlay", s0_1),
+    ("IDirectDrawSurface7::UpdateOverlayDisplay", s0_1),
+    ("IDirectDrawSurface7::UpdateOverlayZOrder", s0_1),
+    ("IDirectDrawSurface7::GetDDInterface", iddsurface7_get_ddinterface),
 ];
 
-const IDDCLIPPER_METHODS: &[&str] = &[
-    "IDirectDrawClipper::QueryInterface",    // 0
-    "IDirectDrawClipper::AddRef",            // 1
-    "IDirectDrawClipper::Release",           // 2
-    "IDirectDrawClipper::GetClipList",       // 3
-    "IDirectDrawClipper::GetHWnd",           // 4
-    "IDirectDrawClipper::Initialize",        // 5
-    "IDirectDrawClipper::IsClipListChanged", // 6
-    "IDirectDrawClipper::SetClipList",       // 7
+// Clipper is a pure no-op (just balance the stack). Note: matching the original,
+// its AddRef/Release/QI return DD_OK(0), not a refcount, and QI does not fill ppv.
+pub(crate) const IDDCLIPPER: Vtable = &[
+    ("IDirectDrawClipper::QueryInterface", s0_3),
+    ("IDirectDrawClipper::AddRef", s0_1),
+    ("IDirectDrawClipper::Release", s0_1),
+    ("IDirectDrawClipper::GetClipList", s0_2),
+    ("IDirectDrawClipper::GetHWnd", s0_2),
+    ("IDirectDrawClipper::Initialize", s0_2),
+    ("IDirectDrawClipper::IsClipListChanged", s0_2),
+    ("IDirectDrawClipper::SetClipList", s0_3),
 ];
-
-const IDIRECT3D8_METHODS: &[&str] = &[
-    "IDirect3D8::QueryInterface", // 0
-    "IDirect3D8::AddRef", // 1
-    "IDirect3D8::Release", // 2
-    "IDirect3D8::RegisterSoftwareDevice", // 3
-    "IDirect3D8::GetAdapterCount", // 4
-    "IDirect3D8::GetAdapterIdentifier", // 5
-    "IDirect3D8::GetAdapterModeCount", // 6
-    "IDirect3D8::EnumAdapterModes", // 7
-    "IDirect3D8::GetAdapterDisplayMode", // 8
-    "IDirect3D8::CheckDeviceType", // 9
-    "IDirect3D8::CheckDeviceFormat", // 10
-    "IDirect3D8::CheckDeviceMultiSampleType", // 11
-    "IDirect3D8::CheckDepthStencilMatch", // 12
-    "IDirect3D8::GetDeviceCaps", // 13
-    "IDirect3D8::GetAdapterMonitor", // 14
-    "IDirect3D8::CreateDevice", // 15
-];
-
-const IDIRECT3DDEVICE8_METHODS: &[&str] = &[
-    "IDirect3DDevice8::QueryInterface", // 0
-    "IDirect3DDevice8::AddRef", // 1
-    "IDirect3DDevice8::Release", // 2
-    "IDirect3DDevice8::TestCooperativeLevel", // 3
-    "IDirect3DDevice8::GetAvailableTextureMem", // 4
-    "IDirect3DDevice8::ResourceManagerDiscardBytes", // 5
-    "IDirect3DDevice8::GetDirect3D", // 6
-    "IDirect3DDevice8::GetDeviceCaps", // 7
-    "IDirect3DDevice8::GetDisplayMode", // 8
-    "IDirect3DDevice8::GetCreationParameters", // 9
-    "IDirect3DDevice8::SetCursorProperties", // 10
-    "IDirect3DDevice8::SetCursorPosition", // 11
-    "IDirect3DDevice8::ShowCursor", // 12
-    "IDirect3DDevice8::CreateAdditionalSwapChain", // 13
-    "IDirect3DDevice8::Reset", // 14
-    "IDirect3DDevice8::Present", // 15
-    "IDirect3DDevice8::GetBackBuffer", // 16
-    "IDirect3DDevice8::GetRasterStatus", // 17
-    "IDirect3DDevice8::SetGammaRamp", // 18
-    "IDirect3DDevice8::GetGammaRamp", // 19
-    "IDirect3DDevice8::CreateTexture", // 20
-    "IDirect3DDevice8::CreateVolumeTexture", // 21
-    "IDirect3DDevice8::CreateCubeTexture", // 22
-    "IDirect3DDevice8::CreateVertexBuffer", // 23
-    "IDirect3DDevice8::CreateIndexBuffer", // 24
-    "IDirect3DDevice8::CreateRenderTarget", // 25
-    "IDirect3DDevice8::CreateDepthStencilSurface", // 26
-    "IDirect3DDevice8::CreateImageSurface", // 27
-    "IDirect3DDevice8::CopyRects", // 28
-    "IDirect3DDevice8::UpdateTexture", // 29
-    "IDirect3DDevice8::GetFrontBuffer", // 30
-    "IDirect3DDevice8::SetRenderTarget", // 31
-    "IDirect3DDevice8::GetRenderTarget", // 32
-    "IDirect3DDevice8::GetDepthStencilSurface", // 33
-    "IDirect3DDevice8::BeginScene", // 34
-    "IDirect3DDevice8::EndScene", // 35
-    "IDirect3DDevice8::Clear", // 36
-    "IDirect3DDevice8::SetTransform", // 37
-    "IDirect3DDevice8::GetTransform", // 38
-    "IDirect3DDevice8::MultiplyTransform", // 39
-    "IDirect3DDevice8::SetViewport", // 40
-    "IDirect3DDevice8::GetViewport", // 41
-    "IDirect3DDevice8::SetMaterial", // 42
-    "IDirect3DDevice8::GetMaterial", // 43
-    "IDirect3DDevice8::SetLight", // 44
-    "IDirect3DDevice8::GetLight", // 45
-    "IDirect3DDevice8::LightEnable", // 46
-    "IDirect3DDevice8::GetLightEnable", // 47
-    "IDirect3DDevice8::SetClipPlane", // 48
-    "IDirect3DDevice8::GetClipPlane", // 49
-    "IDirect3DDevice8::SetRenderState", // 50
-    "IDirect3DDevice8::GetRenderState", // 51
-    "IDirect3DDevice8::BeginStateBlock", // 52
-    "IDirect3DDevice8::EndStateBlock", // 53
-    "IDirect3DDevice8::ApplyStateBlock", // 54
-    "IDirect3DDevice8::CaptureStateBlock", // 55
-    "IDirect3DDevice8::DeleteStateBlock", // 56
-    "IDirect3DDevice8::CreateStateBlock", // 57
-    "IDirect3DDevice8::SetClipStatus", // 58
-    "IDirect3DDevice8::GetClipStatus", // 59
-    "IDirect3DDevice8::GetTexture", // 60
-    "IDirect3DDevice8::SetTexture", // 61
-    "IDirect3DDevice8::GetTextureStageState", // 62
-    "IDirect3DDevice8::SetTextureStageState", // 63
-    "IDirect3DDevice8::ValidateDevice", // 64
-    "IDirect3DDevice8::GetInfo", // 65
-    "IDirect3DDevice8::SetPaletteEntries", // 66
-    "IDirect3DDevice8::GetPaletteEntries", // 67
-    "IDirect3DDevice8::SetCurrentTexturePalette", // 68
-    "IDirect3DDevice8::GetCurrentTexturePalette", // 69
-    "IDirect3DDevice8::DrawPrimitive", // 70
-    "IDirect3DDevice8::DrawIndexedPrimitive", // 71
-    "IDirect3DDevice8::DrawPrimitiveUP", // 72
-    "IDirect3DDevice8::DrawIndexedPrimitiveUP", // 73
-    "IDirect3DDevice8::ProcessVertices", // 74
-    "IDirect3DDevice8::CreateVertexShader", // 75
-    "IDirect3DDevice8::SetVertexShader", // 76
-    "IDirect3DDevice8::GetVertexShader", // 77
-    "IDirect3DDevice8::DeleteVertexShader", // 78
-    "IDirect3DDevice8::SetVertexShaderConstant", // 79
-    "IDirect3DDevice8::GetVertexShaderConstant", // 80
-    "IDirect3DDevice8::GetVertexShaderDeclaration", // 81
-    "IDirect3DDevice8::GetVertexShaderFunction", // 82
-    "IDirect3DDevice8::SetStreamSource", // 83
-    "IDirect3DDevice8::GetStreamSource", // 84
-    "IDirect3DDevice8::SetIndices", // 85
-    "IDirect3DDevice8::GetIndices", // 86
-    "IDirect3DDevice8::CreatePixelShader", // 87
-    "IDirect3DDevice8::SetPixelShader", // 88
-    "IDirect3DDevice8::GetPixelShader", // 89
-    "IDirect3DDevice8::DeletePixelShader", // 90
-    "IDirect3DDevice8::SetPixelShaderConstant", // 91
-    "IDirect3DDevice8::GetPixelShaderConstant", // 92
-    "IDirect3DDevice8::GetPixelShaderFunction", // 93
-];
-
-// Public registration entry point
 
 pub fn register(r: &mut WinApiRegistry) {
-    // IAT exports
     r.add("ddraw.dll", "DirectDrawCreate", ddraw_create);
     r.add("ddraw.dll", "DirectDrawCreateEx", ddraw_create_ex);
-
-    // d3d8.dll is also linked by Touhou 6 but only used for device enumeration.
-    // Returning E_NOINTERFACE from CoCreateInstance is enough; the game falls
-    // back to DDraw when D3D8 isn't available.
-    r.add("d3d8.dll", "Direct3DCreate8", d3d8_create_stub);
-
-    // IDirectDraw7 vtable methods
-    for name in IDDRAW7_METHODS {
-        r.add("ddraw.vtbl", name, dispatch_iddraw7);
-    }
-
-    // IDirectDrawSurface7 vtable methods
-    for name in IDDSURFACE7_METHODS {
-        r.add("ddraw.vtbl", name, dispatch_iddsurface7);
-    }
-
-    // IDirectDrawClipper vtable methods
-    for name in IDDCLIPPER_METHODS {
-        r.add("ddraw.vtbl", name, dispatch_iddclipper);
-    }
-
-    // IDirect3D8 vtable methods
-    for name in IDIRECT3D8_METHODS {
-        r.add("ddraw.vtbl", name, dispatch_idirect3d8);
-    }
-
-    // IDirect3DDevice8 vtable methods
-    for name in IDIRECT3DDEVICE8_METHODS {
-        r.add("ddraw.vtbl", name, dispatch_idirect3ddevice8);
-    }
+    register_vtable(r, IDDRAW7);
+    register_vtable(r, IDDSURFACE7);
+    register_vtable(r, IDDCLIPPER);
 }
 
-// COM object constructors (in guest heap)
-
-/// Allocate a vtable + object in the guest heap.  Returns the object VA.
-///
-/// Layout:
-///   object VA  +0:  vtable_va  (4 bytes)
-///   object VA  +4:  extra      (4 bytes, used to store surface-id for surfaces)
-///
-/// The vtable is an array of trampoline VAs, one per method slot.
-fn alloc_com_object(ctx: &mut ApiContext, method_names: &[&str], extra: u32) -> u32 {
-    // Allocate vtable: N slots Ã— 4 bytes
-    let vtable_size = (method_names.len() * 4) as u32;
-    let vtable_va = ctx.heap_alloc(vtable_size);
-
-    for (i, name) in method_names.iter().enumerate() {
-        let tramp = ctx.api_resolve_trampoline("ddraw.vtbl", name);
-        let _ = ctx.memory.write_u32(vtable_va + i as u32 * 4, tramp);
-    }
-
-    // Allocate object: vtable ptr (4) + extra (4)
-    let obj_va = ctx.heap_alloc(8);
-    let _ = ctx.memory.write_u32(obj_va, vtable_va);
-    let _ = ctx.memory.write_u32(obj_va + 4, extra);
-    obj_va
-}
-
-// Surface-id helpers
+// ─── surface-id helper ───────────────────────────────────────────────────────
 
 /// Read the surface-id stored at object+4.
 fn surface_id_of(ctx: &ApiContext, obj_va: u32) -> u32 {
-    ctx.memory.read_u32(obj_va + 4).unwrap_or(0)
+    crate::object_extra(ctx, obj_va)
 }
 
-// IAT-level exports
+// ─── IAT exports ─────────────────────────────────────────────────────────────
 
-/// `DirectDrawCreate(lpGUID, lplpDD, pUnkOuter) -> HRESULT`
-///
-/// Creates an IDirectDraw7 object (we always return the v7 interface regardless
-/// of the requested version; the QueryInterface upgrade path is transparent).
+/// `DirectDrawCreate(lpGUID, lplpDD, pUnkOuter)` — always returns an IDirectDraw7
+/// (the QueryInterface upgrade path is transparent).
 fn ddraw_create(ctx: &mut ApiContext) -> Handled {
-    // args: lpGUID (0=default), lplpDD (out ptr), pUnkOuter
     let out_ptr = ctx.arg(1);
-
-    let obj_va = alloc_com_object(ctx, IDDRAW7_METHODS, 0);
-
+    let obj_va = make_object(ctx, IDDRAW7, 0);
     if out_ptr != 0 {
         let _ = ctx.memory.write_u32(out_ptr, obj_va);
     }
-
     ctx.ret_stdcall(S_OK, 3);
     Handled::Ok
 }
 
-/// `DirectDrawCreateEx(lpGUID, lplpDD, iid, pUnkOuter) -> HRESULT`
+/// `DirectDrawCreateEx(lpGUID, lplpDD, iid, pUnkOuter)` — iid ignored.
 fn ddraw_create_ex(ctx: &mut ApiContext) -> Handled {
     let out_ptr = ctx.arg(1);
-    // iid (arg 2) is ignored â€” we always return IDirectDraw7 vtable layout.
-
-    let obj_va = alloc_com_object(ctx, IDDRAW7_METHODS, 0);
+    let obj_va = make_object(ctx, IDDRAW7, 0);
     if out_ptr != 0 {
         let _ = ctx.memory.write_u32(out_ptr, obj_va);
     }
-
     ctx.ret_stdcall(S_OK, 4);
     Handled::Ok
 }
 
-/// `Direct3DCreate8(SDKVersion) -> IDirect3D8*`
-///
-/// Touhou 6 imports this from d3d8.dll for device enumeration.  We return NULL
-/// which makes the game skip D3D enumeration and fall back to DDraw properly.
-fn d3d8_create_stub(ctx: &mut ApiContext) -> Handled {
-    let obj_va = alloc_com_object(ctx, IDIRECT3D8_METHODS, 0);
-    ctx.ret_stdcall(obj_va, 1);
-    Handled::Ok
-}
-
-fn dispatch_idirect3d8(ctx: &mut ApiContext) -> Handled {
-    let slot = IDIRECT3D8_METHODS
-        .iter()
-        .position(|name| ctx.api_trampoline_va("ddraw.vtbl", name) == ctx.current_trampoline_va())
-        .unwrap_or(99);
-    match slot {
-        0 => { // QueryInterface
-            let this = ctx.arg(0);
-            let out = ctx.arg(2);
-            if out != 0 { let _ = ctx.memory.write_u32(out, this); }
-            ctx.ret_stdcall(S_OK, 3);
-        }
-        1 | 2 => ctx.ret_stdcall(1, 1), // AddRef / Release
-        4 => ctx.ret_stdcall(1, 1), // GetAdapterCount -> returns 1 (no HRESULT, direct u32)
-        5 => { // GetAdapterIdentifier(this, adapter, flags, pIdentifier)
-            let out = ctx.arg(3);
-            if out != 0 {
-                let name = b"WebWINE D3D8 Stub\0";
-                let _ = ctx.memory.write_bytes(out, name);
-                let _ = ctx.memory.write_bytes(out + 512, name);
-                let _ = ctx.memory.write_u32(out + 1024, 0x1234); // vendor id
-            }
-            ctx.ret_stdcall(S_OK, 4);
-        }
-        6 => ctx.ret_stdcall(1, 2), // GetAdapterModeCount -> returns 1
-        8 => { // GetAdapterDisplayMode(this, adapter, pMode)
-            let out = ctx.arg(2);
-            if out != 0 {
-                let _ = ctx.memory.write_u32(out, 640);
-                let _ = ctx.memory.write_u32(out + 4, 480);
-                let _ = ctx.memory.write_u32(out + 8, 0); // RefreshRate
-                let _ = ctx.memory.write_u32(out + 12, 22); // D3DFMT_X8R8G8B8
-            }
-            ctx.ret_stdcall(S_OK, 3);
-        }
-        13 => { // GetDeviceCaps(this, adapter, devtype, pCaps)
-            let out = ctx.arg(3);
-            if out != 0 {
-                // Return a generous D3DCAPS8 structure
-                let _ = ctx.memory.write_u32(out, 1); // DeviceType
-                let _ = ctx.memory.write_u32(out + 12, 0xFFFF_FFFF); // Caps
-                let _ = ctx.memory.write_u32(out + 16, 0xFFFF_FFFF); // Caps2
-            }
-            ctx.ret_stdcall(S_OK, 4);
-        }
-        15 => { // CreateDevice(this, adapter, devtype, hwnd, behaviorflags, pparams, ppdevice)
-            let out_ptr = ctx.arg(6);
-            if out_ptr != 0 {
-                let dev_va = alloc_com_object(ctx, IDIRECT3DDEVICE8_METHODS, 0);
-                let _ = ctx.memory.write_u32(out_ptr, dev_va);
-            }
-            ctx.ret_stdcall(S_OK, 7);
-        }
-        _ => { // default
-            let nargs = match slot {
-                3 => 2, 7 => 4, 9 => 6, 10 => 6, 11 => 6, 12 => 6, 14 => 2,
-                _ => 1,
-            };
-            ctx.ret_stdcall(S_OK, nargs);
-        }
-    }
-    Handled::Ok
-}
-
-fn dispatch_idirect3ddevice8(ctx: &mut ApiContext) -> Handled {
-    let slot = IDIRECT3DDEVICE8_METHODS
-        .iter()
-        .position(|name| ctx.api_trampoline_va("ddraw.vtbl", name) == ctx.current_trampoline_va())
-        .unwrap_or(999);
-    
-    match slot {
-        0 => { // QueryInterface
-            let this = ctx.arg(0);
-            let out = ctx.arg(2);
-            if out != 0 { let _ = ctx.memory.write_u32(out, this); }
-            ctx.ret_stdcall(S_OK, 3);
-        }
-        1 | 2 => ctx.ret_stdcall(1, 1),
-        // Just return S_OK for everything with a very crude arg count guess
-        _ => {
-            // Most D3D8 device methods take between 1 and 6 arguments.
-            // We can guess safely for stdcall by looking at typical methods, 
-            // but returning S_OK and popping 1 arg (just `this`) will eventually
-            // unbalance the stack if we guess wrong. We will use a safe stub logic
-            // based on the slot to balance the stack properly!
-            let nargs = match slot {
-                14 => 2, // Reset(pparams)
-                15 => 5, // Present(src, dst, wnd, rgn)
-                16 => 4, // GetBackBuffer
-                20 => 8, // CreateTexture
-                23 => 6, // CreateVertexBuffer
-                24 => 6, // CreateIndexBuffer
-                34 | 35 => 1, // BeginScene/EndScene
-                36 => 7, // Clear
-                40 => 2, // SetViewport
-                50 => 3, // SetRenderState
-                61 => 3, // SetTexture
-                70 => 4, // DrawPrimitive
-                76 => 2, // SetVertexShader
-                83 => 4, // SetStreamSource
-                85 => 3, // SetIndices
-                _ => 4, // Wild guess
-            };
-            ctx.ret_stdcall(S_OK, nargs);
-        }
-    }
-    Handled::Ok
-}
-
-// IDirectDraw7 dispatch
-
-fn dispatch_iddraw7(ctx: &mut ApiContext) -> Handled {
-    // Determine which slot was called by looking up the trampoline VA in EIP
-    // (the executor sets eip to the trampoline before dispatching).
-    let slot = match iddraw7_slot(ctx) {
-        Some(s) => s,
-        None => {
-            ctx.ret_stdcall(S_OK, 1);
-            return Handled::Ok;
-        }
-    };
-    match slot {
-        0 => iddraw7_query_interface(ctx),
-        1 | 2 => {
-            ctx.ret_stdcall(1, 1);
-            Handled::Ok
-        } // AddRef / Release
-        3 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // Compact
-        4 => iddraw7_create_clipper(ctx),
-        5 => {
-            ctx.ret_stdcall(S_OK, 4);
-            Handled::Ok
-        } // CreatePalette
-        6 => iddraw7_create_surface(ctx),
-        8 => {
-            ctx.ret_stdcall(S_OK, 3);
-            Handled::Ok
-        } // EnumDisplayModes
-        11 => iddraw7_get_caps(ctx),
-        12 => iddraw7_get_display_mode(ctx),
-        15 => {
-            // GetMonitorFrequency
-            let out = ctx.arg(1);
-            if out != 0 {
-                let _ = ctx.memory.write_u32(out, 60);
-            }
-            ctx.ret_stdcall(S_OK, 2);
-            Handled::Ok
-        }
-        17 => {
-            // GetVerticalBlankStatus
-            let out = ctx.arg(1);
-            if out != 0 {
-                let _ = ctx.memory.write_u32(out, 0);
-            }
-            ctx.ret_stdcall(S_OK, 2);
-            Handled::Ok
-        }
-        19 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // RestoreDisplayMode
-        20 => {
-            ctx.ret_stdcall(S_OK, 3);
-            Handled::Ok
-        } // SetCooperativeLevel
-        21 => iddraw7_set_display_mode(ctx),
-        22 => {
-            ctx.ret_stdcall(S_OK, 3);
-            Handled::Ok
-        } // WaitForVerticalBlank
-        23 => iddraw7_get_available_vidmem(ctx),
-        25 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // RestoreAllSurfaces
-        26 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // TestCooperativeLevel
-        27 => iddraw7_get_device_identifier(ctx),
-        _ => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        }
-    }
-}
-
-fn iddraw7_slot(ctx: &ApiContext) -> Option<usize> {
-    let tramp_va = ctx.current_trampoline_va(); // EIP at time of call
-    IDDRAW7_METHODS
-        .iter()
-        .position(|name| ctx.api_trampoline_va("ddraw.vtbl", name) == tramp_va)
-}
-
-fn iddraw7_query_interface(ctx: &mut ApiContext) -> Handled {
-    // QueryInterface(this, riid, ppvObject)
-    // We return `this` for any IID â€” covers IDirectDraw â†’ IDirectDraw7 upgrades.
-    let this = ctx.arg(0);
-    let out = ctx.arg(2);
-    if out != 0 {
-        let _ = ctx.memory.write_u32(out, this);
-    }
-    ctx.ret_stdcall(S_OK, 3);
-    Handled::Ok
-}
+// ─── IDirectDraw7 methods ────────────────────────────────────────────────────
 
 fn iddraw7_set_display_mode(ctx: &mut ApiContext) -> Handled {
     // SetDisplayMode(this, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags)
@@ -706,7 +241,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
         },
     );
 
-    // If DDSCAPS_FLIP and backBufferCount â‰¥ 1, create the back buffer now.
+    // If DDSCAPS_FLIP and backBufferCount ≥ 1, create the back buffer now.
     if caps & DDSCAPS_FLIP != 0 && flags & DDSD_BACKBUFFERCOUNT != 0 {
         let back_count = ctx.memory.read_u32(desc_va + DESC_BACK_COUNT).unwrap_or(0);
         if back_count >= 1 {
@@ -739,7 +274,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
     let _ = ctx.memory.write_u32(desc_va + DESC_SURFACE_PTR, pixels_va);
 
     // Allocate and return the COM object.
-    let obj_va = alloc_com_object(ctx, IDDSURFACE7_METHODS, sid);
+    let obj_va = make_object(ctx, IDDSURFACE7, sid);
     let _ = ctx.memory.write_u32(out_ptr, obj_va);
 
     ctx.ret_stdcall(S_OK, 4);
@@ -749,7 +284,7 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
 fn iddraw7_create_clipper(ctx: &mut ApiContext) -> Handled {
     // CreateClipper(this, dwFlags, lplpDDClipper, pUnkOuter)
     let out_ptr = ctx.arg(2);
-    let obj_va = alloc_com_object(ctx, IDDCLIPPER_METHODS, 0);
+    let obj_va = make_object(ctx, IDDCLIPPER, 0);
     if out_ptr != 0 {
         let _ = ctx.memory.write_u32(out_ptr, obj_va);
     }
@@ -758,18 +293,16 @@ fn iddraw7_create_clipper(ctx: &mut ApiContext) -> Handled {
 }
 
 fn iddraw7_get_caps(ctx: &mut ApiContext) -> Handled {
-    // GetCaps(this, lpDDDriverCaps, lpDDHELCaps) â€” fill with generous caps so
-    // capability checks pass.  DDCAPS is 344 bytes; we only set the key fields.
+    // GetCaps(this, lpDDDriverCaps, lpDDHELCaps) — fill with generous caps.
     for out in [ctx.arg(1), ctx.arg(2)] {
         if out != 0 {
             let _ = ctx.memory.write_u32(out, 344); // dwSize
-            let _ = ctx.memory.write_u32(out + 4, 0xFFFF_FFFF); // dwCaps  (all)
+            let _ = ctx.memory.write_u32(out + 4, 0xFFFF_FFFF); // dwCaps
             let _ = ctx.memory.write_u32(out + 8, 0xFFFF_FFFF); // dwCaps2
             let _ = ctx.memory.write_u32(out + 12, 0xFFFF_FFFF); // dwCKeyCaps
             let _ = ctx.memory.write_u32(out + 16, 0xFFFF_FFFF); // dwFXCaps
-                                                                 // dwVidMemTotal / dwVidMemFree â€” claim 32 MB available.
-            let _ = ctx.memory.write_u32(out + 80, 32 * 1024 * 1024);
-            let _ = ctx.memory.write_u32(out + 84, 32 * 1024 * 1024);
+            let _ = ctx.memory.write_u32(out + 80, 32 * 1024 * 1024); // dwVidMemTotal
+            let _ = ctx.memory.write_u32(out + 84, 32 * 1024 * 1024); // dwVidMemFree
         }
     }
     ctx.ret_stdcall(S_OK, 3);
@@ -780,14 +313,29 @@ fn iddraw7_get_display_mode(ctx: &mut ApiContext) -> Handled {
     // GetDisplayMode(this, lpDDSurfaceDesc2)
     let desc = ctx.arg(1);
     if desc != 0 {
-        let _ = ctx
-            .memory
-            .write_u32(desc + DESC_WIDTH, ctx.gui.ddraw_display_w);
-        let _ = ctx
-            .memory
-            .write_u32(desc + DESC_HEIGHT, ctx.gui.ddraw_display_h);
-        // Pixel format BPP at DDSURFACEDESC2.ddpfPixelFormat.dwRGBBitCount (+88+8)
+        let _ = ctx.memory.write_u32(desc + DESC_WIDTH, ctx.gui.ddraw_display_w);
+        let _ = ctx.memory.write_u32(desc + DESC_HEIGHT, ctx.gui.ddraw_display_h);
         let _ = ctx.memory.write_u32(desc + 96, ctx.gui.ddraw_display_bpp);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddraw7_get_monitor_frequency(ctx: &mut ApiContext) -> Handled {
+    // GetMonitorFrequency(this, lpdwFrequency)
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 60);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddraw7_get_vblank_status(ctx: &mut ApiContext) -> Handled {
+    // GetVerticalBlankStatus(this, lpbIsInVB)
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
     }
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
@@ -809,99 +357,17 @@ fn iddraw7_get_available_vidmem(ctx: &mut ApiContext) -> Handled {
 
 fn iddraw7_get_device_identifier(ctx: &mut ApiContext) -> Handled {
     // GetDeviceIdentifier(this, lpDDDeviceIdentifier2, dwFlags)
-    // DDDEVICEIDENTIFIER2 is 784 bytes; just zero it out and fill the string.
     let out = ctx.arg(1);
     if out != 0 {
-        // szDriver (MAX_PATH = 260): "WebWINE DDraw"
         let name = b"WebWINE DDraw\0";
         let _ = ctx.memory.write_bytes(out, name);
-        // UniqueId.dwVendorId at +524
-        let _ = ctx.memory.write_u32(out + 524, 0x1234);
+        let _ = ctx.memory.write_u32(out + 524, 0x1234); // UniqueId.dwVendorId
     }
     ctx.ret_stdcall(S_OK, 3);
     Handled::Ok
 }
 
-// IDirectDrawSurface7 dispatch
-
-fn dispatch_iddsurface7(ctx: &mut ApiContext) -> Handled {
-    let slot = match iddsurface7_slot(ctx) {
-        Some(s) => s,
-        None => {
-            ctx.ret_stdcall(S_OK, 1);
-            return Handled::Ok;
-        }
-    };
-    match slot {
-        0 => iddsurface7_query_interface(ctx),
-        1 => {
-            ctx.ret_stdcall(1, 1);
-            Handled::Ok
-        } // AddRef
-        2 => iddsurface7_release(ctx),
-        5 => iddsurface7_blt(ctx),
-        7 => iddsurface7_blt_fast(ctx),
-        11 => iddsurface7_flip(ctx),
-        12 => iddsurface7_get_attached_surface(ctx),
-        13 => {
-            ctx.ret_stdcall(0 /* DD_OK = not busy */, 2);
-            Handled::Ok
-        } // GetBltStatus
-        18 => {
-            ctx.ret_stdcall(0, 2);
-            Handled::Ok
-        } // GetFlipStatus
-        22 => iddsurface7_get_surface_desc(ctx),
-        24 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // IsLost â†’ DD_OK = not lost
-        25 => iddsurface7_lock(ctx),
-        27 => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        } // Restore
-        28 => {
-            ctx.ret_stdcall(S_OK, 2);
-            Handled::Ok
-        } // SetClipper (no-op)
-        29 => iddsurface7_set_color_key(ctx),
-        32 => iddsurface7_unlock(ctx),
-        36 => {
-            // GetDDInterface(this, lplpDD)
-            // Return a fresh IDirectDraw7 object â€” caller just wants to call
-            // SetCooperativeLevel on it again.
-            let out = ctx.arg(1);
-            let obj = alloc_com_object(ctx, IDDRAW7_METHODS, 0);
-            if out != 0 {
-                let _ = ctx.memory.write_u32(out, obj);
-            }
-            ctx.ret_stdcall(S_OK, 2);
-            Handled::Ok
-        }
-        _ => {
-            ctx.ret_stdcall(S_OK, 1);
-            Handled::Ok
-        }
-    }
-}
-
-fn iddsurface7_slot(ctx: &ApiContext) -> Option<usize> {
-    let tramp_va = ctx.current_trampoline_va();
-    IDDSURFACE7_METHODS
-        .iter()
-        .position(|name| ctx.api_trampoline_va("ddraw.vtbl", name) == tramp_va)
-}
-
-fn iddsurface7_query_interface(ctx: &mut ApiContext) -> Handled {
-    let this = ctx.arg(0);
-    let out = ctx.arg(2);
-    if out != 0 {
-        let _ = ctx.memory.write_u32(out, this);
-    }
-    ctx.ret_stdcall(S_OK, 3);
-    Handled::Ok
-}
+// ─── IDirectDrawSurface7 methods ─────────────────────────────────────────────
 
 fn iddsurface7_release(ctx: &mut ApiContext) -> Handled {
     let this = ctx.arg(0);
@@ -919,11 +385,8 @@ fn iddsurface7_lock(ctx: &mut ApiContext) -> Handled {
 
     if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
         if desc_va != 0 {
-            // Write pitch and lpSurface back so the guest can write pixels.
             let _ = ctx.memory.write_u32(desc_va + DESC_PITCH, surf.stride);
-            let _ = ctx
-                .memory
-                .write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
+            let _ = ctx.memory.write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
             let _ = ctx.memory.write_u32(desc_va + DESC_WIDTH, surf.width);
             let _ = ctx.memory.write_u32(desc_va + DESC_HEIGHT, surf.height);
         }
@@ -933,24 +396,22 @@ fn iddsurface7_lock(ctx: &mut ApiContext) -> Handled {
 }
 
 fn iddsurface7_unlock(ctx: &mut ApiContext) -> Handled {
-    // Unlock(this, lpRect) â€” just acknowledge; pixels are already in guest mem.
+    // Unlock(this, lpRect) — pixels are already in guest mem.
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
 
 fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
-    // Flip(this, lpDDSurfaceTargetOverride, dwFlags)
-    // Copies back-buffer pixels â†’ primary, then emits a Blit event.
+    // Flip(this, lpDDSurfaceTargetOverride, dwFlags) — back→primary, emit Blit.
     let this = ctx.arg(0);
     let sid = surface_id_of(ctx, this);
 
-    // Gather what we need before any mutable borrow.
     let (primary_id, back_id, w, h) = {
         if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
             let primary = if matches!(surf.kind, webwine_api::vm::process::DDrawSurfaceKind::Primary) {
                 sid
             } else {
-                sid // fallback: treat self as primary
+                sid
             };
             (primary, surf.back_id, surf.width, surf.height)
         } else {
@@ -959,12 +420,8 @@ fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
         }
     };
 
-    // Determine which surface holds the pixels to display.
     let src_sid = back_id.unwrap_or(primary_id);
-
     let pixels = read_surface_rgba(ctx, src_sid);
-
-    // Find a window to blit to (use the first visible one, or hwnd 4 as default).
     let hwnd = ctx.gui.windows.keys().copied().next().unwrap_or(4);
 
     ctx.ui_events.push(UiEvent::Blit {
@@ -985,8 +442,8 @@ fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
 fn iddsurface7_blt(ctx: &mut ApiContext) -> Handled {
     // Blt(this, lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx)
     let this = ctx.arg(0);
-    let dest_rect = ctx.arg(1); // may be NULL â†’ whole surface
-    let src_obj = ctx.arg(2); // IDirectDrawSurface7* (may be NULL for solid fills)
+    let dest_rect = ctx.arg(1);
+    let src_obj = ctx.arg(2);
     let src_rect = ctx.arg(3);
 
     let dst_sid = surface_id_of(ctx, this);
@@ -996,23 +453,19 @@ fn iddsurface7_blt(ctx: &mut ApiContext) -> Handled {
         0
     };
 
-    // Read dest rect (or use full surface).
     let (dst_x, dst_y, dst_w, dst_h) = read_rect_or_full(ctx, dest_rect, dst_sid);
     let (sx, sy, sw, sh) = read_rect_or_full(ctx, src_rect, src_sid);
 
     if src_obj == 0 {
-        // DDBLT_COLORFILL: fill dest region with colour from BltFx.dwFillColor.
         let blt_fx = ctx.arg(5);
         let fill_color = if blt_fx != 0 {
-            ctx.memory.read_u32(blt_fx + 16).unwrap_or(0) // dwFillColor at +16
+            ctx.memory.read_u32(blt_fx + 16).unwrap_or(0)
         } else {
             0
         };
         surface_fill(ctx, dst_sid, dst_x, dst_y, dst_w, dst_h, fill_color);
     } else {
-        surface_blit(
-            ctx, src_sid, sx, sy, sw, sh, dst_sid, dst_x, dst_y, dst_w, dst_h,
-        );
+        surface_blit(ctx, src_sid, sx, sy, sw, sh, dst_sid, dst_x, dst_y, dst_w, dst_h);
     }
 
     ctx.ret_stdcall(S_OK, 6);
@@ -1026,13 +479,12 @@ fn iddsurface7_blt_fast(ctx: &mut ApiContext) -> Handled {
     let dst_y = ctx.arg(2) as i32;
     let src_obj = ctx.arg(3);
     let src_rect = ctx.arg(4);
-    let trans = ctx.arg(5); // DDBLTFAST_SRCCOLORKEY = 1
+    let trans = ctx.arg(5);
 
     let dst_sid = surface_id_of(ctx, this);
     let src_sid = surface_id_of(ctx, src_obj);
 
     let (sx, sy, sw, sh) = read_rect_or_full(ctx, src_rect, src_sid);
-
     surface_blit(ctx, src_sid, sx, sy, sw, sh, dst_sid, dst_x, dst_y, sw, sh);
     let _ = trans; // color-key is applied inside surface_blit
 
@@ -1042,9 +494,8 @@ fn iddsurface7_blt_fast(ctx: &mut ApiContext) -> Handled {
 
 fn iddsurface7_set_color_key(ctx: &mut ApiContext) -> Handled {
     // SetColorKey(this, dwFlags, lpDDColorKey)
-    // DDCKEY_SRCBLT = 0x08; we just record the low-color value.
     let this = ctx.arg(0);
-    let ck_struct = ctx.arg(2); // DDCOLORKEY { dwColorSpaceLowValue, dwColorSpaceHighValue }
+    let ck_struct = ctx.arg(2);
     let sid = surface_id_of(ctx, this);
 
     if ck_struct != 0 {
@@ -1066,7 +517,7 @@ fn iddsurface7_get_attached_surface(ctx: &mut ApiContext) -> Handled {
     let back_id = ctx.gui.ddraw_surfaces.get(&sid).and_then(|s| s.back_id);
 
     if let Some(bsid) = back_id {
-        let obj_va = alloc_com_object(ctx, IDDSURFACE7_METHODS, bsid);
+        let obj_va = make_object(ctx, IDDSURFACE7, bsid);
         if out_ptr != 0 {
             let _ = ctx.memory.write_u32(out_ptr, obj_va);
         }
@@ -1095,37 +546,25 @@ fn iddsurface7_get_surface_desc(ctx: &mut ApiContext) -> Handled {
             let _ = ctx.memory.write_u32(desc_va + DESC_HEIGHT, surf.height);
             let _ = ctx.memory.write_u32(desc_va + DESC_PITCH, surf.stride);
             let _ = ctx.memory.write_u32(desc_va + DESC_CAPS_CAPS1, caps);
-            let _ = ctx
-                .memory
-                .write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
+            let _ = ctx.memory.write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
         }
     }
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
 
-// IDirectDrawClipper dispatch
-
-fn dispatch_iddclipper(ctx: &mut ApiContext) -> Handled {
-    // All Clipper methods are no-ops for our purposes; just balance the stack.
-    // Slot 0 = QI (3 args), 1/2 = AddRef/Release (1 arg), rest vary.
-    let slot = IDDCLIPPER_METHODS
-        .iter()
-        .position(|name| ctx.api_trampoline_va("ddraw.vtbl", name) == ctx.current_trampoline_va())
-        .unwrap_or(99);
-    let nargs: u32 = match slot {
-        0 => 3,
-        1 | 2 => 1,
-        3 | 5 | 6 => 2,
-        4 => 2,
-        7 => 3,
-        _ => 1,
-    };
-    ctx.ret_stdcall(S_OK, nargs);
+fn iddsurface7_get_ddinterface(ctx: &mut ApiContext) -> Handled {
+    // GetDDInterface(this, lplpDD) — hand back a fresh IDirectDraw7.
+    let out = ctx.arg(1);
+    let obj = make_object(ctx, IDDRAW7, 0);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, obj);
+    }
+    ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
 
-// Pixel buffer helpers
+// ─── pixel buffer helpers ────────────────────────────────────────────────────
 
 /// Read rect from a Windows RECT struct, falling back to the full surface if NULL.
 fn read_rect_or_full(ctx: &ApiContext, rect_va: u32, sid: u32) -> (i32, i32, i32, i32) {
@@ -1143,8 +582,8 @@ fn read_rect_or_full(ctx: &ApiContext, rect_va: u32, sid: u32) -> (i32, i32, i32
     }
 }
 
-/// Blit a region from src surface to dst surface in guest memory.
-/// Handles colour-key transparency: pixels matching src.color_key are skipped.
+/// Blit a region from src surface to dst surface in guest memory, honoring the
+/// src surface's colour-key transparency.
 fn surface_blit(
     ctx: &mut ApiContext,
     src_sid: u32,
@@ -1158,23 +597,11 @@ fn surface_blit(
     dw: i32,
     dh: i32,
 ) {
-    // Gather surface info without holding a borrow on ctx.gui.
     let src_info = ctx.gui.ddraw_surfaces.get(&src_sid).map(|s| {
-        (
-            s.pixels_va,
-            s.width as i32,
-            s.height as i32,
-            s.stride as i32,
-            s.color_key,
-        )
+        (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32, s.color_key)
     });
     let dst_info = ctx.gui.ddraw_surfaces.get(&dst_sid).map(|s| {
-        (
-            s.pixels_va,
-            s.width as i32,
-            s.height as i32,
-            s.stride as i32,
-        )
+        (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32)
     });
 
     let (sp, sw_full, sh_full, s_stride, color_key) = match src_info {
@@ -1186,7 +613,6 @@ fn surface_blit(
         None => return,
     };
 
-    // Scale factor for stretching (integer is fine for the common 1:1 case).
     let x_scale = if dw > 0 { sw as f32 / dw as f32 } else { 1.0 };
     let y_scale = if dh > 0 { sh as f32 / dh as f32 } else { 1.0 };
 
@@ -1209,7 +635,6 @@ fn surface_blit(
 
             let pixel = ctx.memory.read_u32(sp + src_off).unwrap_or(0);
 
-            // Colour-key check: skip transparent pixels.
             if let Some(ck) = color_key {
                 if pixel & 0x00FF_FFFF == ck & 0x00FF_FFFF {
                     continue;
@@ -1224,12 +649,7 @@ fn surface_blit(
 /// Fill a region of a surface with a solid colour (for DDBLT_COLORFILL).
 fn surface_fill(ctx: &mut ApiContext, sid: u32, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let (pixels_va, surf_w, surf_h, stride) = match ctx.gui.ddraw_surfaces.get(&sid) {
-        Some(s) => (
-            s.pixels_va,
-            s.width as i32,
-            s.height as i32,
-            s.stride as i32,
-        ),
+        Some(s) => (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32),
         None => return,
     };
     for row in y..(y + h) {
@@ -1246,16 +666,10 @@ fn surface_fill(ctx: &mut ApiContext, sid: u32, x: i32, y: i32, w: i32, h: i32, 
     }
 }
 
-/// Read a surface's pixel buffer and convert BGRA8888 â†’ RGBA8888 for the
-/// frontend canvas (`putImageData` expects RGBA).
+/// Read a surface's pixel buffer and convert BGRA8888 → RGBA8888 for the canvas.
 fn read_surface_rgba(ctx: &ApiContext, sid: u32) -> Vec<u8> {
     let (pixels_va, w, h, stride) = match ctx.gui.ddraw_surfaces.get(&sid) {
-        Some(s) => (
-            s.pixels_va,
-            s.width as i32,
-            s.height as i32,
-            s.stride as i32,
-        ),
+        Some(s) => (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32),
         None => return Vec::new(),
     };
 
@@ -1274,7 +688,7 @@ fn read_surface_rgba(ctx: &ApiContext, sid: u32) -> Vec<u8> {
             out[dst] = r;
             out[dst + 1] = g;
             out[dst + 2] = b;
-            out[dst + 3] = if a == 0 { 0xFF } else { a }; // force opaque if alpha is 0
+            out[dst + 3] = if a == 0 { 0xFF } else { a };
         }
     }
     out

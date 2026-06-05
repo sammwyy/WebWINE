@@ -331,6 +331,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "webwine-api-mediafoundation"
+version = "0.1.0"
+dependencies = [
+ "webwine-api",
+]
+
+[[package]]
 name = "webwine-api-net20"
 version = "0.1.0"
 
@@ -360,6 +367,7 @@ dependencies = [
  "thiserror",
  "webwine-api",
  "webwine-api-directx",
+ "webwine-api-mediafoundation",
  "webwine-api-net20",
  "webwine-api-winapi",
 ]

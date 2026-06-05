@@ -3,6 +3,7 @@ members = [
     "crates/webwine-api",
     "crates/webwine-api-winapi",
     "crates/webwine-api-directx",
+    "crates/webwine-api-mediafoundation",
     "crates/webwine-api-net20",
     "crates/webwine-core",
     "crates/webwine-wasm",

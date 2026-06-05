@@ -4,5 +4,6 @@ pub use webwine_api::winapi::{context, ApiContext, Handled, HandlerFn, WinApiReg
 pub fn register_all(r: &mut WinApiRegistry) {
     webwine_api_winapi::register(r);
     webwine_api_directx::register(r);
+    webwine_api_mediafoundation::register(r);
     r.finalize();
 }
