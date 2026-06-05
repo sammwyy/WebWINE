@@ -1,0 +1,9 @@
+target
+dist
+.claude
+node_modules
+.env
+.antigravitycli
+.codex
+.agent
+.agents
