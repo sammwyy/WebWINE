@@ -272,6 +272,12 @@ export class RuntimeBridge {
     });
   }
 
+  /** Answer a modal dialog (MessageBox button id, or file picker ok=1/cancel=0 +
+   * chosen path) the process is blocked on; resumes the process. */
+  postDialogReply(pid: number, button: number, file = ""): void {
+    this.send({ type: "post_dialog_reply", pid, button, file });
+  }
+
   writeStdin(pid: number, text: string): void {
     this.send({ type: "write_stdin", pid, text });
   }

@@ -33,6 +33,7 @@ export interface WindowRecord {
   style: React.CSSProperties;
 
   content: React.ReactNode;
+  onClose?: () => void;
 }
 
 export interface OpenWindowOptions {
@@ -43,6 +44,9 @@ export interface OpenWindowOptions {
   height?: number;
   resizable?: boolean;
   content: React.ReactNode;
+  /** Fired when the window is closed by any means (X button or `closeWindow`).
+   * Used by modal dialogs to treat an X-close as a cancel. */
+  onClose?: () => void;
 }
 
 export interface WindowTaskbarInfo {
@@ -126,6 +130,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       zIndex: nextZIndex - 1,
       style,
       content: opts.content,
+      onClose: opts.onClose,
     };
 
     set((state) => ({ windows: [...state.windows, record], activeId: id }));
@@ -134,13 +139,16 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
   },
 
   closeWindow: (id) => {
+    let closed: WindowRecord | undefined;
     set((state) => {
+      closed = state.windows.find((w) => w.id === id);
       const remaining = state.windows.filter((w) => w.id !== id);
       const newActive =
         state.activeId === id ? topWindowId(remaining) : state.activeId;
       return { windows: remaining, activeId: newActive };
     });
     window.dispatchEvent(new Event("webwine:windows-changed"));
+    closed?.onClose?.();
   },
 
   focusWindow: (id) => {

@@ -15,6 +15,7 @@ type InMsg =
   | { type: "run_process"; pid: number }
   | { type: "write_stdin"; pid: number; text: string }
   | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
+  | { type: "post_dialog_reply"; pid: number; button: number; file: string }
   | { type: "kill_process"; pid: number }
   | { type: "export_vfs"; requestId: string }
   | { type: "import_vfs"; bytes: ArrayBuffer }
@@ -62,6 +63,15 @@ export type RegValue =
 export interface NamedValue {
   name: string;
   value: RegValue;
+}
+
+/** A resolved menu node (mirrors the Rust `MenuItemData`). */
+export interface MenuItemData {
+  text: string;
+  id: number;
+  separator: boolean;
+  disabled: boolean;
+  children: MenuItemData[];
 }
 
 export interface DirectoryEntry {
@@ -133,6 +143,8 @@ export type UiEvent =
   | { kind: "set_pixel"; hwnd: number; x: number; y: number; color: number }
   | { kind: "blit"; hwnd: number; x: number; y: number; w: number; h: number; src_w: number; src_h: number; pixels: number[] }
   | { kind: "beep"; freq: number; duration: number }
+  | { kind: "file_dialog"; save: boolean; title: string; filter: string; initial_dir: string; default_name: string }
+  | { kind: "set_menu"; hwnd: number; items: MenuItemData[] }
   // Direct3D8 GPU command stream (consumed by a VideoDriver / WebGLVideoDriver).
   | { kind: "gpu_clear"; hwnd: number; color: number }
   | { kind: "gpu_texture"; hwnd: number; id: number; w: number; h: number; pixels: number[] }
@@ -347,6 +359,9 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
       runtime.postWindowMessage(msg.pid, msg.hwnd, msg.message, msg.wparam, msg.lparam);
       // Resume the (suspended) message loop.
       runProcessLoop(msg.pid);
+    } else if (msg.type === "post_dialog_reply") {
+      runtime.postDialogReply(msg.pid, msg.button, msg.file);
+      runProcessLoop(msg.pid); // resume the process blocked in the dialog
     } else if (msg.type === "kill_process") {
       runtime.killProcess(msg.pid);
       flushLogs();

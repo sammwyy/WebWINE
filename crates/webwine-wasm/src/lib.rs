@@ -161,6 +161,17 @@ impl Runtime {
             .post_window_message(pid, hwnd, message, wparam, lparam)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
+    /// Answer a modal dialog the process is blocked on. `button` is the clicked
+    /// Win32 ID (or 1/0 for a file dialog ok/cancel); `file` is the chosen path
+    /// (empty string = none).
+    #[wasm_bindgen(js_name = postDialogReply)]
+    pub fn post_dialog_reply(&mut self, pid: u32, button: u32, file: &str) -> Result<(), JsValue> {
+        let file = if file.is_empty() { None } else { Some(file.to_string()) };
+        self.vm
+            .post_dialog_reply(pid, button, file)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = drainLogs)]
     pub fn drain_logs(&mut self) -> Result<JsValue, JsValue> {
         let events: Vec<LogEvent> = self.vm.drain_logs();

@@ -127,12 +127,13 @@ export function showMessageBox(
 ): Promise<MessageBoxResult> {
   return new Promise((resolve) => {
     let winId = "";
+    let settled = false;
 
-    const closeWith = (result: MessageBoxResult) => {
-      if (winId) {
-        useWindowStore.getState().closeWindow(winId);
-      }
-
+    // Resolve once, whether from a button click or an X-close (→ cancel).
+    const settle = (result: MessageBoxResult) => {
+      if (settled) return;
+      settled = true;
+      if (winId) useWindowStore.getState().closeWindow(winId);
       resolve(result);
     };
 
@@ -141,7 +142,8 @@ export function showMessageBox(
       icon: iconFor(ev.style),
       variant: "dialog",
       width: 420,
-      content: <MessageBoxApp ev={ev} onClose={closeWith} />,
+      content: <MessageBoxApp ev={ev} onClose={settle} />,
+      onClose: () => settle(cancelButton(buttonsFor(ev.style)).id),
     });
   });
 }

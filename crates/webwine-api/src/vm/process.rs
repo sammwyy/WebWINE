@@ -64,6 +64,15 @@ pub enum UiEvent {
     // System sounds.
     Beep { freq: u32, duration: u32 },
 
+    // The window's menu bar (SetMenu). `items` is the top-level bar; each may have
+    // `children` (dropdown). Clicking a leaf posts WM_COMMAND(id) to the window.
+    SetMenu { hwnd: u32, items: Vec<MenuItemData> },
+
+    // A modal file picker the guest is blocked on (GetOpenFileName/GetSaveFileName).
+    // The host shows a picker and replies via `post_dialog_reply`. `filter` is the
+    // raw Win32 double-null filter string flattened to "Label|pattern|..." pairs.
+    FileDialog { save: bool, title: String, filter: String, initial_dir: String, default_name: String },
+
     // Direct3D8 GPU command stream
     // Emitted by the directx crate's D3D8 state tracker; consumed by the host
     // VideoDriver (WebGL/WebGPU). The guest-side D3D8 COM layer translates draw
@@ -130,6 +139,53 @@ pub struct GuiState {
     pub ddraw_display_bpp: u32,
     pub ddraw_surfaces: std::collections::HashMap<u32, DDrawSurface>,
     pub next_ddraw_surface: u32,
+
+    // A modal dialog (MessageBox / file picker) the guest is blocked on, waiting
+    // for the user's choice. `pending` is set while the dialog is on screen;
+    // `reply` is filled by the host when the user answers, which the blocked API
+    // handler reads on resume. See `WebWineVm::post_dialog_reply`.
+    pub dialog_pending: bool,
+    pub dialog_reply: Option<DialogReply>,
+
+    // Menus, keyed by an opaque HMENU (tagged with `MENU_TAG`). A menu is a flat
+    // list of items; a popup item points at a child menu by handle. `hwnd_menu`
+    // maps a window to its attached menu bar (SetMenu).
+    pub menus: std::collections::HashMap<u32, Vec<MenuItem>>,
+    pub next_menu: u32,
+    pub hwnd_menu: std::collections::HashMap<u32, u32>,
+}
+
+/// High byte tag marking an HMENU, distinct from HWNDs and GDI handles.
+pub const MENU_TAG: u32 = 0x0E00_0000;
+
+/// One entry in a menu (internal form). A popup item carries `submenu` (a child
+/// HMENU); a leaf carries `id` (the WM_COMMAND id sent when clicked).
+#[derive(Clone)]
+pub struct MenuItem {
+    pub text: String,
+    pub id: u32,
+    pub submenu: Option<u32>,
+    pub separator: bool,
+    pub disabled: bool,
+}
+
+/// A resolved menu node for the frontend (submenus expanded into `children`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MenuItemData {
+    pub text: String,
+    pub id: u32,
+    pub separator: bool,
+    pub disabled: bool,
+    pub children: Vec<MenuItemData>,
+}
+
+/// The user's answer to a modal dialog. `button` is a Win32 ID (IDOK=1,
+/// IDCANCEL=2, IDABORT=3, IDRETRY=4, IDIGNORE=5, IDYES=6, IDNO=7); for a file
+/// dialog `file` is the chosen path (None = cancelled).
+#[derive(Debug, Clone)]
+pub struct DialogReply {
+    pub button: u32,
+    pub file: Option<String>,
 }
 
 pub enum DDrawSurfaceKind {
@@ -174,6 +230,11 @@ impl GuiState {
             ddraw_display_bpp: 32,
             ddraw_surfaces: std::collections::HashMap::new(),
             next_ddraw_surface: 1,
+            dialog_pending: false,
+            dialog_reply: None,
+            menus: std::collections::HashMap::new(),
+            next_menu: MENU_TAG | 0x10,
+            hwnd_menu: std::collections::HashMap::new(),
         }
     }
 }

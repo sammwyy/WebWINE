@@ -1,5 +1,8 @@
 use super::{ApiContext, Handled, WinApiRegistry};
-use webwine_api::vm::process::{GdiObject, GuestMsg, UiEvent, WindowEntry, GDI_TAG};
+use webwine_api::vm::process::{
+    GdiObject, GuestMsg, MenuItem, MenuItemData, UiEvent, WindowEntry, GDI_TAG,
+};
+use std::collections::HashMap;
 
 // Window messages we care about.
 const WM_DESTROY: u32 = 0x0002;
@@ -160,7 +163,19 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
-        ("user32.dll", "FillRect", fill_rect),    ];
+        ("user32.dll", "FillRect", fill_rect),
+        // Menus
+        ("user32.dll", "CreateMenu", create_menu),
+        ("user32.dll", "CreatePopupMenu", create_menu),
+        ("user32.dll", "AppendMenuA", |c| append_menu(c, false)),
+        ("user32.dll", "AppendMenuW", |c| append_menu(c, true)),
+        ("user32.dll", "SetMenu", set_menu),
+        ("user32.dll", "GetMenu", get_menu),
+        ("user32.dll", "DestroyMenu", destroy_menu),
+        ("user32.dll", "DrawMenuBar", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("user32.dll", "EnableMenuItem", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "CheckMenuItem", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
@@ -169,29 +184,30 @@ pub fn register(r: &mut WinApiRegistry) {
 fn msgbox_a(ctx: &mut ApiContext) -> Handled {
     let text = ctx.cstr(ctx.arg(1));
     let title = ctx.cstr(ctx.arg(2));
-    let style = ctx.arg(3);
-    ctx.ui_events
-        .push(UiEvent::MessageBox { title, text, style });
-    ctx.ret_stdcall(message_box_result(style), 4);
-    Handled::Ok
+    msgbox_common(ctx, title, text, ctx.arg(3))
 }
 
 fn msgbox_w(ctx: &mut ApiContext) -> Handled {
     let text = ctx.wstr(ctx.arg(1));
     let title = ctx.wstr(ctx.arg(2));
-    let style = ctx.arg(3);
-    ctx.ui_events
-        .push(UiEvent::MessageBox { title, text, style });
-    ctx.ret_stdcall(message_box_result(style), 4);
-    Handled::Ok
+    msgbox_common(ctx, title, text, ctx.arg(3))
 }
 
-fn message_box_result(style: u32) -> u32 {
-    match style & 0xF {
-        0x1 | 0x3 | 0x5 => 2, // IDCANCEL
-        0x4 => 7,             // IDNO
-        _ => 1,               // IDOK
+/// MessageBox blocks the guest until the user clicks a button (modal). On the
+/// first call it shows the box and suspends; the host posts the clicked button
+/// via `post_dialog_reply`, which resumes the call to return that ID.
+fn msgbox_common(ctx: &mut ApiContext, title: String, text: String, style: u32) -> Handled {
+    if let Some(reply) = ctx.gui.dialog_reply.take() {
+        ctx.gui.dialog_pending = false;
+        ctx.ret_stdcall(reply.button, 4);
+        return Handled::Ok;
     }
+    if ctx.gui.dialog_pending {
+        return Handled::Block; // still on screen, awaiting the user
+    }
+    ctx.gui.dialog_pending = true;
+    ctx.ui_events.push(UiEvent::MessageBox { title, text, style });
+    Handled::Block
 }
 
 fn register_window_message(ctx: &mut ApiContext) -> Handled {
@@ -285,6 +301,114 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
         height: h,
     });
     ctx.ret_stdcall(hwnd, 12);
+    Handled::Ok
+}
+
+// ─── menus ───────────────────────────────────────────────────────────────────
+// Menu items added via AppendMenu build a tree in `gui.menus`; SetMenu resolves
+// it and emits UiEvent::SetMenu so the frontend draws the menu bar. A clicked
+// leaf posts WM_COMMAND(id) back through the normal message pump.
+
+const MF_GRAYED: u32 = 0x0001;
+const MF_DISABLED: u32 = 0x0002;
+const MF_POPUP: u32 = 0x0010;
+const MF_SEPARATOR: u32 = 0x0800;
+
+fn create_menu(ctx: &mut ApiContext) -> Handled {
+    let h = ctx.gui.next_menu;
+    ctx.gui.next_menu += 1;
+    ctx.gui.menus.insert(h, Vec::new());
+    ctx.ret_stdcall(h, 0);
+    Handled::Ok
+}
+
+// AppendMenu(hMenu, uFlags, uIDNewItem, lpNewItem) — A and W share this; the
+// text read differs by `wide`.
+fn append_menu(ctx: &mut ApiContext, wide: bool) -> Handled {
+    let hmenu = ctx.arg(0);
+    let flags = ctx.arg(1);
+    let id_or_sub = ctx.arg(2);
+    let text_ptr = ctx.arg(3);
+
+    let item = if flags & MF_SEPARATOR != 0 {
+        MenuItem { text: String::new(), id: 0, submenu: None, separator: true, disabled: false }
+    } else {
+        let text = if text_ptr == 0 {
+            String::new()
+        } else if wide {
+            ctx.wstr(text_ptr)
+        } else {
+            ctx.cstr(text_ptr)
+        };
+        let disabled = flags & (MF_GRAYED | MF_DISABLED) != 0;
+        if flags & MF_POPUP != 0 {
+            MenuItem { text, id: 0, submenu: Some(id_or_sub), separator: false, disabled }
+        } else {
+            MenuItem { text, id: id_or_sub, submenu: None, separator: false, disabled }
+        }
+    };
+    if let Some(items) = ctx.gui.menus.get_mut(&hmenu) {
+        items.push(item);
+    }
+    ctx.ret_stdcall(1, 4); // TRUE
+    Handled::Ok
+}
+
+/// Expand a menu handle into a resolved tree for the frontend.
+fn resolve_menu(menus: &HashMap<u32, Vec<MenuItem>>, handle: u32, depth: u8) -> Vec<MenuItemData> {
+    if depth > 8 {
+        return Vec::new();
+    }
+    menus
+        .get(&handle)
+        .map(|items| {
+            items
+                .iter()
+                .map(|it| MenuItemData {
+                    text: it.text.clone(),
+                    id: it.id,
+                    separator: it.separator,
+                    disabled: it.disabled,
+                    children: it
+                        .submenu
+                        .map(|h| resolve_menu(menus, h, depth + 1))
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn set_menu(ctx: &mut ApiContext) -> Handled {
+    // SetMenu(hWnd, hMenu) — hMenu 0 removes the menu.
+    let hwnd = ctx.arg(0);
+    let hmenu = ctx.arg(1);
+    let items = if hmenu == 0 {
+        Vec::new()
+    } else {
+        resolve_menu(&ctx.gui.menus, hmenu, 0)
+    };
+    if hmenu == 0 {
+        ctx.gui.hwnd_menu.remove(&hwnd);
+    } else {
+        ctx.gui.hwnd_menu.insert(hwnd, hmenu);
+    }
+    ctx.ui_events.push(UiEvent::SetMenu { hwnd, items });
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn get_menu(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let h = ctx.gui.hwnd_menu.get(&hwnd).copied().unwrap_or(0);
+    ctx.ret_stdcall(h, 1);
+    Handled::Ok
+}
+
+fn destroy_menu(ctx: &mut ApiContext) -> Handled {
+    let h = ctx.arg(0);
+    ctx.gui.menus.remove(&h);
+    ctx.ret_stdcall(1, 1);
     Handled::Ok
 }
 

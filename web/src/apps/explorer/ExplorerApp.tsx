@@ -73,14 +73,26 @@ export function openExplorer(initialPath = ROOT_PATH, runtime: RuntimeBridge) {
   );
 }
 
-function ExplorerApp({
+/** When set, Explorer runs as a modal file picker: double-clicking / "Open" a
+ * file resolves `onPick(path)` instead of launching it, and a footer with a
+ * filename box + Open/Save/Cancel is shown. */
+export interface FilePickerProps {
+  save: boolean;
+  filter: string;
+  defaultName: string;
+  onPick: (path: string | null) => void;
+}
+
+export function ExplorerApp({
   initialPath,
   runtime,
   windowId,
+  picker,
 }: {
   initialPath: string;
   runtime: RuntimeBridge;
   windowId: string;
+  picker?: FilePickerProps;
 }) {
 
   const { setTitle } = useWindowStore();
@@ -109,6 +121,17 @@ function ExplorerApp({
     entry: DirectoryEntry | null;
   } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [pickerName, setPickerName] = useState(picker?.defaultName ?? "");
+  const pickerFilters = useMemo(() => parsePickerFilter(picker?.filter ?? ""), [picker?.filter]);
+  const [pickerFilterIdx, setPickerFilterIdx] = useState(0);
+
+  // In picker mode, choosing a file resolves the dialog (instead of launching).
+  const onOpenFile = picker ? (entry: DirectoryEntry) => picker.onPick(entry.path) : undefined;
+  const submitPicker = () => {
+    const n = pickerName.trim();
+    if (!n) return;
+    picker?.onPick(/^[a-z]:\\/i.test(n) ? n : `${path.replace(/\\+$/g, "")}\\${n}`);
+  };
 
   const sections = useMemo<SidebarSection[]>(
     () => [
@@ -913,7 +936,9 @@ function ExplorerApp({
                             viewSize="mosaic"
                             onNavigate={navigate}
                             runtime={runtime}
+                            onOpenFile={onOpenFile}
                             onSelect={(event) => {
+                              if (picker && entry.kind === "file") setPickerName(entry.name);
                               setSelectedPaths((current) => {
                                 if (event.ctrlKey || event.metaKey) {
                                   return current.includes(entry.path)
@@ -938,7 +963,14 @@ function ExplorerApp({
 
             {!error && path !== ROOT_PATH && (
               <div className={viewSize === "mosaic" ? "flex flex-wrap p-2" : ""}>
-                {visibleEntries.map((entry) => (
+                {(picker
+                  ? visibleEntries.filter(
+                    (e) =>
+                      e.kind === "directory" ||
+                      matchesPickerFilter(e.name, pickerFilters[pickerFilterIdx]?.pattern ?? "*.*"),
+                  )
+                  : visibleEntries
+                ).map((entry) => (
                   <ExplorerRow
                     key={entry.path}
                     entry={entry}
@@ -948,7 +980,9 @@ function ExplorerApp({
                     viewSize={viewSize}
                     onNavigate={navigate}
                     runtime={runtime}
+                    onOpenFile={onOpenFile}
                     onSelect={(event) => {
+                      if (picker && entry.kind === "file") setPickerName(entry.name);
                       setSelectedPaths((current) => {
                         if (event.ctrlKey || event.metaKey) {
                           return current.includes(entry.path)
@@ -987,6 +1021,37 @@ function ExplorerApp({
           onCancel={() => setRenameEntry(null)}
           onConfirm={() => void confirmRename()}
         />
+      )}
+      {picker && (
+        <div className="flex flex-col gap-2 px-3 py-2 border-t border-[rgba(127,127,127,0.25)] bg-[#1d1d1d] flex-none">
+          <div className="flex items-center gap-2">
+            <span className="w-16 text-[12px] opacity-70">File name</span>
+            <input
+              className="flex-1 bg-[#2b2b2b] border border-[rgba(127,127,127,0.3)] rounded px-2 py-1 text-[13px] outline-none"
+              value={pickerName}
+              autoFocus
+              onChange={(e) => setPickerName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitPicker()}
+            />
+            {pickerFilters.length > 0 && (
+              <select
+                className="bg-[#2b2b2b] border border-[rgba(127,127,127,0.3)] rounded px-2 py-1 text-[13px] outline-none max-w-[180px]"
+                value={pickerFilterIdx}
+                onChange={(e) => setPickerFilterIdx(Number(e.target.value))}
+              >
+                {pickerFilters.map((f, i) => (
+                  <option key={i} value={i}>{f.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button className="px-4 py-1 rounded bg-[#3a3a3a] hover:bg-[#454545] text-[13px]" onClick={() => picker.onPick(null)}>Cancel</button>
+            <button className="px-4 py-1 rounded bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[13px]" onClick={submitPicker}>
+              {picker.save ? "Save" : "Open"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1094,6 +1159,7 @@ function ExplorerRow({
   onSelect,
   onContextMenu,
   onDropInto,
+  onOpenFile,
 }: {
   entry: DirectoryEntry;
   selected: boolean;
@@ -1105,6 +1171,7 @@ function ExplorerRow({
   onSelect: (event: React.MouseEvent) => void;
   onContextMenu: (event: React.MouseEvent) => void;
   onDropInto: (path: string, event: React.DragEvent) => Promise<void>;
+  onOpenFile?: (entry: DirectoryEntry) => void;
 }) {
   const [imgSrc, setImgSrc] = useState(ICON_PLACEHOLDER);
 
@@ -1172,6 +1239,8 @@ function ExplorerRow({
       onDoubleClick={() => {
         if (isDir) {
           onNavigate(entry.path);
+        } else if (onOpenFile) {
+          onOpenFile(entry);
         } else {
           void launchGuestPath(entry.path, runtime);
         }
@@ -1222,6 +1291,27 @@ function parentPath(path: string): string | null {
   const idx = normalized.lastIndexOf("\\");
   if (idx <= 2) return `${normalized[0].toUpperCase()}:\\`;
   return normalized.slice(0, idx);
+}
+
+// ── file-picker filter helpers ───────────────────────────────────────────────
+function parsePickerFilter(filter: string): { label: string; pattern: string }[] {
+  if (!filter) return [];
+  const parts = filter.split("|");
+  const out: { label: string; pattern: string }[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) out.push({ label: parts[i], pattern: parts[i + 1] });
+  return out;
+}
+
+function matchesPickerFilter(name: string, pattern: string): boolean {
+  return pattern.split(";").some((p) => {
+    p = p.trim();
+    if (!p || p === "*.*" || p === "*") return true;
+    const re = new RegExp(
+      "^" + p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
+      "i",
+    );
+    return re.test(name);
+  });
 }
 
 function sortEntries(entries: DirectoryEntry[], sortKey: ExplorerSortKey = "name"): DirectoryEntry[] {

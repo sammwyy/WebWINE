@@ -259,3 +259,42 @@ fn files_sample_writes_to_vfs() {
     let bar = vm.read_file("C:\\Users\\guest\\Desktop\\foo\\bar.txt").expect("foo\\bar.txt");
     assert_eq!(bar.len(), 0, "bar.txt should be empty");
 }
+
+#[test]
+fn messagebox_blocks_then_resumes_with_user_reply() {
+    use crate::vm::process::UiEvent;
+    // Native MinGW C sample at samples/build/ (gitignored); skip if not built.
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../samples/build/00_messagebox.exe");
+    let Ok(bytes) = std::fs::read(path) else { return };
+
+    let mut vm = WebWineVm::new();
+    let guest = "C:\\Users\\guest\\Desktop\\00_messagebox.exe";
+    vm.mount_file(guest, bytes).unwrap();
+    let pid = vm.launch_process(guest).unwrap();
+
+    // Run until the modal MessageBox blocks the process.
+    let mut shown = false;
+    for _ in 0..50 {
+        let r = vm.run_process_slice(pid, 200_000).unwrap();
+        if r.ui_events.iter().any(|e| matches!(e, UiEvent::MessageBox { .. })) {
+            shown = true;
+        }
+        match r.state {
+            ProcessState::WaitingForInput
+            | ProcessState::Exited { .. }
+            | ProcessState::Crashed { .. } => break,
+            _ => {}
+        }
+    }
+    assert!(shown, "MessageBox UiEvent was not emitted");
+    assert!(
+        matches!(vm.get_process_info(pid).unwrap().state, ProcessState::WaitingForInput),
+        "process should block on the modal MessageBox, not return immediately"
+    );
+
+    // Click OK (IDOK = 1) and let it resume.
+    vm.post_dialog_reply(pid, 1, None).unwrap();
+    let (_out, state) = run_to_completion(&mut vm, pid);
+    // 00_messagebox returns `IDOK ? 0 : 1`, so a click of OK exits 0.
+    assert!(matches!(state, ProcessState::Exited { exit_code: 0 }), "got: {state:?}");
+}

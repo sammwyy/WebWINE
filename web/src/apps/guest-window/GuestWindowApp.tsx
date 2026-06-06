@@ -1,13 +1,24 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWindowStore } from "@/state/windowStore";
 
-import { showMessageBox } from "../message-box/MessageBoxApp";
+import { showMessageBox, type MessageBoxResult } from "../message-box/MessageBoxApp";
+import { showFileDialog } from "../file-dialog/FileDialogApp";
+import { GuestMenuBar } from "./GuestMenuBar";
+import type { MenuItemData } from "@/core/wasm/worker";
+
+const WM_COMMAND = 0x0111;
 import { beep } from "@/shared/lib/beep";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { UiEvent } from "@/core/wasm/worker";
 import { WebGLVideoDriver, type GpuCommand } from "@/core/gpu/video-driver";
 
 const WM_CLOSE = 0x0010;
+
+// MessageBox result string -> Win32 ID returned to the guest.
+const MSG_RESULT_ID: Record<MessageBoxResult, number> = {
+  ok: 1, cancel: 2, abort: 3, retry: 4, ignore: 5,
+  yes: 6, no: 7, tryagain: 10, continue: 11,
+};
 
 // Since guest windows are updated imperatively via canvas calls, we maintain
 // a global registry of the active canvas contexts and window IDs.
@@ -20,6 +31,8 @@ interface GuestWindowRecord {
   gl: WebGLVideoDriver | null;
   destroyed: boolean;
   queue: UiEvent[];
+  menuItems: MenuItemData[];
+  setMenuItems?: (items: MenuItemData[]) => void;
 }
 
 /** Route one event to the window's 2D or WebGL backend, creating it lazily. */
@@ -67,8 +80,25 @@ export function handleUiEvents(
   for (const ev of events) {
     switch (ev.kind) {
       case "message_box":
-        void showMessageBox(ev);
+        // Modal: the guest is blocked; feed the clicked button back to resume it.
+        void showMessageBox(ev).then((r) =>
+          runtime.postDialogReply(pid, MSG_RESULT_ID[r] ?? 1),
+        );
         break;
+      case "file_dialog":
+        // Modal: resume with the chosen path (button 1) or cancel (button 0).
+        void showFileDialog(ev, runtime).then((path) =>
+          runtime.postDialogReply(pid, path ? 1 : 0, path ?? ""),
+        );
+        break;
+      case "set_menu": {
+        const g = guestWindows.get(key(pid, ev.hwnd));
+        if (g) {
+          g.menuItems = ev.items;
+          g.setMenuItems?.(ev.items);
+        }
+        break;
+      }
       case "beep":
         beep(ev.freq, ev.duration);
         break;
@@ -213,6 +243,7 @@ function createGuestWindow(
     gl: null,
     destroyed: false,
     queue: [],
+    menuItems: [],
   });
 }
 
@@ -228,6 +259,9 @@ function GuestWindowApp({
   runtime: RuntimeBridge;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [menu, setMenu] = useState<MenuItemData[]>(
+    () => guestWindows.get(key(pid, hwnd))?.menuItems ?? [],
+  );
 
   useEffect(() => {
     const k = key(pid, hwnd);
@@ -235,6 +269,8 @@ function GuestWindowApp({
     if (!rec || !canvasRef.current) return;
 
     rec.canvas = canvasRef.current;
+    rec.setMenuItems = setMenu; // let live SetMenu events re-render the bar
+    setMenu(rec.menuItems);
     // Context (2D vs WebGL) is chosen lazily by the first queued/live event.
     for (const queuedEv of rec.queue) {
       paint(rec, queuedEv);
@@ -250,11 +286,14 @@ function GuestWindowApp({
   }, [pid, hwnd, runtime]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-full block bg-[var(--window-bg,#fff)]"
-      width={ev.width}
-      height={ev.height}
-    />
+    <div className="flex flex-col w-full h-full bg-[var(--window-bg,#fff)]">
+      <GuestMenuBar items={menu} onCommand={(id) => runtime.postWindowMessage(pid, hwnd, WM_COMMAND, id, 0)} />
+      <canvas
+        ref={canvasRef}
+        className="w-full flex-1 min-h-0 block bg-[var(--window-bg,#fff)]"
+        width={ev.width}
+        height={ev.height}
+      />
+    </div>
   );
 }

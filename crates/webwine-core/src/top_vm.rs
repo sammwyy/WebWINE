@@ -322,6 +322,18 @@ impl WebWineVm {
         Ok(())
     }
 
+    /// Deliver the user's answer to a modal dialog (MessageBox button, or a file
+    /// picker's chosen path / cancel) the process is blocked on, and wake it.
+    pub fn post_dialog_reply(&mut self, pid: u32, button: u32, file: Option<String>) -> Result<()> {
+        use crate::vm::process::{DialogReply, ProcessState};
+        let proc = self.processes.get_mut(pid).ok_or(VmError::ProcessNotFound(pid))?;
+        proc.gui.dialog_reply = Some(DialogReply { button, file });
+        if matches!(proc.state, ProcessState::WaitingForInput) {
+            proc.state = ProcessState::Running;
+        }
+        Ok(())
+    }
+
     pub fn get_process_info(&self, pid: u32) -> Result<ProcessInfo> {
         self.processes.get(pid).map(|p| p.info())
             .ok_or(VmError::ProcessNotFound(pid))
