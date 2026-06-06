@@ -64,7 +64,7 @@ pub enum UiEvent {
     // System sounds.
     Beep { freq: u32, duration: u32 },
 
-    // ── Direct3D8 GPU command stream ──────────────────────────────────────────
+    // Direct3D8 GPU command stream
     // Emitted by the directx crate's D3D8 state tracker; consumed by the host
     // VideoDriver (WebGL/WebGPU). The guest-side D3D8 COM layer translates draw
     // calls into these backend-agnostic commands. `hwnd` is the device's window.

@@ -26,11 +26,11 @@ export interface VideoDriver {
 
 /** Headless no-op driver (tests / when no canvas is available). */
 export class NullVideoDriver implements VideoDriver {
-  submit(): void {}
-  dispose(): void {}
+  submit(): void { }
+  dispose(): void { }
 }
 
-// ── WebGL2 backend ───────────────────────────────────────────────────────────
+// WebGL2 backend
 
 const VERT_SRC = `#version 300 es
 precision highp float;

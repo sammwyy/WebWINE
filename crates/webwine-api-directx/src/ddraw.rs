@@ -11,9 +11,7 @@ use webwine_api::vm::process::{DDrawSurface, UiEvent};
 use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
-use crate::{
-    com_qi, make_object, register_vtable, s0_1, s0_2, s0_3, s0_4, s1_1, Vtable,
-};
+use crate::{com_qi, make_object, register_vtable, s0_1, s0_2, s0_3, s0_4, s1_1, Vtable};
 
 // HRESULT constants
 const S_OK: u32 = 0x0000_0000;
@@ -40,7 +38,7 @@ const DDSD_WIDTH: u32 = 0x0000_0004;
 const DDSD_BACKBUFFERCOUNT: u32 = 0x0000_0020;
 const DDSD_PITCH: u32 = 0x0000_0008;
 
-// ─── interface vtables ───────────────────────────────────────────────────────
+// interface vtables
 
 pub(crate) const IDDRAW7: Vtable = &[
     ("IDirectDraw7::QueryInterface", com_qi),
@@ -58,19 +56,31 @@ pub(crate) const IDDRAW7: Vtable = &[
     ("IDirectDraw7::GetDisplayMode", iddraw7_get_display_mode),
     ("IDirectDraw7::GetFourCCCodes", s0_1),
     ("IDirectDraw7::GetGDISurface", s0_1),
-    ("IDirectDraw7::GetMonitorFrequency", iddraw7_get_monitor_frequency),
+    (
+        "IDirectDraw7::GetMonitorFrequency",
+        iddraw7_get_monitor_frequency,
+    ),
     ("IDirectDraw7::GetScanLine", s0_1),
-    ("IDirectDraw7::GetVerticalBlankStatus", iddraw7_get_vblank_status),
+    (
+        "IDirectDraw7::GetVerticalBlankStatus",
+        iddraw7_get_vblank_status,
+    ),
     ("IDirectDraw7::Initialize", s0_1),
     ("IDirectDraw7::RestoreDisplayMode", s0_1),
     ("IDirectDraw7::SetCooperativeLevel", s0_3),
     ("IDirectDraw7::SetDisplayMode", iddraw7_set_display_mode),
     ("IDirectDraw7::WaitForVerticalBlank", s0_3),
-    ("IDirectDraw7::GetAvailableVidMem", iddraw7_get_available_vidmem),
+    (
+        "IDirectDraw7::GetAvailableVidMem",
+        iddraw7_get_available_vidmem,
+    ),
     ("IDirectDraw7::GetSurfaceFromDC", s0_1),
     ("IDirectDraw7::RestoreAllSurfaces", s0_1),
     ("IDirectDraw7::TestCooperativeLevel", s0_1),
-    ("IDirectDraw7::GetDeviceIdentifier", iddraw7_get_device_identifier),
+    (
+        "IDirectDraw7::GetDeviceIdentifier",
+        iddraw7_get_device_identifier,
+    ),
     ("IDirectDraw7::StartModeTest", s0_1),
     ("IDirectDraw7::EvaluateMode", s0_1),
     ("IDirectDraw7::_reserved30", s0_1),
@@ -91,7 +101,10 @@ pub(crate) const IDDSURFACE7: Vtable = &[
     ("IDirectDrawSurface7::EnumAttachedSurfaces", s0_1),
     ("IDirectDrawSurface7::EnumOverlayZOrders", s0_1),
     ("IDirectDrawSurface7::Flip", iddsurface7_flip),
-    ("IDirectDrawSurface7::GetAttachedSurface", iddsurface7_get_attached_surface),
+    (
+        "IDirectDrawSurface7::GetAttachedSurface",
+        iddsurface7_get_attached_surface,
+    ),
     ("IDirectDrawSurface7::GetBltStatus", s0_2),
     ("IDirectDrawSurface7::GetCaps", s0_1),
     ("IDirectDrawSurface7::GetClipper", s0_1),
@@ -101,21 +114,30 @@ pub(crate) const IDDSURFACE7: Vtable = &[
     ("IDirectDrawSurface7::GetOverlayPosition", s0_1),
     ("IDirectDrawSurface7::GetPalette", s0_1),
     ("IDirectDrawSurface7::GetPixelFormat", s0_1),
-    ("IDirectDrawSurface7::GetSurfaceDesc", iddsurface7_get_surface_desc),
+    (
+        "IDirectDrawSurface7::GetSurfaceDesc",
+        iddsurface7_get_surface_desc,
+    ),
     ("IDirectDrawSurface7::Initialize", s0_1),
     ("IDirectDrawSurface7::IsLost", s0_1),
     ("IDirectDrawSurface7::Lock", iddsurface7_lock),
     ("IDirectDrawSurface7::ReleaseDC", s0_1),
     ("IDirectDrawSurface7::Restore", s0_1),
     ("IDirectDrawSurface7::SetClipper", s0_2),
-    ("IDirectDrawSurface7::SetColorKey", iddsurface7_set_color_key),
+    (
+        "IDirectDrawSurface7::SetColorKey",
+        iddsurface7_set_color_key,
+    ),
     ("IDirectDrawSurface7::SetOverlayPosition", s0_1),
     ("IDirectDrawSurface7::SetPalette", s0_1),
     ("IDirectDrawSurface7::Unlock", iddsurface7_unlock),
     ("IDirectDrawSurface7::UpdateOverlay", s0_1),
     ("IDirectDrawSurface7::UpdateOverlayDisplay", s0_1),
     ("IDirectDrawSurface7::UpdateOverlayZOrder", s0_1),
-    ("IDirectDrawSurface7::GetDDInterface", iddsurface7_get_ddinterface),
+    (
+        "IDirectDrawSurface7::GetDDInterface",
+        iddsurface7_get_ddinterface,
+    ),
 ];
 
 // Clipper is a pure no-op (just balance the stack). Note: matching the original,
@@ -139,14 +161,14 @@ pub fn register(r: &mut WinApiRegistry) {
     register_vtable(r, IDDCLIPPER);
 }
 
-// ─── surface-id helper ───────────────────────────────────────────────────────
+// surface-id helper
 
 /// Read the surface-id stored at object+4.
 fn surface_id_of(ctx: &ApiContext, obj_va: u32) -> u32 {
     crate::object_extra(ctx, obj_va)
 }
 
-// ─── IAT exports ─────────────────────────────────────────────────────────────
+// IAT exports
 
 /// `DirectDrawCreate(lpGUID, lplpDD, pUnkOuter)` — always returns an IDirectDraw7
 /// (the QueryInterface upgrade path is transparent).
@@ -171,7 +193,7 @@ fn ddraw_create_ex(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ─── IDirectDraw7 methods ────────────────────────────────────────────────────
+// IDirectDraw7 methods
 
 fn iddraw7_set_display_mode(ctx: &mut ApiContext) -> Handled {
     // SetDisplayMode(this, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags)
@@ -216,7 +238,11 @@ fn iddraw7_create_surface(ctx: &mut ApiContext) -> Handled {
         } else {
             ctx.gui.ddraw_display_h.max(480)
         };
-        (dw, dh, webwine_api::vm::process::DDrawSurfaceKind::Offscreen)
+        (
+            dw,
+            dh,
+            webwine_api::vm::process::DDrawSurfaceKind::Offscreen,
+        )
     };
 
     // Allocate pixel buffer on the guest heap: 4 bytes per pixel (BGRA8888).
@@ -313,8 +339,12 @@ fn iddraw7_get_display_mode(ctx: &mut ApiContext) -> Handled {
     // GetDisplayMode(this, lpDDSurfaceDesc2)
     let desc = ctx.arg(1);
     if desc != 0 {
-        let _ = ctx.memory.write_u32(desc + DESC_WIDTH, ctx.gui.ddraw_display_w);
-        let _ = ctx.memory.write_u32(desc + DESC_HEIGHT, ctx.gui.ddraw_display_h);
+        let _ = ctx
+            .memory
+            .write_u32(desc + DESC_WIDTH, ctx.gui.ddraw_display_w);
+        let _ = ctx
+            .memory
+            .write_u32(desc + DESC_HEIGHT, ctx.gui.ddraw_display_h);
         let _ = ctx.memory.write_u32(desc + 96, ctx.gui.ddraw_display_bpp);
     }
     ctx.ret_stdcall(S_OK, 2);
@@ -367,7 +397,7 @@ fn iddraw7_get_device_identifier(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ─── IDirectDrawSurface7 methods ─────────────────────────────────────────────
+// IDirectDrawSurface7 methods
 
 fn iddsurface7_release(ctx: &mut ApiContext) -> Handled {
     let this = ctx.arg(0);
@@ -386,7 +416,9 @@ fn iddsurface7_lock(ctx: &mut ApiContext) -> Handled {
     if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
         if desc_va != 0 {
             let _ = ctx.memory.write_u32(desc_va + DESC_PITCH, surf.stride);
-            let _ = ctx.memory.write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
+            let _ = ctx
+                .memory
+                .write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
             let _ = ctx.memory.write_u32(desc_va + DESC_WIDTH, surf.width);
             let _ = ctx.memory.write_u32(desc_va + DESC_HEIGHT, surf.height);
         }
@@ -408,7 +440,10 @@ fn iddsurface7_flip(ctx: &mut ApiContext) -> Handled {
 
     let (primary_id, back_id, w, h) = {
         if let Some(surf) = ctx.gui.ddraw_surfaces.get(&sid) {
-            let primary = if matches!(surf.kind, webwine_api::vm::process::DDrawSurfaceKind::Primary) {
+            let primary = if matches!(
+                surf.kind,
+                webwine_api::vm::process::DDrawSurfaceKind::Primary
+            ) {
                 sid
             } else {
                 sid
@@ -465,7 +500,9 @@ fn iddsurface7_blt(ctx: &mut ApiContext) -> Handled {
         };
         surface_fill(ctx, dst_sid, dst_x, dst_y, dst_w, dst_h, fill_color);
     } else {
-        surface_blit(ctx, src_sid, sx, sy, sw, sh, dst_sid, dst_x, dst_y, dst_w, dst_h);
+        surface_blit(
+            ctx, src_sid, sx, sy, sw, sh, dst_sid, dst_x, dst_y, dst_w, dst_h,
+        );
     }
 
     ctx.ret_stdcall(S_OK, 6);
@@ -546,7 +583,9 @@ fn iddsurface7_get_surface_desc(ctx: &mut ApiContext) -> Handled {
             let _ = ctx.memory.write_u32(desc_va + DESC_HEIGHT, surf.height);
             let _ = ctx.memory.write_u32(desc_va + DESC_PITCH, surf.stride);
             let _ = ctx.memory.write_u32(desc_va + DESC_CAPS_CAPS1, caps);
-            let _ = ctx.memory.write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
+            let _ = ctx
+                .memory
+                .write_u32(desc_va + DESC_SURFACE_PTR, surf.pixels_va);
         }
     }
     ctx.ret_stdcall(S_OK, 2);
@@ -564,7 +603,7 @@ fn iddsurface7_get_ddinterface(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ─── pixel buffer helpers ────────────────────────────────────────────────────
+// pixel buffer helpers
 
 /// Read rect from a Windows RECT struct, falling back to the full surface if NULL.
 fn read_rect_or_full(ctx: &ApiContext, rect_va: u32, sid: u32) -> (i32, i32, i32, i32) {
@@ -598,10 +637,21 @@ fn surface_blit(
     dh: i32,
 ) {
     let src_info = ctx.gui.ddraw_surfaces.get(&src_sid).map(|s| {
-        (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32, s.color_key)
+        (
+            s.pixels_va,
+            s.width as i32,
+            s.height as i32,
+            s.stride as i32,
+            s.color_key,
+        )
     });
     let dst_info = ctx.gui.ddraw_surfaces.get(&dst_sid).map(|s| {
-        (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32)
+        (
+            s.pixels_va,
+            s.width as i32,
+            s.height as i32,
+            s.stride as i32,
+        )
     });
 
     let (sp, sw_full, sh_full, s_stride, color_key) = match src_info {
@@ -649,7 +699,12 @@ fn surface_blit(
 /// Fill a region of a surface with a solid colour (for DDBLT_COLORFILL).
 fn surface_fill(ctx: &mut ApiContext, sid: u32, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let (pixels_va, surf_w, surf_h, stride) = match ctx.gui.ddraw_surfaces.get(&sid) {
-        Some(s) => (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32),
+        Some(s) => (
+            s.pixels_va,
+            s.width as i32,
+            s.height as i32,
+            s.stride as i32,
+        ),
         None => return,
     };
     for row in y..(y + h) {
@@ -669,7 +724,12 @@ fn surface_fill(ctx: &mut ApiContext, sid: u32, x: i32, y: i32, w: i32, h: i32, 
 /// Read a surface's pixel buffer and convert BGRA8888 → RGBA8888 for the canvas.
 fn read_surface_rgba(ctx: &ApiContext, sid: u32) -> Vec<u8> {
     let (pixels_va, w, h, stride) = match ctx.gui.ddraw_surfaces.get(&sid) {
-        Some(s) => (s.pixels_va, s.width as i32, s.height as i32, s.stride as i32),
+        Some(s) => (
+            s.pixels_va,
+            s.width as i32,
+            s.height as i32,
+            s.stride as i32,
+        ),
         None => return Vec::new(),
     };
 
