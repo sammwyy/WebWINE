@@ -11,10 +11,10 @@ import type React from "react";
 export type WindowVariant = "window" | "dialog";
 
 export interface WindowRect {
-  left: string;
-  top: string;
-  width: string;
-  height: string;
+  left: string | number;
+  top: string | number;
+  width: string | number;
+  height: string | number;
   transform: string;
 }
 
@@ -192,10 +192,10 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       windows: state.windows.map((w) => {
         if (w.id !== id || w.maximized) return w;
         const restoreRect: WindowRect = {
-          left: String(w.style.left ?? ""),
-          top: String(w.style.top ?? ""),
-          width: String(w.style.width ?? ""),
-          height: String(w.style.height ?? ""),
+          left: w.style.left ?? "",
+          top: w.style.top ?? "",
+          width: w.style.width ?? "",
+          height: w.style.height ?? "",
           transform: String(w.style.transform ?? ""),
         };
         const z = nextZIndex++;
