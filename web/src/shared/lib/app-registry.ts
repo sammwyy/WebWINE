@@ -5,6 +5,7 @@ export interface AppRegistration {
   exePath: string;
   icon: string;
   action: string;
+  extensions?: string[];
 }
 
 class AppRegistryImpl {
@@ -38,11 +39,14 @@ class AppRegistryImpl {
   }
 
   getAppsForExtension(ext: string): AppRegistration[] {
-    const target = `ext:${ext.toLowerCase()}`;
+    const targetExt = ext.toLowerCase();
     return this.registry.filter((a) => {
+      if (a.extensions && a.extensions.map(e => e.toLowerCase()).includes(targetExt)) {
+        return true;
+      }
       if (!a.action.startsWith("ext:")) return false;
       const exts = a.action.substring(4).split(",").map((e) => e.trim().toLowerCase());
-      return exts.includes(ext.toLowerCase());
+      return exts.includes(targetExt);
     });
   }
 
@@ -100,6 +104,28 @@ AppRegistry.registerApp(
     exePath: "C:\\Windows\\System32\\uploadfolder.exe",
     icon: "apps/upload-folder.webp",
     action: "upload-folder",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "Photo Viewer",
+    exePath: "C:\\Windows\\System32\\WWPhotoViewer.exe",
+    icon: "places/pictures.webp",
+    action: "photo-viewer",
+    extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"],
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
+    name: "Media Player",
+    exePath: "C:\\Windows\\System32\\WWMediaPlayer.exe",
+    icon: "places/video.webp",
+    action: "media-player",
+    extensions: ["mp3", "mp4", "webm", "ogg", "wav"],
   },
   undefined,
 );

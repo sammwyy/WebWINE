@@ -2,6 +2,8 @@ import { openExplorer } from "../../apps/explorer/ExplorerApp";
 import { launchProcessHidden } from "../../apps/process-console/ProcessConsoleApp";
 import { openTextReader } from "../../apps/text-reader/TextReaderApp";
 import { openRegedit } from "../../apps/regedit/RegeditApp";
+import { openPhotoViewer } from "../../apps/photo-viewer/PhotoViewerApp";
+import { openMediaPlayer } from "../../apps/media-player/MediaPlayerApp";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import {
   parseShortcutTarget,
@@ -119,6 +121,12 @@ async function launchShellAction(action: ShellAction, runtime: RuntimeBridge, ta
       return;
     case "editor":
       await openTextReader(targetPath ?? "", runtime);
+      return;
+    case "photo-viewer":
+      await openPhotoViewer(targetPath ?? "", runtime);
+      return;
+    case "media-player":
+      await openMediaPlayer(targetPath ?? "", runtime);
       return;
     case "regedit":
       openRegedit(runtime);

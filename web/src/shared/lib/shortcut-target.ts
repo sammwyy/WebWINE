@@ -5,7 +5,9 @@ export type ShellAction =
   | "documents"
   | "pictures"
   | "music"
-  | "videos"
+  | "editor"
+  | "photo-viewer"
+  | "media-player"
   | string; // Allow any string for dynamic actions
 
 export interface ShellActionDetail {
@@ -39,7 +41,9 @@ export function isShellAction(action: string): action is ShellAction {
     "documents",
     "pictures",
     "music",
-    "videos",
+    "editor",
+    "photo-viewer",
+    "media-player",
   ].includes(action)) return true;
   
   return AppRegistry.getAppByAction(action) !== undefined;

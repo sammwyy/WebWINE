@@ -17,7 +17,7 @@ export async function openTextReader(path: string, runtime: RuntimeBridge) {
   let winId = "";
 
   winId = useWindowStore.getState().openWindow({
-    title: `${name} — WW Editor`,
+    title: `${name} — WebWINE: Text Editor`,
     icon,
     width: 720,
     height: 520,
@@ -122,7 +122,7 @@ function TextEditorApp({
 
     useWindowStore
       .getState()
-      .setTitle(id, `${dirty ? "*" : ""}${name} — WW Editor`);
+      .setTitle(id, `${dirty ? "*" : ""}${name} — WebWINE: Text Editor`);
   }, [dirty, name, winId]);
 
   const save = async () => {

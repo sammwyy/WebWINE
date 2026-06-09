@@ -21,7 +21,7 @@ const ROOTS = [
 
 export function openRegedit(runtime: RuntimeBridge) {
   const id = useWindowStore.getState().openWindow({
-    title: "Registry Editor",
+    title: "WebWINE: Registry Editor",
     icon: `${import.meta.env.BASE_URL}theme/icons/apps/regedit.webp`,
     width: 880,
     height: 560,
