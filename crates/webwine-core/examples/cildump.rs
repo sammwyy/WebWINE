@@ -11,7 +11,10 @@ fn main() {
     let img = ClrImage::parse(&bytes).expect("parse managed image");
     let m = &img.meta;
 
-    println!("runtime {}  entry token 0x{:08X}", m.runtime_version, img.header.entry_point_token);
+    println!(
+        "runtime {}  entry token 0x{:08X}",
+        m.runtime_version, img.header.entry_point_token
+    );
 
     for r in 1..=m.row_count(T_METHODDEF) {
         let name = m.get_string(m.col(T_METHODDEF, r, 3));
@@ -22,9 +25,13 @@ fn main() {
             println!("  (no body)");
             continue;
         }
-        // Read the largest chunk that still fits in the image.
-        let hdr = (1..=512).rev().find_map(|n| img.rva_bytes(rva, n));
-        let Some(hdr) = hdr else { println!("  (rva unreadable)"); continue };
+        // Read only the method header first. Large real-world methods regularly
+        // exceed 512 bytes, so fetch the complete body after decoding its size.
+        let hdr = img.rva_bytes(rva, 12).or_else(|| img.rva_bytes(rva, 1));
+        let Some(hdr) = hdr else {
+            println!("  (rva unreadable)");
+            continue;
+        };
         let b0 = hdr[0];
         let (code_off, code_size, max_stack, locals_tok) = if b0 & 0x03 == 0x02 {
             (1usize, (b0 >> 2) as usize, 8u16, 0u32)
@@ -34,12 +41,20 @@ fn main() {
             let locals = u32::from_le_bytes([hdr[8], hdr[9], hdr[10], hdr[11]]);
             (12usize, code_size, max_stack, locals)
         };
-        println!("  hdr={} code_size={code_size} max_stack={max_stack} locals_tok=0x{locals_tok:08X}",
-            if code_off == 1 { "tiny" } else { "fat" });
-        let code = &hdr[code_off..code_off + code_size];
+        println!(
+            "  hdr={} code_size={code_size} max_stack={max_stack} locals_tok=0x{locals_tok:08X}",
+            if code_off == 1 { "tiny" } else { "fat" }
+        );
+        let Some(body) = img.rva_bytes(rva, code_off + code_size) else {
+            println!("  (body truncated)");
+            continue;
+        };
+        let code = &body[code_off..code_off + code_size];
         print!("  IL:");
         for (i, byte) in code.iter().enumerate() {
-            if i % 16 == 0 { print!("\n    "); }
+            if i % 16 == 0 {
+                print!("\n    ");
+            }
             print!("{byte:02X} ");
         }
         println!();

@@ -1,3 +1,4 @@
+use super::{ApiDispatcher, HandlerFn};
 use crate::fs::vfs::VirtualFileSystem;
 use crate::logs::LogBuffer;
 use crate::vm::cpu::X86Cpu;
@@ -5,7 +6,6 @@ use crate::vm::handles::HandleTable;
 use crate::vm::memory::GuestMemory;
 use crate::vm::process::{ConsoleStreams, GuiState, SpawnRequest};
 pub use crate::vm::process::{GuestMsg, UiEvent};
-use super::{ApiDispatcher, HandlerFn};
 
 pub enum Handled {
     Ok,
@@ -27,39 +27,45 @@ pub enum Handled {
     /// Call a guest function `func(args...)` (stdcall, callee cleans its args),
     /// then return from the current API with the function's result in EAX,
     /// cleaning `ret_args` stdcall args. Used by DispatchMessage → WndProc.
-    Invoke { func: u32, args: Vec<u32>, ret_args: u32 },
+    Invoke {
+        func: u32,
+        args: Vec<u32>,
+        ret_args: u32,
+    },
 }
 
 pub struct ApiContext<'a> {
-    pub cpu:       &'a mut X86Cpu,
-    pub memory:    &'a mut GuestMemory,
-    pub handles:   &'a mut HandleTable,
-    pub console:   &'a mut ConsoleStreams,
+    pub cpu: &'a mut X86Cpu,
+    pub memory: &'a mut GuestMemory,
+    pub handles: &'a mut HandleTable,
+    pub console: &'a mut ConsoleStreams,
     pub ui_events: &'a mut Vec<UiEvent>,
-    pub gui:       &'a mut GuiState,
-    pub spawns:    &'a mut Vec<SpawnRequest>,
+    pub gui: &'a mut GuiState,
+    pub spawns: &'a mut Vec<SpawnRequest>,
     /// pid the next CreateProcess child will receive (lets the handler fill
     /// PROCESS_INFORMATION synchronously).
     pub next_child_pid: u32,
     pub heap_next: &'a mut u32,
     pub heap_sizes: &'a mut std::collections::HashMap<u32, u32>,
-    pub fs:        &'a mut VirtualFileSystem,
-    pub registry:  &'a mut crate::registry::Registry,
-    pub logs:      &'a mut LogBuffer,
-    pub pid:       u32,
+    pub fs: &'a mut VirtualFileSystem,
+    pub registry: &'a mut crate::registry::Registry,
+    pub logs: &'a mut LogBuffer,
+    pub pid: u32,
     /// Guest path of the running image (e.g. C:\Users\guest\Desktop\calc.exe).
-    pub exe_path:  &'a str,
+    pub exe_path: &'a str,
     /// Current working directory; relative paths resolve against it.
-    pub cwd:       &'a mut String,
+    pub cwd: &'a mut String,
     /// Full command line (argv[0] is the quoted image path).
-    pub cmdline:   &'a str,
+    pub cmdline: &'a str,
     /// Message-table resource (id -> text) for FormatMessage(FROM_HMODULE).
-    pub messages:  &'a std::collections::HashMap<u32, String>,
+    pub messages: &'a std::collections::HashMap<u32, String>,
+    pub strings: &'a std::collections::HashMap<u32, String>,
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
     pub api_dispatcher: Option<&'a dyn ApiDispatcher>,
     pub tls_slots: &'a mut std::collections::HashMap<u32, u32>,
-    pub next_tls:  &'a mut u32,
+    pub next_tls: &'a mut u32,
     pub rand_seed: &'a mut u32,
+    pub dll_state: &'a mut std::collections::HashMap<String, u32>,
 }
 
 pub trait ApiRuntimeEnv {
@@ -135,7 +141,12 @@ impl<'a> ApiContext<'a> {
     /// Call another registered host API through the runtime dispatcher using a
     /// temporary stdcall frame. This is intended for API-to-API delegation inside
     /// stubs; complex blocking/exit flows should be returned to the executor.
-    pub fn call_api_stdcall(&mut self, dll: &str, name: &str, args: &[u32]) -> Option<(Handled, u32)> {
+    pub fn call_api_stdcall(
+        &mut self,
+        dll: &str,
+        name: &str,
+        args: &[u32],
+    ) -> Option<(Handled, u32)> {
         let handler = self.api_dispatcher?.handler(dll, name)?;
         let saved_esp = self.cpu.esp;
         let saved_eip = self.cpu.eip;
@@ -159,7 +170,9 @@ impl<'a> ApiContext<'a> {
 
     /// Bump allocator on the process heap, tracking sizes so realloc can copy.
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
-        if size == 0 { return 0; }
+        if size == 0 {
+            return 0;
+        }
         let aligned = (size + 15) & !15;
         let ptr = *self.heap_next;
         let new_next = self.heap_next.wrapping_add(aligned);
@@ -173,8 +186,12 @@ impl<'a> ApiContext<'a> {
     /// Reallocate `old` to `new_size`, preserving contents. Grows the last
     /// block in place; otherwise allocates a fresh block and copies.
     pub fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32 {
-        if old == 0 { return self.heap_alloc(new_size); }
-        if new_size == 0 { return 0; }
+        if old == 0 {
+            return self.heap_alloc(new_size);
+        }
+        if new_size == 0 {
+            return 0;
+        }
         let old_size = self.heap_sizes.get(&old).copied().unwrap_or(0);
         let aligned_old = (old_size + 15) & !15;
 
@@ -294,7 +311,9 @@ pub fn normalize_guest_path(cwd: &str, raw: &str) -> String {
     for comp in rest.split('\\') {
         match comp {
             "" | "." => {}
-            ".." => { parts.pop(); }
+            ".." => {
+                parts.pop();
+            }
             c => parts.push(c),
         }
     }
@@ -308,18 +327,36 @@ mod tests {
     #[test]
     fn resolves_relative_against_cwd() {
         let cwd = "C:\\Games\\Doom";
-        assert_eq!(normalize_guest_path(cwd, "doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
+        assert_eq!(
+            normalize_guest_path(cwd, "doom1.wad"),
+            "C:\\Games\\Doom\\doom1.wad"
+        );
         // `.` and `/` separators, the shapes an app's IWAD search uses.
-        assert_eq!(normalize_guest_path(cwd, ".\\doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
-        assert_eq!(normalize_guest_path(cwd, "./doom1.wad"), "C:\\Games\\Doom\\doom1.wad");
-        assert_eq!(normalize_guest_path(cwd, "wads/e1m1.lmp"), "C:\\Games\\Doom\\wads\\e1m1.lmp");
+        assert_eq!(
+            normalize_guest_path(cwd, ".\\doom1.wad"),
+            "C:\\Games\\Doom\\doom1.wad"
+        );
+        assert_eq!(
+            normalize_guest_path(cwd, "./doom1.wad"),
+            "C:\\Games\\Doom\\doom1.wad"
+        );
+        assert_eq!(
+            normalize_guest_path(cwd, "wads/e1m1.lmp"),
+            "C:\\Games\\Doom\\wads\\e1m1.lmp"
+        );
     }
 
     #[test]
     fn resolves_parent_and_absolute() {
         let cwd = "C:\\Games\\Doom";
-        assert_eq!(normalize_guest_path(cwd, "..\\config.cfg"), "C:\\Games\\config.cfg");
-        assert_eq!(normalize_guest_path(cwd, "C:\\abs\\file.txt"), "C:\\abs\\file.txt");
+        assert_eq!(
+            normalize_guest_path(cwd, "..\\config.cfg"),
+            "C:\\Games\\config.cfg"
+        );
+        assert_eq!(
+            normalize_guest_path(cwd, "C:\\abs\\file.txt"),
+            "C:\\abs\\file.txt"
+        );
         // Drive-rooted path keeps the cwd's drive.
         assert_eq!(normalize_guest_path(cwd, "\\rooted\\x"), "C:\\rooted\\x");
         // Verbatim prefix is stripped.

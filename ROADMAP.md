@@ -14,6 +14,31 @@ A browser-based Windows-like runtime. Rust/WASM owns the VM. TypeScript owns the
 - M8 Early Win32 UI — **done** (MessageBox dialogs; RegisterClass/CreateWindowEx → real windows; working message loop GetMessage/DispatchMessage with WndProc callbacks; WM_PAINT → TextOut rendering; close → WM_CLOSE/WM_DESTROY/WM_QUIT)
 - M9 Persistent Virtual Disk — pending
 
+## Compatibility smoke runner
+
+The native CLI can sweep one executable or an entire directory tree. Every EXE
+runs in a fresh VM and the report includes architecture, terminal state,
+instruction/UI counts, elapsed time, failure detail, and the most frequent
+unimplemented APIs:
+
+```powershell
+cargo run -p webwine-cli -- --smoke=samples/build --max=100
+cargo run -p webwine-cli -- --smoke=samples/vendored/notepad.exe --max=100
+```
+
+Current priority-app baseline:
+
+- `samples/vendored/notepad.exe`: managed .NET/WinForms entry point reaches an
+  interactive browser window.
+- `samples/vendored/Notepad/notepad-nt.exe`: native Win32 Notepad loads its
+  `RT_STRING` resources, creates its windows, and reaches `GetMessage` with no
+  unimplemented API calls on the startup path.
+- `samples/vendored/mspaint.exe`: MFC/CRT initialization is stack-safe and an
+  MFC host-window bridge keeps Paint interactive. The full MFC CWnd/CFrameWnd
+  object model and actual Paint command/canvas behavior remain future work.
+- All executables in `samples/build` reach an interactive state with zero
+  unimplemented calls in the smoke startup path.
+
 Real-binary findings (32-bit i386):
 - 32-bit MSVCRT console stubs (e.g. a Win10 `calc.exe` launcher) now get through CRT
   init (`__wgetmainargs`, `_onexit`, SHELL32 stubs implemented).
@@ -21,8 +46,9 @@ Real-binary findings (32-bit i386):
   prepending `\\?\`) then writes through a `Vec<u16>` whose data pointer is the
   empty-vec dangling value (2) — a capacity/reserve consistency bug in the emulated
   std internals. Not yet root-caused; needs instruction-level comparison vs hardware.
-- `mspaint.exe` imports 585 functions from **MFC42u.dll** plus COM/comctl32/propsys —
-  it needs the real MFC runtime, which is out of reach (we provide Win32, not MFC).
+- `mspaint.exe` imports hundreds of ordinal-only **MFC42u.dll** functions. Its
+  startup state, constructors, and `AfxWinMain` boundary are now modeled enough
+  to present a host window; complete MFC widget behavior is still a large layer.
 
 This remains the Wine-class long road. No-CRT, `println!`-style CRT console, Win32
 GUI, GDI graphics, and multi-process binaries run end to end.
@@ -37,8 +63,9 @@ images are the supported target. True x64 support would require a separate 64-bi
 interpreter — a large future effort.
 
 Extras now working: GDI raster drawing (Rectangle/Ellipse/LineTo/SetPixel/FillRect)
-rendered to a per-window canvas, and system beeps (Beep/MessageBeep) via Web Audio.
-DirectX/OpenGL/3D is out of scope; 2D GDI is the graphics path.
+rendered to a per-window canvas, system beeps (Beep/MessageBeep) via Web Audio,
+DirectDraw window/framebuffer paths, and a D3D8 command-stream foundation.
+Broad modern DirectX and OpenGL coverage remains incomplete.
 
 ## Milestone 1 — Browser Desktop and VFS
 **Goal:** Upload files, browse them inside a virtual desktop.

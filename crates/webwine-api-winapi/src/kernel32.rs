@@ -1,9 +1,9 @@
 use super::{ApiContext, Handled, WinApiRegistry};
-use webwine_api::winapi::context::ApiRuntimeEnv;
 use webwine_api::vm::handles::{
     KernelObject, CURRENT_PROCESS, CURRENT_THREAD, INVALID_HANDLE, STD_ERROR_HANDLE,
     STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
+use webwine_api::winapi::context::ApiRuntimeEnv;
 
 // Win32 error codes used by the file APIs.
 const ERROR_FILE_NOT_FOUND: u32 = 2;
@@ -18,6 +18,7 @@ pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
         // advapi32 registry: we have no registry,
         ("kernel32.dll", "ExitProcess", exit_process),
+        ("kernel32.dll", "#99", r0_2),
         ("kernel32.dll", "GetStdHandle", get_std_handle),
         ("kernel32.dll", "WriteFile", write_file),
         ("kernel32.dll", "WriteConsoleA", write_console_a),
@@ -41,6 +42,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetModuleHandleW", get_module_handle_w),
         ("kernel32.dll", "GetModuleFileNameA", get_module_filename_a),
         ("kernel32.dll", "GetModuleFileNameW", get_module_filename_w),
+        ("kernel32.dll", "GetTempPathA", get_temp_path_a),
+        ("kernel32.dll", "GetTempPathW", get_temp_path_w),
+        ("kernel32.dll", "GetTempFileNameA", get_temp_file_name_a),
+        ("kernel32.dll", "GetTempFileNameW", get_temp_file_name_w),
         (
             "kernel32.dll",
             "SetCurrentDirectoryA",
@@ -66,6 +71,16 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(n, 1);
             Handled::Ok
         }),
+        ("kernel32.dll", "lstrcpyA", lstrcpy_a),
+        ("kernel32.dll", "lstrcpyW", lstrcpy_w),
+        ("kernel32.dll", "lstrcpynA", lstrcpyn_a),
+        ("kernel32.dll", "lstrcpynW", lstrcpyn_w),
+        ("kernel32.dll", "lstrcatA", lstrcat_a),
+        ("kernel32.dll", "lstrcatW", lstrcat_w),
+        ("kernel32.dll", "lstrcmpA", lstrcmp_a),
+        ("kernel32.dll", "lstrcmpW", lstrcmp_w),
+        ("kernel32.dll", "lstrcmpiA", lstrcmpi_a),
+        ("kernel32.dll", "lstrcmpiW", lstrcmpi_w),
         (
             "kernel32.dll",
             "GetPrivateProfileStringA",
@@ -131,13 +146,28 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "GetVersionExA", get_version_ex),
         ("kernel32.dll", "GetVersionExW", get_version_ex),
+        ("kernel32.dll", "GetTimeZoneInformation", get_time_zone_information),
         ("kernel32.dll", "LoadLibraryA", load_library_a),
         ("kernel32.dll", "LoadLibraryW", load_library_w),
         ("kernel32.dll", "LoadLibraryExA", |c| {
+            let n = c.cstr(c.arg(0));
+            c.logs.log(
+                webwine_api::logs::LogLevel::Trace,
+                "api",
+                &format!("LoadLibraryExA {n:?}"),
+                Some(c.pid),
+            );
             c.ret_stdcall(FAKE_MODULE, 3);
             Handled::Ok
         }),
         ("kernel32.dll", "LoadLibraryExW", |c| {
+            let n = c.wstr(c.arg(0));
+            c.logs.log(
+                webwine_api::logs::LogLevel::Trace,
+                "api",
+                &format!("LoadLibraryExW {n:?}"),
+                Some(c.pid),
+            );
             c.ret_stdcall(FAKE_MODULE, 3);
             Handled::Ok
         }),
@@ -184,7 +214,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetStartupInfoA", get_startup_info),
         ("kernel32.dll", "GetStartupInfoW", get_startup_info),
         ("kernel32.dll", "GlobalMemoryStatus", global_memory_status),
-        ("kernel32.dll", "GlobalMemoryStatusEx", global_memory_status_ex),
+        (
+            "kernel32.dll",
+            "GlobalMemoryStatusEx",
+            global_memory_status_ex,
+        ),
         (
             "kernel32.dll",
             "GetCurrentProcessId",
@@ -434,6 +468,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "SetConsoleCtrlHandler", r1_2),
         ("kernel32.dll", "MultiByteToWideChar", multibyte_to_widechar),
         ("kernel32.dll", "WideCharToMultiByte", widechar_to_multibyte),
+        ("kernel32.dll", "MulDiv", mul_div),
         ("kernel32.dll", "GetACP", |c| {
             c.ret_stdcall(1252, 0);
             Handled::Ok
@@ -450,6 +485,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "CreateFileW", create_file_w),
         ("kernel32.dll", "GetFileSize", get_file_size),
         ("kernel32.dll", "GetFileSizeEx", get_file_size),
+        ("kernel32.dll", "GetFileTime", get_file_time),
         ("kernel32.dll", "SetFilePointer", set_file_pointer),
         ("kernel32.dll", "CreateDirectoryA", create_directory_a),
         ("kernel32.dll", "CreateDirectoryW", create_directory_w),
@@ -544,14 +580,20 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(r, 3);
             Handled::Ok
         }),
-        ("kernel32.dll", "LocalSize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
+        ("kernel32.dll", "LocalSize", local_or_global_size),
         ("kernel32.dll", "SetPriorityClass", |c| {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
+        ("kernel32.dll", "SetThreadPriority", r1_2),
+        ("kernel32.dll", "SetProcessDEPPolicy", r1_1),
+        ("kernel32.dll", "HeapSetInformation", r1_4),
+        ("kernel32.dll", "OpenEventA", |c| { c.ret_stdcall(0xE700_0001, 3); Handled::Ok }),
+        ("kernel32.dll", "OpenEventW", |c| { c.ret_stdcall(0xE700_0001, 3); Handled::Ok }),
+        ("kernel32.dll", "CreateThread", create_thread),
+        ("kernel32.dll", "RegisterApplicationRestart", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("kernel32.dll", "GlobalAddAtomA", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "GlobalAddAtomW", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
         // Registry value query (W10 explorer). 7 args; report not-found.
         ("kernel32.dll", "RegGetValueW", |c| {
             if c.arg(6) != 0 {
@@ -569,10 +611,14 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         // Named mutexes / events with the extended (4-arg) variants -> fake handle.
         ("kernel32.dll", "CreateMutexW", |c| {
+            // Freshly created (we own it): GetLastError must read ERROR_SUCCESS so
+            // single-instance apps treat us as the primary instance, not a duplicate.
+            c.set_last_error(0);
             c.ret_stdcall(0x4D54_0002, 3);
             Handled::Ok
         }),
         ("kernel32.dll", "CreateMutexA", |c| {
+            c.set_last_error(0);
             c.ret_stdcall(0x4D54_0002, 3);
             Handled::Ok
         }),
@@ -726,10 +772,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(p, 1);
             Handled::Ok
         }),
-        ("kernel32.dll", "GlobalSize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
+        ("kernel32.dll", "GlobalSize", local_or_global_size),
         (
             "api-ms-win-core-heap-l2-1-0.dll",
             "GlobalAlloc",
@@ -758,10 +801,170 @@ pub fn register(r: &mut WinApiRegistry) {
             "api-ms-win-core-localization-l1-2-0.dll",
             "FormatMessageA",
             format_message_a_fwd,
-        ),    ];
+        ),
+    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
+}
+
+fn write_ansi_z(c: &mut ApiContext, dst: u32, value: &str) {
+    let mut bytes = value.as_bytes().to_vec();
+    bytes.push(0);
+    let _ = c.memory.write_bytes(dst, &bytes);
+}
+
+fn write_wide_z(c: &mut ApiContext, dst: u32, value: &str) {
+    let mut bytes = Vec::with_capacity((value.len() + 1) * 2);
+    for unit in value.encode_utf16().chain(std::iter::once(0)) {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    let _ = c.memory.write_bytes(dst, &bytes);
+}
+
+fn get_temp_path_a(c: &mut ApiContext) -> Handled {
+    let path = "C:\\Temp\\";
+    let cap = c.arg(0) as usize;
+    if c.arg(1) != 0 && cap > path.len() { write_ansi_z(c, c.arg(1), path); }
+    c.ret_stdcall(path.len() as u32, 2);
+    Handled::Ok
+}
+
+fn get_temp_path_w(c: &mut ApiContext) -> Handled {
+    let path = "C:\\Temp\\";
+    let len = path.encode_utf16().count();
+    if c.arg(1) != 0 && (c.arg(0) as usize) > len { write_wide_z(c, c.arg(1), path); }
+    c.ret_stdcall(len as u32, 2);
+    Handled::Ok
+}
+
+fn get_temp_file_name_a(c: &mut ApiContext) -> Handled {
+    let dir = c.cstr(c.arg(0));
+    let prefix = c.cstr(c.arg(1));
+    let unique = if c.arg(2) == 0 {
+        *c.rand_seed = c.rand_seed.wrapping_add(1);
+        (*c.rand_seed & 0xFFFF).max(1)
+    } else { c.arg(2) & 0xFFFF };
+    let separator = if dir.ends_with(['\\', '/']) { "" } else { "\\" };
+    let name = format!("{dir}{separator}{}{unique:04X}.tmp", prefix.chars().take(3).collect::<String>());
+    write_ansi_z(c, c.arg(3), &name);
+    c.ret_stdcall(unique, 4);
+    Handled::Ok
+}
+
+fn get_temp_file_name_w(c: &mut ApiContext) -> Handled {
+    let dir = c.wstr(c.arg(0));
+    let prefix = c.wstr(c.arg(1));
+    let unique = if c.arg(2) == 0 {
+        *c.rand_seed = c.rand_seed.wrapping_add(1);
+        (*c.rand_seed & 0xFFFF).max(1)
+    } else { c.arg(2) & 0xFFFF };
+    let separator = if dir.ends_with(['\\', '/']) { "" } else { "\\" };
+    let name = format!("{dir}{separator}{}{unique:04X}.tmp", prefix.chars().take(3).collect::<String>());
+    write_wide_z(c, c.arg(3), &name);
+    c.ret_stdcall(unique, 4);
+    Handled::Ok
+}
+
+fn create_thread(c: &mut ApiContext) -> Handled {
+    let thread_id = c.next_child_pid.max(2);
+    if c.arg(5) != 0 { let _ = c.memory.write_u32(c.arg(5), thread_id); }
+    c.ret_stdcall(0x7A00_0000 | (thread_id & 0xFFFF), 6);
+    Handled::Ok
+}
+
+fn get_file_time(c: &mut ApiContext) -> Handled {
+    for index in 1..=3 {
+        let out = c.arg(index);
+        if out != 0 { let _ = c.memory.write_bytes(out, &[0; 8]); }
+    }
+    c.ret_stdcall(1, 4);
+    Handled::Ok
+}
+
+fn get_time_zone_information(c: &mut ApiContext) -> Handled {
+    let out = c.arg(0);
+    if out != 0 { let _ = c.memory.write_bytes(out, &vec![0; 172]); }
+    c.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn lstrcpy_a(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let value = c.cstr(c.arg(1));
+    write_ansi_z(c, dst, &value);
+    c.ret_stdcall(dst, 2);
+    Handled::Ok
+}
+
+fn lstrcpy_w(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let value = c.wstr(c.arg(1));
+    write_wide_z(c, dst, &value);
+    c.ret_stdcall(dst, 2);
+    Handled::Ok
+}
+
+fn lstrcpyn_a(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let max = c.arg(2) as usize;
+    let value = c.cstr(c.arg(1));
+    let end = value.floor_char_boundary(max.saturating_sub(1).min(value.len()));
+    if max > 0 { write_ansi_z(c, dst, &value[..end]); }
+    c.ret_stdcall(dst, 3);
+    Handled::Ok
+}
+
+fn lstrcpyn_w(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let max = c.arg(2) as usize;
+    let value = c.wstr(c.arg(1));
+    if max > 0 {
+        let truncated: String = value.chars().take(max - 1).collect();
+        write_wide_z(c, dst, &truncated);
+    }
+    c.ret_stdcall(dst, 3);
+    Handled::Ok
+}
+
+fn lstrcat_a(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let value = c.cstr(dst) + &c.cstr(c.arg(1));
+    write_ansi_z(c, dst, &value);
+    c.ret_stdcall(dst, 2);
+    Handled::Ok
+}
+
+fn lstrcat_w(c: &mut ApiContext) -> Handled {
+    let dst = c.arg(0);
+    let value = c.wstr(dst) + &c.wstr(c.arg(1));
+    write_wide_z(c, dst, &value);
+    c.ret_stdcall(dst, 2);
+    Handled::Ok
+}
+
+fn lstrcmp_a(c: &mut ApiContext) -> Handled {
+    let result = c.cstr(c.arg(0)).cmp(&c.cstr(c.arg(1))) as i32;
+    c.ret_stdcall(result as u32, 2);
+    Handled::Ok
+}
+
+fn lstrcmp_w(c: &mut ApiContext) -> Handled {
+    let result = c.wstr(c.arg(0)).cmp(&c.wstr(c.arg(1))) as i32;
+    c.ret_stdcall(result as u32, 2);
+    Handled::Ok
+}
+
+fn lstrcmpi_a(c: &mut ApiContext) -> Handled {
+    let result = c.cstr(c.arg(0)).to_lowercase().cmp(&c.cstr(c.arg(1)).to_lowercase()) as i32;
+    c.ret_stdcall(result as u32, 2);
+    Handled::Ok
+}
+
+fn lstrcmpi_w(c: &mut ApiContext) -> Handled {
+    let result = c.wstr(c.arg(0)).to_lowercase().cmp(&c.wstr(c.arg(1)).to_lowercase()) as i32;
+    c.ret_stdcall(result as u32, 2);
+    Handled::Ok
 }
 
 pub(crate) fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
@@ -1741,6 +1944,12 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
     } else {
         let name = ctx.cstr(name_arg);
         let v = ctx.proc_address("", &name);
+        ctx.logs.log(
+            webwine_api::logs::LogLevel::Trace,
+            "api",
+            &format!("GetProcAddress {name:?} -> 0x{v:08X}"),
+            Some(ctx.pid),
+        );
         if v == 0 {
             // A miss means a dynamically-resolved import we don't provide; the
             // guest may call NULL. Logged at trace for diagnosis ("Run as debug").
@@ -1911,7 +2120,23 @@ fn heap_realloc(ctx: &mut ApiContext) -> Handled {
 }
 
 fn heap_size(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(0, 3);
+    let size = ctx.heap_sizes.get(&ctx.arg(2)).copied().unwrap_or(u32::MAX);
+    ctx.ret_stdcall(size, 3);
+    Handled::Ok
+}
+
+fn local_or_global_size(ctx: &mut ApiContext) -> Handled {
+    let size = ctx.heap_sizes.get(&ctx.arg(0)).copied().unwrap_or(0);
+    ctx.ret_stdcall(size, 1);
+    Handled::Ok
+}
+
+fn mul_div(ctx: &mut ApiContext) -> Handled {
+    let number = ctx.arg(0) as i32 as i64;
+    let numerator = ctx.arg(1) as i32 as i64;
+    let denominator = ctx.arg(2) as i32 as i64;
+    let result = if denominator == 0 { -1 } else { (number * numerator) / denominator };
+    ctx.ret_stdcall(result as i32 as u32, 3);
     Handled::Ok
 }
 
@@ -1951,11 +2176,11 @@ fn virtual_query(ctx: &mut ApiContext) -> Handled {
     fn to_win_prot(bits: u32) -> u32 {
         let (r, w, x) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0);
         match (x, w, r) {
-            (true, true, _) => 0x40,  // PAGE_EXECUTE_READWRITE
-            (true, false, true) => 0x20, // PAGE_EXECUTE_READ
-            (true, false, false) => 0x10, // PAGE_EXECUTE
-            (false, true, _) => 0x04, // PAGE_READWRITE
-            (false, false, true) => 0x02, // PAGE_READONLY
+            (true, true, _) => 0x40,       // PAGE_EXECUTE_READWRITE
+            (true, false, true) => 0x20,   // PAGE_EXECUTE_READ
+            (true, false, false) => 0x10,  // PAGE_EXECUTE
+            (false, true, _) => 0x04,      // PAGE_READWRITE
+            (false, false, true) => 0x02,  // PAGE_READONLY
             (false, false, false) => 0x01, // PAGE_NOACCESS
         }
     }
@@ -1970,20 +2195,42 @@ fn virtual_query(ctx: &mut ApiContext) -> Handled {
     let page = addr & !0xFFF;
 
     // Region containing addr, if any (Copy fields → immutable borrow ends here).
-    let mapped = ctx.memory.regions.range(..=addr).next_back()
+    let mapped = ctx
+        .memory
+        .regions
+        .range(..=addr)
+        .next_back()
         .filter(|(_, r)| addr < r.base.wrapping_add(r.size))
         .map(|(_, r)| (r.base, r.base.wrapping_add(r.size), r.prot.bits()));
 
     let (base_addr, alloc_base, alloc_prot, region_size, state, protect, mem_type) = match mapped {
         Some((base, end, bits)) => {
             let p = to_win_prot(bits);
-            (page, base, p, end.wrapping_sub(page), 0x1000u32 /*MEM_COMMIT*/, p, 0x20000u32 /*MEM_PRIVATE*/)
+            (
+                page,
+                base,
+                p,
+                end.wrapping_sub(page),
+                0x1000u32, /*MEM_COMMIT*/
+                p,
+                0x20000u32, /*MEM_PRIVATE*/
+            )
         }
         None => {
             // Free hole: RegionSize spans up to the next mapped region.
-            let next = ctx.memory.regions.range(addr..).next().map(|(&b, _)| b).unwrap_or(0);
+            let next = ctx
+                .memory
+                .regions
+                .range(addr..)
+                .next()
+                .map(|(&b, _)| b)
+                .unwrap_or(0);
             let size = if next > page { next - page } else { 0x1000 };
-            (page, 0, 0, size, 0x10000u32 /*MEM_FREE*/, 0x01u32 /*PAGE_NOACCESS*/, 0)
+            (
+                page, 0, 0, size, 0x10000u32, /*MEM_FREE*/
+                0x01u32,    /*PAGE_NOACCESS*/
+                0,
+            )
         }
     };
 
@@ -2146,7 +2393,7 @@ fn expand_env_strings_a(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-fn expand_env_strings_w(ctx: &mut ApiContext) -> Handled {
+pub(crate) fn expand_env_strings_w(ctx: &mut ApiContext) -> Handled {
     let expanded = expand_env_text(&ctx.wstr(ctx.arg(0)));
     let out = ctx.arg(1);
     let size = ctx.arg(2);
@@ -2349,7 +2596,16 @@ fn get_system_time_struct(ctx: &mut ApiContext) -> Handled {
     if p != 0 {
         // wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds
         let ms = (crate::winmm::tick_ms() % 1000) as u16;
-        for (off, v) in [(0, 2024u16), (2, 1), (4, 1), (6, 1), (8, 12), (10, 0), (12, 0), (14, ms)] {
+        for (off, v) in [
+            (0, 2024u16),
+            (2, 1),
+            (4, 1),
+            (6, 1),
+            (8, 12),
+            (10, 0),
+            (12, 0),
+            (14, ms),
+        ] {
             let _ = ctx.memory.write_u16(p + off, v);
         }
     }
@@ -2363,13 +2619,13 @@ fn global_memory_status(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
         const G2: u32 = 2 * 1024 * 1024 * 1024 - 1; // ~2 GB (fits in u32)
-        let _ = ctx.memory.write_u32(p, 32);          // dwLength
-        let _ = ctx.memory.write_u32(p + 4, 25);      // dwMemoryLoad
-        let _ = ctx.memory.write_u32(p + 8, G2);      // dwTotalPhys
+        let _ = ctx.memory.write_u32(p, 32); // dwLength
+        let _ = ctx.memory.write_u32(p + 4, 25); // dwMemoryLoad
+        let _ = ctx.memory.write_u32(p + 8, G2); // dwTotalPhys
         let _ = ctx.memory.write_u32(p + 12, G2 / 4 * 3); // dwAvailPhys (~1.5 GB)
-        let _ = ctx.memory.write_u32(p + 16, G2);     // dwTotalPageFile
+        let _ = ctx.memory.write_u32(p + 16, G2); // dwTotalPageFile
         let _ = ctx.memory.write_u32(p + 20, G2 / 4 * 3); // dwAvailPageFile
-        let _ = ctx.memory.write_u32(p + 24, G2);     // dwTotalVirtual
+        let _ = ctx.memory.write_u32(p + 24, G2); // dwTotalVirtual
         let _ = ctx.memory.write_u32(p + 28, G2 / 4 * 3); // dwAvailVirtual
     }
     ctx.ret_stdcall(0, 1);
@@ -2387,13 +2643,13 @@ fn global_memory_status_ex(ctx: &mut ApiContext) -> Handled {
         const G4: u64 = 4 * 1024 * 1024 * 1024;
         // dwLength (+0) is set by the caller; leave it. dwMemoryLoad (+4).
         let _ = ctx.memory.write_u32(p + 4, 25);
-        write_u64(ctx, 8, G4);          // ullTotalPhys
+        write_u64(ctx, 8, G4); // ullTotalPhys
         write_u64(ctx, 16, G4 / 4 * 3); // ullAvailPhys
-        write_u64(ctx, 24, G4);         // ullTotalPageFile
+        write_u64(ctx, 24, G4); // ullTotalPageFile
         write_u64(ctx, 32, G4 / 4 * 3); // ullAvailPageFile
-        write_u64(ctx, 40, G4);         // ullTotalVirtual
+        write_u64(ctx, 40, G4); // ullTotalVirtual
         write_u64(ctx, 48, G4 / 4 * 3); // ullAvailVirtual
-        write_u64(ctx, 56, 0);          // ullAvailExtendedVirtual
+        write_u64(ctx, 56, 0); // ullAvailExtendedVirtual
     }
     ctx.ret_stdcall(1, 1);
     Handled::Ok
@@ -2405,17 +2661,17 @@ fn global_memory_status_ex(ctx: &mut ApiContext) -> Handled {
 fn get_system_info(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
-        let _ = ctx.memory.write_u16(p, 0);            // wProcessorArchitecture = INTEL
-        let _ = ctx.memory.write_u16(p + 2, 0);        // wReserved
-        let _ = ctx.memory.write_u32(p + 4, 0x1000);   // dwPageSize = 4 KB
-        let _ = ctx.memory.write_u32(p + 8, 0x0001_0000);   // lpMinimumApplicationAddress
-        let _ = ctx.memory.write_u32(p + 12, 0x7FFE_FFFF);  // lpMaximumApplicationAddress
-        let _ = ctx.memory.write_u32(p + 16, 1);       // dwActiveProcessorMask
-        let _ = ctx.memory.write_u32(p + 20, 1);       // dwNumberOfProcessors
-        let _ = ctx.memory.write_u32(p + 24, 586);     // dwProcessorType = PENTIUM
+        let _ = ctx.memory.write_u16(p, 0); // wProcessorArchitecture = INTEL
+        let _ = ctx.memory.write_u16(p + 2, 0); // wReserved
+        let _ = ctx.memory.write_u32(p + 4, 0x1000); // dwPageSize = 4 KB
+        let _ = ctx.memory.write_u32(p + 8, 0x0001_0000); // lpMinimumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 12, 0x7FFE_FFFF); // lpMaximumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 16, 1); // dwActiveProcessorMask
+        let _ = ctx.memory.write_u32(p + 20, 1); // dwNumberOfProcessors
+        let _ = ctx.memory.write_u32(p + 24, 586); // dwProcessorType = PENTIUM
         let _ = ctx.memory.write_u32(p + 28, 0x0001_0000); // dwAllocationGranularity = 64 KB
-        let _ = ctx.memory.write_u16(p + 32, 6);       // wProcessorLevel
-        let _ = ctx.memory.write_u16(p + 34, 0x0E08);  // wProcessorRevision
+        let _ = ctx.memory.write_u16(p + 32, 6); // wProcessorLevel
+        let _ = ctx.memory.write_u16(p + 34, 0x0E08); // wProcessorRevision
     }
     ctx.ret_stdcall(0, 1);
     Handled::Ok
@@ -2744,11 +3000,6 @@ stubs! {
     r0_8 => (0, 8),
     r1_0 => (1, 0), r1_1 => (1, 1), r1_2 => (1, 2), r1_3 => (1, 3),
     r1_4 => (1, 4), r1_5 => (1, 5), r1_6 => (1, 6), r1_7 => (1, 7),
-}
-
-fn stub_invalid_handle(c: &mut ApiContext) -> Handled {
-    c.ret_stdcall(INVALID_HANDLE, 7);
-    Handled::Ok
 }
 
 // â”€â”€â”€ FormatMessage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

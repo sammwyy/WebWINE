@@ -7,9 +7,11 @@ use crate::clr::metadata::{decompress_uint, CodedKind, T_MEMBERREF, T_METHODDEF,
 use crate::clr::ClrImage;
 use crate::error::{Result, VmError};
 
-use std::rc::Rc;
 use std::cell::RefCell;
-use webwine_api_net20::{Net20Runtime, Value};
+use std::collections::HashMap;
+use std::rc::Rc;
+use webwine_api::vm::process::UiEvent;
+use webwine_api_net20::{ManagedObject, Net20Runtime, Value};
 
 /// Resolved call target: either interpreted IL or a BCL internal call.
 pub enum CallTarget {
@@ -25,6 +27,9 @@ pub struct ClrRuntime<'a> {
     steps: u64,
     step_limit: u64,
     call_depth: usize,
+    static_fields: HashMap<u32, Value>,
+    pub ui_events: Vec<UiEvent>,
+    waiting_for_input: bool,
 }
 
 impl<'a> ClrRuntime<'a> {
@@ -37,6 +42,9 @@ impl<'a> ClrRuntime<'a> {
             steps: 0,
             step_limit: 1_000_000,
             call_depth: 0,
+            static_fields: HashMap::new(),
+            ui_events: Vec::new(),
+            waiting_for_input: false,
         }
     }
 
@@ -52,7 +60,7 @@ impl<'a> ClrRuntime<'a> {
 
     /// Execute a MethodDef body with the given arguments. Returns the value left
     /// on the stack at `ret`, if the method is non-void.
-    pub fn run_method(&mut self, method_row: u32, args: Vec<Value>) -> Result<Option<Value>> {
+    pub fn run_method(&mut self, method_row: u32, mut args: Vec<Value>) -> Result<Option<Value>> {
         if self.call_depth > 200 {
             return Err(VmError::Unsupported("CLR call stack overflow (depth > 200)".into()));
         }
@@ -98,9 +106,10 @@ impl<'a> ClrRuntime<'a> {
                     stack.push(args.get(i).cloned().unwrap_or(Value::Null));
                 }
                 0x10 => {
-                    // starg.s <u8> â€” not meaningful without mutable args; drop.
-                    ip += 1;
-                    stack.pop();
+                    // starg.s <u8>
+                    let i = code[ip] as usize; ip += 1;
+                    let value = stack.pop().unwrap_or(Value::Null);
+                    if i < args.len() { args[i] = value; }
                 }
                 0x11 => {
                     // ldloc.s <u8>
@@ -165,6 +174,19 @@ impl<'a> ClrRuntime<'a> {
                     let tok = u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     self.do_call(tok, &mut stack)?;
+                }
+                0x45 => {
+                    // switch <count> <i32 targets...>
+                    let count = read_u32(&code, ip) as usize;
+                    ip += 4;
+                    let table_end = ip + count * 4;
+                    let index = stack.pop().unwrap_or(Value::I4(-1)).as_i4();
+                    if index >= 0 && (index as usize) < count {
+                        let off = read_i32(&code, ip + index as usize * 4);
+                        ip = (table_end as i32 + off) as usize;
+                    } else {
+                        ip = table_end;
+                    }
                 }
                 0x2A => {
                     // ret
@@ -237,6 +259,65 @@ impl<'a> ClrRuntime<'a> {
                     let v = stack.pop().unwrap_or(Value::I4(0)).as_i4();
                     stack.push(Value::I4(!v));
                 }
+                0x69 => {
+                    // conv.i4
+                    let value = stack.pop().unwrap_or(Value::I4(0)).as_i4();
+                    stack.push(Value::I4(value));
+                }
+                0x6A => {
+                    // conv.i8
+                    let value = stack.pop().unwrap_or(Value::I4(0)).as_i4();
+                    stack.push(Value::I8(value as i64));
+                }
+                0x73 => {
+                    // newobj <constructor token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    self.do_newobj(tok, &mut stack)?;
+                }
+                0x74 | 0x75 => {
+                    // castclass / isinst. Object identity is sufficient for the
+                    // lightweight managed compatibility layer.
+                    ip += 4;
+                }
+                0x7B => {
+                    // ldfld <token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    let object = stack.pop().unwrap_or(Value::Null);
+                    let value = match object {
+                        Value::Object(object) => object.borrow().fields.get(&tok).cloned().unwrap_or(Value::Null),
+                        _ => Value::Null,
+                    };
+                    stack.push(value);
+                }
+                0x7D => {
+                    // stfld <token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    let value = stack.pop().unwrap_or(Value::Null);
+                    let object = stack.pop().unwrap_or(Value::Null);
+                    if let Value::Object(object) = object {
+                        object.borrow_mut().fields.insert(tok, value);
+                    }
+                }
+                0x7E => {
+                    // ldsfld <token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    stack.push(self.static_fields.get(&tok).cloned().unwrap_or(Value::Null));
+                }
+                0x80 => {
+                    // stsfld <token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    let value = stack.pop().unwrap_or(Value::Null);
+                    self.static_fields.insert(tok, value);
+                }
+                0x8C | 0xA5 => {
+                    // box / unbox.any. Values are already represented uniformly.
+                    ip += 4;
+                }
                 // comparisons (push 0/1)
                 0xFE => {
                     // two-byte opcodes
@@ -250,6 +331,19 @@ impl<'a> ClrRuntime<'a> {
                             let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
                             stack.push(args.get(i).cloned().unwrap_or(Value::Null));
                         }
+                        0x06 | 0x07 => {
+                            // ldftn / ldvirtftn <method token>. Delegates are
+                            // opaque in this compatibility layer.
+                            let tok = read_u32(&code, ip);
+                            ip += 4;
+                            stack.push(Value::I4(tok as i32));
+                        }
+                        0x0B => {
+                            // starg <u16>
+                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
+                            let value = stack.pop().unwrap_or(Value::Null);
+                            if i < args.len() { args[i] = value; }
+                        }
                         0x0C => {
                             // ldloc <u16>
                             let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
@@ -260,6 +354,11 @@ impl<'a> ClrRuntime<'a> {
                             let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
                             let v = stack.pop().unwrap_or(Value::Null);
                             if i < locals.len() { locals[i] = v; }
+                        }
+                        0x15 => {
+                            // initobj <token>
+                            ip += 4;
+                            stack.pop();
                         }
                         _ => return Err(VmError::Unsupported(format!("unimplemented CIL opcode FE {op2:02X}"))),
                     }
@@ -281,6 +380,36 @@ impl<'a> ClrRuntime<'a> {
                 0x38 => ip = branch_long(&code, ip, true),                  // br
                 0x39 => ip = branch_long(&code, ip, !pop_bool(&mut stack)),   // brfalse
                 0x3A => ip = branch_long(&code, ip, pop_bool(&mut stack)),  // brtrue
+                0x3B => ip = branch_cmp(&code, ip, &mut stack, |a, b| a == b), // beq
+                0x3C => ip = branch_cmp(&code, ip, &mut stack, |a, b| a >= b), // bge
+                0x3D => ip = branch_cmp(&code, ip, &mut stack, |a, b| a > b), // bgt
+                0x3E => ip = branch_cmp(&code, ip, &mut stack, |a, b| a <= b), // ble
+                0x3F => ip = branch_cmp(&code, ip, &mut stack, |a, b| a < b), // blt
+                0x40 => ip = branch_cmp(&code, ip, &mut stack, |a, b| a != b), // bne.un
+                0x41 => ip = branch_cmp(&code, ip, &mut stack, |a, b| (a as u32) >= (b as u32)),
+                0x42 => ip = branch_cmp(&code, ip, &mut stack, |a, b| (a as u32) > (b as u32)),
+                0x43 => ip = branch_cmp(&code, ip, &mut stack, |a, b| (a as u32) <= (b as u32)),
+                0x44 => ip = branch_cmp(&code, ip, &mut stack, |a, b| (a as u32) < (b as u32)),
+                0xA2 => {
+                    // stelem.ref
+                    let value = stack.pop().unwrap_or(Value::Null);
+                    let index = stack.pop().unwrap_or(Value::I4(0)).as_i4();
+                    let array = stack.pop().unwrap_or(Value::Null);
+                    if let Value::Array(array) = array {
+                        if let Some(slot) = array.borrow_mut().get_mut(index.max(0) as usize) {
+                            *slot = value;
+                        }
+                    }
+                }
+                0xD0 => {
+                    // ldtoken <token>
+                    let tok = read_u32(&code, ip);
+                    ip += 4;
+                    stack.push(Value::I4(tok as i32));
+                }
+                0xDC => {} // endfinally
+                0xDD => ip = branch_long(&code, ip, true), // leave
+                0xDE => ip = branch_short(&code, ip, true), // leave.s
                 _ => return Err(VmError::Unsupported(format!("unimplemented CIL opcode 0x{op:02X}"))),
             }
         }
@@ -308,6 +437,39 @@ impl<'a> ClrRuntime<'a> {
                         stack.push(Value::Null);
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn do_newobj(&mut self, tok: u32, stack: &mut Vec<Value>) -> Result<()> {
+        let target = self.resolve_call(tok)?;
+        match target {
+            CallTarget::Method { row, argc, .. } => {
+                let explicit = pop_args(stack, argc.saturating_sub(1));
+                let object = Value::Object(Rc::new(RefCell::new(ManagedObject {
+                    type_name: self.img.method_owner(row),
+                    fields: HashMap::new(),
+                    text: String::new(),
+                })));
+                let mut args = Vec::with_capacity(explicit.len() + 1);
+                args.push(object.clone());
+                args.extend(explicit);
+                self.run_method(row, args)?;
+                stack.push(object);
+            }
+            CallTarget::Bcl { key, argc, .. } => {
+                let explicit = pop_args(stack, argc.saturating_sub(1));
+                let object = Value::Object(Rc::new(RefCell::new(ManagedObject {
+                    type_name: key.split("::").next().unwrap_or("System.Object").to_string(),
+                    fields: HashMap::new(),
+                    text: String::new(),
+                })));
+                let mut args = Vec::with_capacity(explicit.len() + 1);
+                args.push(object.clone());
+                args.extend(explicit);
+                webwine_api_net20::dispatch(&key, args, self);
+                stack.push(object);
             }
         }
         Ok(())
@@ -399,6 +561,10 @@ impl<'a> ClrRuntime<'a> {
         self.halted = true;
         self.exit_code = code;
     }
+
+    pub fn is_waiting_for_input(&self) -> bool {
+        self.waiting_for_input
+    }
 }
 
 impl Net20Runtime for ClrRuntime<'_> {
@@ -408,6 +574,20 @@ impl Net20Runtime for ClrRuntime<'_> {
 
     fn halt(&mut self, code: i32) {
         ClrRuntime::halt(self, code);
+    }
+
+    fn show_window(&mut self, title: String) {
+        let hwnd = 0x0001_0010;
+        self.ui_events.push(UiEvent::CreateWindow {
+            hwnd,
+            title,
+            x: 80,
+            y: 60,
+            width: 800,
+            height: 600,
+        });
+        self.ui_events.push(UiEvent::ShowWindow { hwnd, show: true });
+        self.waiting_for_input = true;
     }
 }
 
@@ -471,4 +651,18 @@ fn branch_cmp_s(code: &[u8], ip: usize, stack: &mut Vec<Value>, f: impl Fn(i32, 
     let b = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     let a = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     branch_short(code, ip, f(a, b))
+}
+
+fn branch_cmp(code: &[u8], ip: usize, stack: &mut Vec<Value>, f: impl Fn(i32, i32) -> bool) -> usize {
+    let b = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
+    let a = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
+    branch_long(code, ip, f(a, b))
+}
+
+fn read_u32(code: &[u8], ip: usize) -> u32 {
+    u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]])
+}
+
+fn read_i32(code: &[u8], ip: usize) -> i32 {
+    i32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]])
 }

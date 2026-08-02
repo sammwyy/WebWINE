@@ -23,6 +23,9 @@ pub struct WinApiRegistry {
     by_name: HashMap<(String, String), u32>,
     // function name -> trampoline VA, for GetProcAddress (dynamic linking).
     proc_addr: HashMap<String, u32>,
+    // Imported variables (CRT globals such as `_wcmdln`) are IAT entries too,
+    // but they must resolve to guest data, never executable trampolines.
+    data_symbols: HashMap<(String, String), u32>,
     // Upper-cased names of every DLL we provide built-in stubs for. The loader
     // uses this (not a name heuristic) to tell "we implement this DLL" from
     // "this is an app/third-party DLL that must come from a file".
@@ -38,6 +41,7 @@ impl WinApiRegistry {
             by_va: HashMap::new(),
             by_name: HashMap::new(),
             proc_addr: HashMap::new(),
+            data_symbols: HashMap::new(),
             dll_names: HashSet::new(),
             next: TRAMPOLINE_BASE,
         }
@@ -79,6 +83,19 @@ impl WinApiRegistry {
         }
     }
 
+    /// Register a guest address for an imported data symbol.
+    pub fn add_data(&mut self, dll: &str, name: &str, address: u32) {
+        self.data_symbols
+            .insert((dll.to_ascii_uppercase(), name.to_string()), address);
+        self.dll_names.insert(dll.to_ascii_uppercase());
+    }
+
+    pub fn data_address(&self, dll: &str, name: &str) -> Option<u32> {
+        self.data_symbols
+            .get(&(dll.to_ascii_uppercase(), name.to_string()))
+            .copied()
+    }
+
     /// True if we provide built-in stubs for this DLL (any function registered
     /// under its name). Replaces name-prefix heuristics in the loader.
     pub fn has_stub_dll(&self, dll: &str) -> bool {
@@ -112,7 +129,8 @@ impl WinApiRegistry {
         let key = self.by_va.get(&va)?;
         // Exact (dll, name) first, then name-only, then the UCRT "_o_" downlevel
         // alias (e.g. _o__set_app_type -> _set_app_type).
-        let f = self.handlers
+        let f = self
+            .handlers
             .get(key)
             .or_else(|| self.by_func.get(&key.1))
             .or_else(|| key.1.strip_prefix("_o_").and_then(|n| self.by_func.get(n)));
@@ -152,7 +170,9 @@ impl WinApiRegistry {
         let key = (dll.to_ascii_uppercase(), name.to_string());
         self.handlers.contains_key(&key)
             || self.by_func.contains_key(name)
-            || name.strip_prefix("_o_").is_some_and(|n| self.by_func.contains_key(n))
+            || name
+                .strip_prefix("_o_")
+                .is_some_and(|n| self.by_func.contains_key(n))
     }
 }
 
@@ -180,56 +200,137 @@ impl Default for WinApiRegistry {
 fn default_stdcall_args(name: &str) -> u32 {
     match name {
         // 0 args
-        "GetLastError" | "GetCurrentThread" | "GetCurrentProcess"
-        | "GetCurrentThreadId" | "GetCurrentProcessId" | "GetCommandLineA"
-        | "GetCommandLineW" | "GetTickCount" | "GetTickCount64"
-        | "GetCursor" | "ReleaseCapture" | "GetDesktopWindow"
-        | "GetActiveWindow" | "GetForegroundWindow" => 0,
+        "GetLastError"
+        | "GetCurrentThread"
+        | "GetCurrentProcess"
+        | "GetCurrentThreadId"
+        | "GetCurrentProcessId"
+        | "GetCommandLineA"
+        | "GetCommandLineW"
+        | "GetTickCount"
+        | "GetTickCount64"
+        | "GetCursor"
+        | "ReleaseCapture"
+        | "GetDesktopWindow"
+        | "GetActiveWindow"
+        | "GetForegroundWindow" => 0,
         // 1 arg
-        "CloseHandle" | "SetLastError" | "ExitProcess" | "Sleep" | "LocalFree"
-        | "GlobalFree" | "SetThreadLocale" | "GetThreadLocale" | "IsWindow"
-        | "DestroyWindow" | "FreeLibrary" | "DeleteObject" | "GetDC"
-        | "SetThreadStackGuarantee" | "RtlDeleteCriticalSection"
-        | "ClipCursor" | "DestroyCursor" | "DestroyIcon" | "GetCursorPos"
-        | "GetKeyState" | "GetAsyncKeyState" | "GetKeyboardLayout"
-        | "GetKeyboardLayoutNameA" | "GetKeyboardState" | "GetMenu" | "GetParent"
-        | "IsZoomed" | "IsIconic" | "SetCapture" | "SetCursor" | "SetFocus"
-        | "SetForegroundWindow" | "PostQuitMessage" | "GetSystemMetrics"
-        | "DeleteDC" | "RealizePalette" | "GetSystemPaletteUse"
-        | "UnrealizeObject" | "CreatePalette" | "UpdateWindow"
-        | "GetWindowDC" | "SwapBuffers" => 1,
+        "CloseHandle"
+        | "SetLastError"
+        | "ExitProcess"
+        | "Sleep"
+        | "LocalFree"
+        | "GlobalFree"
+        | "SetThreadLocale"
+        | "GetThreadLocale"
+        | "IsWindow"
+        | "DestroyWindow"
+        | "FreeLibrary"
+        | "DeleteObject"
+        | "GetDC"
+        | "SetThreadStackGuarantee"
+        | "RtlDeleteCriticalSection"
+        | "ClipCursor"
+        | "DestroyCursor"
+        | "DestroyIcon"
+        | "GetCursorPos"
+        | "GetKeyState"
+        | "GetAsyncKeyState"
+        | "GetKeyboardLayout"
+        | "GetKeyboardLayoutNameA"
+        | "GetKeyboardState"
+        | "GetMenu"
+        | "GetParent"
+        | "IsZoomed"
+        | "IsIconic"
+        | "SetCapture"
+        | "SetCursor"
+        | "SetFocus"
+        | "SetForegroundWindow"
+        | "PostQuitMessage"
+        | "GetSystemMetrics"
+        | "DeleteDC"
+        | "RealizePalette"
+        | "GetSystemPaletteUse"
+        | "UnrealizeObject"
+        | "CreatePalette"
+        | "UpdateWindow"
+        | "GetWindowDC"
+        | "SwapBuffers" => 1,
         // 2 args
-        "GetProcAddress" | "SetEvent" | "WaitForSingleObject" | "ReleaseMutex"
-        | "EnableWindow" | "ShowWindow" | "GetWindowRect" | "ReleaseDC"
-        | "ClientToScreen" | "ScreenToClient" | "ChangeDisplaySettingsA"
-        | "GetWindowLongA" | "GetWindowLongW" | "KillTimer" | "LoadKeyboardLayoutA"
-        | "SetCursorPos" | "UnregisterClassA" | "UnregisterClassW"
-        | "WindowFromPoint" | "SetWindowTextA" | "SetWindowTextW"
-        | "GetClientRect" | "BeginPaint" | "EndPaint" | "SetDeviceGammaRamp"
-        | "GetDeviceGammaRamp" | "GetDeviceCaps" | "SetSystemPaletteUse"
-        | "ChoosePixelFormat" | "GetStockObject" => 2,
+        "GetProcAddress"
+        | "SetEvent"
+        | "WaitForSingleObject"
+        | "ReleaseMutex"
+        | "EnableWindow"
+        | "ShowWindow"
+        | "GetWindowRect"
+        | "ReleaseDC"
+        | "ClientToScreen"
+        | "ScreenToClient"
+        | "ChangeDisplaySettingsA"
+        | "GetWindowLongA"
+        | "GetWindowLongW"
+        | "KillTimer"
+        | "LoadKeyboardLayoutA"
+        | "SetCursorPos"
+        | "UnregisterClassA"
+        | "UnregisterClassW"
+        | "WindowFromPoint"
+        | "SetWindowTextA"
+        | "SetWindowTextW"
+        | "GetClientRect"
+        | "BeginPaint"
+        | "EndPaint"
+        | "SetDeviceGammaRamp"
+        | "GetDeviceGammaRamp"
+        | "GetDeviceCaps"
+        | "SetSystemPaletteUse"
+        | "ChoosePixelFormat"
+        | "GetStockObject" => 2,
         // 3 args
-        "OpenThread" | "VirtualFree" | "TlsSetValue" | "HeapDestroy"
-        | "VirtualLock" | "EnumDisplaySettingsA" | "GetClassInfoA"
-        | "InvalidateRect" | "MapVirtualKeyExA" | "SetClassLongA"
-        | "SetWindowLongA" | "SetWindowLongW" | "AdjustWindowRect" | "PtInRect"
-        | "SetPixelFormat" | "SelectPalette" => 3,
+        "OpenThread"
+        | "VirtualFree"
+        | "TlsSetValue"
+        | "HeapDestroy"
+        | "VirtualLock"
+        | "EnumDisplaySettingsA"
+        | "GetClassInfoA"
+        | "InvalidateRect"
+        | "MapVirtualKeyExA"
+        | "SetClassLongA"
+        | "SetWindowLongA"
+        | "SetWindowLongW"
+        | "AdjustWindowRect"
+        | "PtInRect"
+        | "SetPixelFormat"
+        | "SelectPalette" => 3,
         // 4 args
-        "VirtualAlloc" | "MessageBoxA" | "MessageBoxW" | "CreateThread"
-        | "VirtualProtect" | "AdjustWindowRectEx" | "MapWindowPoints"
-        | "PostMessageA" | "PostMessageW" | "SetTimer" | "GetMessageA"
-        | "GetMessageW" | "DefWindowProcA" | "DefWindowProcW"
-        | "DescribePixelFormat" | "SetDIBColorTable" | "SetPaletteEntries"
+        "VirtualAlloc"
+        | "MessageBoxA"
+        | "MessageBoxW"
+        | "CreateThread"
+        | "VirtualProtect"
+        | "AdjustWindowRectEx"
+        | "MapWindowPoints"
+        | "PostMessageA"
+        | "PostMessageW"
+        | "SetTimer"
+        | "GetMessageA"
+        | "GetMessageW"
+        | "DefWindowProcA"
+        | "DefWindowProcW"
+        | "DescribePixelFormat"
+        | "SetDIBColorTable"
+        | "SetPaletteEntries"
         | "GetSystemPaletteEntries" => 4,
         // 5 args
-        "CallWindowProcA" | "PeekMessageA" | "PeekMessageW" | "ToAsciiEx"
-        | "ToUnicode" => 5,
+        "CallWindowProcA" | "PeekMessageA" | "PeekMessageW" | "ToAsciiEx" | "ToUnicode" => 5,
         // 6 args
         "CreateFileMappingW" | "RegOpenKeyExW" | "RegQueryValueExW" | "RegOpenKeyExA"
         | "RegQueryValueExA" | "MoveWindow" | "LoadImageA" | "LoadImageW" => 6,
         // 7 args
-        "CreateCursor" | "CreateIconFromResourceEx" | "SetWindowPos"
-        | "GetDIBits" => 7,
+        "CreateCursor" | "CreateIconFromResourceEx" | "SetWindowPos" | "GetDIBits" => 7,
         // 9+ args
         "BitBlt" => 9,
         "StretchBlt" => 11,

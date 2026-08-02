@@ -1,5 +1,20 @@
 use super::{ApiContext, Handled, WinApiRegistry};
 
+// Process-lifetime CRT globals. The slots live in the mapped PEB scratch page;
+// their pointed-to strings/arrays live in a separate data page initialized by
+// the native loader before the entry point runs.
+pub const CRT_ACMDLN_SLOT: u32 = 0x7FFD_F560;
+pub const CRT_WCMDLN_SLOT: u32 = 0x7FFD_F564;
+pub const CRT_ARGC_SLOT: u32 = 0x7FFD_F568;
+pub const CRT_ARGV_SLOT: u32 = 0x7FFD_F56C;
+pub const CRT_WARGV_SLOT: u32 = 0x7FFD_F570;
+pub const CRT_ENVIRON_SLOT: u32 = 0x7FFD_F574;
+pub const CRT_WENVIRON_SLOT: u32 = 0x7FFD_F578;
+pub const CRT_FMODE_SLOT: u32 = 0x7FFD_F57C;
+pub const CRT_COMMODE_SLOT: u32 = 0x7FFD_F580;
+const CRT_DATA_BASE: u32 = 0x7FFC_0000;
+const CRT_DATA_SIZE: u32 = 0x0001_0000;
+
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
         ("msvcrt.dll", "exit", exit),
@@ -24,6 +39,34 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "strncpy", strncpy),
         ("msvcrt.dll", "strcat", strcat),
         ("msvcrt.dll", "strncat", strncat),
+        // Multibyte helpers. WebWINE currently exposes the Windows-1252
+        // process code page, where every byte is a complete character.
+        ("msvcrt.dll", "_ismbblead", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_ismbbtrail", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_mbclen", |c| {
+            c.ret_cdecl(1);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_mbsinc", |c| {
+            c.ret_cdecl(c.arg(0).wrapping_add(1));
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_getmbcp", |c| {
+            c.ret_cdecl(1252);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_setmbcp", stub_zero_cdecl_1),
+        // The x86 compiler intrinsic entry points exchange operands/results on
+        // the x87 stack. The CPU currently treats x87 instructions as no-ops,
+        // so these preserve control flow without pretending there is a scalar
+        // stack-argument ABI.
+        ("msvcrt.dll", "_CIpow", stub_void_0),
+        ("msvcrt.dll", "_CIsin", stub_void_0),
+        ("msvcrt.dll", "_CIcos", stub_void_0),
+        ("msvcrt.dll", "_CItan", stub_void_0),
+        ("msvcrt.dll", "_CIsqrt", stub_void_0),
+        ("msvcrt.dll", "_CIlog", stub_void_0),
+        ("msvcrt.dll", "_CIexp", stub_void_0),
         ("msvcrt.dll", "getenv", getenv_fn),
         ("msvcrt.dll", "_getcwd", getcwd_fn),
         ("msvcrt.dll", "getcwd", getcwd_fn),
@@ -37,19 +80,91 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "wcscpy", wcscpy_fn),
         ("msvcrt.dll", "wcscat", wcscat_fn),
         ("msvcrt.dll", "wcsncpy", wcsncpy_fn),
-        ("msvcrt.dll", "wcscmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
-        ("msvcrt.dll", "_wcsicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
+        ("msvcrt.dll", "wcscmp", |c| {
+            let a = c.wstr(c.arg(0));
+            let b = c.wstr(c.arg(1));
+            c.ret_cdecl(a.cmp(&b) as i32 as u32);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_wcsicmp", |c| {
+            let a = c.wstr(c.arg(0)).to_lowercase();
+            let b = c.wstr(c.arg(1)).to_lowercase();
+            c.ret_cdecl(a.cmp(&b) as i32 as u32);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "wcschr", wcschr_fn),
         ("msvcrt.dll", "wcsrchr", wcsrchr_fn),
         ("msvcrt.dll", "wcsstr", wcsstr_fn),
-        ("msvcrt.dll", "wcsncmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
-        ("msvcrt.dll", "_wcsnicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
-        ("msvcrt.dll", "towupper", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_uppercase() as u32).unwrap_or(v)); Handled::Ok }),
-        ("msvcrt.dll", "towlower", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_lowercase() as u32).unwrap_or(v)); Handled::Ok }),
-        ("msvcrt.dll", "iswalpha", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_alphabetic() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "iswdigit", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_numeric() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "iswspace", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_whitespace() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = 1_577_836_800u32; if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
+        ("msvcrt.dll", "wcsncmp", |c| {
+            let a = c.wstr(c.arg(0));
+            let b = c.wstr(c.arg(1));
+            let n = c.arg(2) as usize;
+            let r = a.chars().take(n).cmp(b.chars().take(n)) as i32;
+            c.ret_cdecl(r as u32);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_wcsnicmp", |c| {
+            let a = c.wstr(c.arg(0)).to_lowercase();
+            let b = c.wstr(c.arg(1)).to_lowercase();
+            let n = c.arg(2) as usize;
+            let r = a.chars().take(n).cmp(b.chars().take(n)) as i32;
+            c.ret_cdecl(r as u32);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "towupper", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.to_ascii_uppercase() as u32)
+                    .unwrap_or(v),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "towlower", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.to_ascii_lowercase() as u32)
+                    .unwrap_or(v),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswalpha", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_alphabetic() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswdigit", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_numeric() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswspace", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_whitespace() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "time", |c| {
+            let t = c.arg(0);
+            let now = 1_577_836_800u32;
+            if t != 0 {
+                let _ = c.memory.write_u32(t, now);
+            }
+            c.ret_cdecl(now);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "srand", |c| {
             *c.rand_seed = c.arg(0);
             c.ret_cdecl(0);
@@ -78,13 +193,31 @@ pub fn register(r: &mut WinApiRegistry) {
         // CRT fd <-> Win32 HANDLE mapping (cmd.exe queries its std handles).
         ("msvcrt.dll", "_get_osfhandle", get_osfhandle),
         ("msvcrt.dll", "_open_osfhandle", open_osfhandle),
-        ("msvcrt.dll", "_isatty", |c| { let fd = c.arg(0); c.ret_cdecl(if fd <= 2 { 1 } else { 0 }); Handled::Ok }),
-        ("msvcrt.dll", "_fileno", |c| { let s = c.arg(0); c.ret_cdecl(s); Handled::Ok }),
+        ("msvcrt.dll", "_isatty", |c| {
+            let fd = c.arg(0);
+            c.ret_cdecl(if fd <= 2 { 1 } else { 0 });
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_fileno", |c| {
+            let s = c.arg(0);
+            c.ret_cdecl(s);
+            Handled::Ok
+        }),
         // fd lifecycle (stdio redirection). We don't keep a real fd table, so
         // _dup returns the same fd, _dup2/_close report success.
-        ("msvcrt.dll", "_dup", |c| { let fd = c.arg(0); c.ret_cdecl(fd); Handled::Ok }),
-        ("msvcrt.dll", "_dup2", |c| { c.ret_cdecl(0); Handled::Ok }),
-        ("msvcrt.dll", "_close", |c| { c.ret_cdecl(0); Handled::Ok }),
+        ("msvcrt.dll", "_dup", |c| {
+            let fd = c.arg(0);
+            c.ret_cdecl(fd);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_dup2", |c| {
+            c.ret_cdecl(0);
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "_close", |c| {
+            c.ret_cdecl(0);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "atof", stub_zero_cdecl_1),
         ("msvcrt.dll", "puts", puts),
         ("msvcrt.dll", "putchar", putchar),
@@ -118,6 +251,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "_initterm_e", initterm_e),
         ("msvcrt.dll", "__p___argc", p_argc),
         ("msvcrt.dll", "__p___argv", p_argv),
+        ("msvcrt.dll", "__p___wargv", p_wargv),
         ("msvcrt.dll", "__p__acmdln", p_acmdln),
         ("msvcrt.dll", "__p__wcmdln", p_wcmdln),
         ("msvcrt.dll", "__getmainargs", getmainargs),
@@ -221,51 +355,67 @@ pub fn register(r: &mut WinApiRegistry) {
             let wc = c.arg(0) as u32;
             // Simple ASCII-range upcasing; for full Unicode use char::to_uppercase.
             let out = if wc <= 0xFFFF {
-                char::from_u32(wc).map(|ch| ch.to_uppercase().next().unwrap_or(ch) as u32).unwrap_or(wc)
-            } else { wc };
+                char::from_u32(wc)
+                    .map(|ch| ch.to_uppercase().next().unwrap_or(ch) as u32)
+                    .unwrap_or(wc)
+            } else {
+                wc
+            };
             c.ret_cdecl(out);
             Handled::Ok
         }),
         ("msvcrt.dll", "towlower", |c| {
             let wc = c.arg(0) as u32;
             let out = if wc <= 0xFFFF {
-                char::from_u32(wc).map(|ch| ch.to_lowercase().next().unwrap_or(ch) as u32).unwrap_or(wc)
-            } else { wc };
+                char::from_u32(wc)
+                    .map(|ch| ch.to_lowercase().next().unwrap_or(ch) as u32)
+                    .unwrap_or(wc)
+            } else {
+                wc
+            };
             c.ret_cdecl(out);
             Handled::Ok
         }),
         ("msvcrt.dll", "iswalpha", |c| {
             let wc = c.arg(0) as u32;
-            let r = char::from_u32(wc).map(|ch| ch.is_alphabetic()).unwrap_or(false);
+            let r = char::from_u32(wc)
+                .map(|ch| ch.is_alphabetic())
+                .unwrap_or(false);
             c.ret_cdecl(if r { 1 } else { 0 });
             Handled::Ok
         }),
         ("msvcrt.dll", "iswdigit", |c| {
             let wc = c.arg(0) as u32;
-            let r = char::from_u32(wc).map(|ch| ch.is_ascii_digit()).unwrap_or(false);
+            let r = char::from_u32(wc)
+                .map(|ch| ch.is_ascii_digit())
+                .unwrap_or(false);
             c.ret_cdecl(if r { 1 } else { 0 });
             Handled::Ok
         }),
         ("msvcrt.dll", "iswspace", |c| {
             let wc = c.arg(0) as u32;
-            let r = char::from_u32(wc).map(|ch| ch.is_whitespace()).unwrap_or(false);
+            let r = char::from_u32(wc)
+                .map(|ch| ch.is_whitespace())
+                .unwrap_or(false);
             c.ret_cdecl(if r { 1 } else { 0 });
             Handled::Ok
         }),
         ("msvcrt.dll", "iswalnum", |c| {
             let wc = c.arg(0) as u32;
-            let r = char::from_u32(wc).map(|ch| ch.is_alphanumeric()).unwrap_or(false);
+            let r = char::from_u32(wc)
+                .map(|ch| ch.is_alphanumeric())
+                .unwrap_or(false);
             c.ret_cdecl(if r { 1 } else { 0 });
             Handled::Ok
         }),
         // _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string compare, cdecl, 3 args.
         ("msvcrt.dll", "_wcsnicmp", wcsnicmp_fn),
-        ("msvcrt.dll", "wcsnicmp",  wcsnicmp_fn),
+        ("msvcrt.dll", "wcsnicmp", wcsnicmp_fn),
         // C++ operator delete[] (decorated as ??_V@YAXPAX@Z) â€” 1 arg, cdecl, returns void.
         ("msvcrt.dll", "??_V@YAXPAX@Z", stub_void_1_cdecl),
         // operator new[] / delete
-        ("msvcrt.dll", "??2@YAPAXI@Z",  malloc),    // operator new[](size)
-        ("msvcrt.dll", "??3@YAXPAX@Z",  stub_void_1_cdecl), // operator delete
+        ("msvcrt.dll", "??2@YAPAXI@Z", malloc), // operator new[](size)
+        ("msvcrt.dll", "??3@YAXPAX@Z", stub_void_1_cdecl), // operator delete
         // MSVC SEH helpers
         // _local_unwind4(cookie*, funcinfo*, target_level) â€” 3 args, cdecl.
         // We stub it as a no-op; the actual unwind (destructor calls) would
@@ -292,7 +442,6 @@ pub fn register(r: &mut WinApiRegistry) {
             "_get_initial_wide_environment",
             stub_zero_cdecl_0,
         ),
-        ("msvcrt.dll", "__p___wargv", p_argv),
         ("msvcrt.dll", "_set_fmode", stub_zero_cdecl_1),
         ("msvcrt.dll", "_setmode", stub_zero_cdecl_1),
         ("msvcrt.dll", "_set_new_mode", stub_zero_cdecl_1),
@@ -327,9 +476,23 @@ pub fn register(r: &mut WinApiRegistry) {
             stub_zero_cdecl_0,
         ),
         ("msvcrt.dll", "_except_handler3", stub_one_cdecl_4),
-        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),    ];
+        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),
+    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
+    }
+    for (name, address) in [
+        ("_acmdln", CRT_ACMDLN_SLOT),
+        ("_wcmdln", CRT_WCMDLN_SLOT),
+        ("__argc", CRT_ARGC_SLOT),
+        ("__argv", CRT_ARGV_SLOT),
+        ("__wargv", CRT_WARGV_SLOT),
+        ("_environ", CRT_ENVIRON_SLOT),
+        ("_wenviron", CRT_WENVIRON_SLOT),
+        ("_fmode", CRT_FMODE_SLOT),
+        ("_commode", CRT_COMMODE_SLOT),
+    ] {
+        r.add_data("msvcrt.dll", name, address);
     }
 }
 
@@ -584,7 +747,10 @@ pub(crate) fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
     let existing = ctx.wstr(dst);
     let append = ctx.wstr(ctx.arg(1));
     let combined = existing + &append;
-    let mut bytes: Vec<u8> = combined.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let mut bytes: Vec<u8> = combined
+        .encode_utf16()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
     bytes.extend_from_slice(&[0, 0]);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -605,7 +771,12 @@ pub(crate) fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let needle = ctx.arg(1) as u16;
     let s = ctx.wstr(p);
-    let pos = s.encode_utf16().enumerate().filter(|&(_, c)| c == needle).last().map(|(i, _)| i);
+    let pos = s
+        .encode_utf16()
+        .enumerate()
+        .filter(|&(_, c)| c == needle)
+        .last()
+        .map(|(i, _)| i);
     let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -618,8 +789,10 @@ pub(crate) fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
     let r = if needle.is_empty() {
         p
     } else {
-        hay.windows(needle.len()).position(|w| w == needle.as_slice())
-            .map(|i| p + (i as u32) * 2).unwrap_or(0)
+        hay.windows(needle.len())
+            .position(|w| w == needle.as_slice())
+            .map(|i| p + (i as u32) * 2)
+            .unwrap_or(0)
     };
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -714,9 +887,9 @@ pub(crate) fn to_radix(mut v: u64, radix: u32) -> String {
 // stdio redirection.
 pub(crate) fn open_osfhandle(ctx: &mut ApiContext) -> Handled {
     let fd = match ctx.arg(0) {
-        0xFFFF_FFF6 => 0, // stdin
-        0xFFFF_FFF5 => 1, // stdout
-        0xFFFF_FFF4 => 2, // stderr
+        0xFFFF_FFF6 => 0,            // stdin
+        0xFFFF_FFF5 => 1,            // stdout
+        0xFFFF_FFF4 => 2,            // stderr
         0xFFFF_FFFF => -1i32 as u32, // INVALID_HANDLE_VALUE -> error
         _ => 3,
     };
@@ -875,13 +1048,19 @@ pub(crate) fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u
     while i < chars.len() {
         if chars[i] != '%' {
             let mut b = [0u16; 2];
-            for u in chars[i].encode_utf16(&mut b) { out.push(*u); }
+            for u in chars[i].encode_utf16(&mut b) {
+                out.push(*u);
+            }
             i += 1;
             continue;
         }
         i += 1;
-        while i < chars.len() && "0123456789-+ #.*lh".contains(chars[i]) { i += 1; }
-        if i >= chars.len() { break; }
+        while i < chars.len() && "0123456789-+ #.*lh".contains(chars[i]) {
+            i += 1;
+        }
+        if i >= chars.len() {
+            break;
+        }
         let spec = chars[i];
         i += 1;
         let push_str = |out: &mut Vec<u16>, s: &str| out.extend(s.encode_utf16());
@@ -892,17 +1071,30 @@ pub(crate) fn format_wide(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> Vec<u
             'X' => push_str(&mut out, &format!("{:X}", src.next(&ctx.memory))),
             'p' => push_str(&mut out, &format!("{:08X}", src.next(&ctx.memory))),
             'c' => out.push(src.next(&ctx.memory) as u16),
-            's' => { let ptr = src.next(&ctx.memory); out.extend(ctx.memory.read_wstr(ptr).encode_utf16()); }
-            'S' => { let ptr = src.next(&ctx.memory); push_str(&mut out, &ctx.memory.read_cstr(ptr)); }
+            's' => {
+                let ptr = src.next(&ctx.memory);
+                out.extend(ctx.memory.read_wstr(ptr).encode_utf16());
+            }
+            'S' => {
+                let ptr = src.next(&ctx.memory);
+                push_str(&mut out, &ctx.memory.read_cstr(ptr));
+            }
             '%' => out.push(b'%' as u16),
-            _ => { out.push(b'%' as u16); out.push(spec as u16); }
+            _ => {
+                out.push(b'%' as u16);
+                out.push(spec as u16);
+            }
         }
     }
     out
 }
 
 pub(crate) fn write_wide(ctx: &mut ApiContext, dst: u32, cap: usize, units: &[u16]) -> u32 {
-    let n = if cap > 0 { units.len().min(cap - 1) } else { units.len() };
+    let n = if cap > 0 {
+        units.len().min(cap - 1)
+    } else {
+        units.len()
+    };
     let mut bytes: Vec<u8> = units[..n].iter().flat_map(|u| u.to_le_bytes()).collect();
     bytes.extend_from_slice(&[0, 0]);
     let _ = ctx.memory.write_bytes(dst, &bytes);
@@ -914,7 +1106,14 @@ pub(crate) fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let cap = ctx.arg(1) as usize;
     let fmt = ctx.wstr(ctx.arg(2));
-    let units = format_wide(ctx, &fmt, ArgSrc::Stack { esp: ctx.cpu.esp, idx: 3 });
+    let units = format_wide(
+        ctx,
+        &fmt,
+        ArgSrc::Stack {
+            esp: ctx.cpu.esp,
+            idx: 3,
+        },
+    );
     let n = write_wide(ctx, dst, cap, &units);
     ctx.ret_cdecl(n);
     Handled::Ok
@@ -924,7 +1123,14 @@ pub(crate) fn snwprintf_fn(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn snwprintf_no_count_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let fmt = ctx.wstr(ctx.arg(1));
-    let units = format_wide(ctx, &fmt, ArgSrc::Stack { esp: ctx.cpu.esp, idx: 2 });
+    let units = format_wide(
+        ctx,
+        &fmt,
+        ArgSrc::Stack {
+            esp: ctx.cpu.esp,
+            idx: 2,
+        },
+    );
     let n = write_wide(ctx, dst, 0, &units);
     ctx.ret_cdecl(n);
     Handled::Ok
@@ -983,7 +1189,11 @@ pub(crate) fn stdio_vsprintf(ctx: &mut ApiContext) -> Handled {
     let fmt = ctx.cstr(ctx.arg(4));
     let va = ctx.arg(6);
     let result = format_va(ctx, &fmt, va);
-    let n = if count > 0 { result.len().min(count - 1) } else { result.len() };
+    let n = if count > 0 {
+        result.len().min(count - 1)
+    } else {
+        result.len()
+    };
     let mut bytes = result.into_bytes();
     bytes.truncate(n);
     bytes.push(0);
@@ -1148,7 +1358,10 @@ pub(crate) fn fread(ctx: &mut ApiContext) -> Handled {
     };
 
     // Read only the requested range (not the whole file) so large wad reads stay fast.
-    let chunk = ctx.fs.read_range(&path, cursor as usize, total).unwrap_or_default();
+    let chunk = ctx
+        .fs
+        .read_range(&path, cursor as usize, total)
+        .unwrap_or_default();
     let read_bytes = chunk.len();
     let _ = ctx.memory.write_bytes(buf, &chunk);
     if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
@@ -1221,7 +1434,11 @@ pub(crate) fn fgetc(ctx: &mut ApiContext) -> Handled {
         ctx.ret_cdecl(0xFFFF_FFFF);
         return Handled::Ok;
     };
-    let byte = ctx.fs.read_range(&path, cursor as usize, 1).ok().and_then(|b| b.first().copied());
+    let byte = ctx
+        .fs
+        .read_range(&path, cursor as usize, 1)
+        .ok()
+        .and_then(|b| b.first().copied());
     match byte {
         Some(b) => {
             if let Some(KernelObject::VfsFile { cursor, .. }) = ctx.handles.get_mut(stream) {
@@ -1256,7 +1473,10 @@ pub(crate) fn fgets(ctx: &mut ApiContext) -> Handled {
     }
 
     // Read up to n-1 bytes from the cursor; stop at newline.
-    let window = ctx.fs.read_range(&path, cursor as usize, n - 1).unwrap_or_default();
+    let window = ctx
+        .fs
+        .read_range(&path, cursor as usize, n - 1)
+        .unwrap_or_default();
     if window.is_empty() {
         ctx.ret_cdecl(0);
         return Handled::Ok;
@@ -1342,17 +1562,17 @@ pub(crate) fn collect_init_table(ctx: &ApiContext, first: u32, last: u32) -> Vec
 }
 
 pub(crate) fn p_argc(ctx: &mut ApiContext) -> Handled {
-    let va = 0x7FFD_F500u32;
-    let _ = ctx.memory.write_u32(va, 1);
-    ctx.ret_cdecl(va);
+    ctx.ret_cdecl(CRT_ARGC_SLOT);
     Handled::Ok
 }
 
 pub(crate) fn p_argv(ctx: &mut ApiContext) -> Handled {
-    let va = 0x7FFD_F510u32;
-    let _ = ctx.memory.write_u32(va, 0x7FFD_F520);
-    let _ = ctx.memory.write_bytes(0x7FFD_F520, b"program.exe\0");
-    ctx.ret_cdecl(va);
+    ctx.ret_cdecl(CRT_ARGV_SLOT);
+    Handled::Ok
+}
+
+pub(crate) fn p_wargv(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_cdecl(CRT_WARGV_SLOT);
     Handled::Ok
 }
 
@@ -1364,16 +1584,110 @@ pub(crate) fn tokenize_cmdline(s: &str) -> Vec<String> {
     let mut started = false;
     for c in s.chars() {
         match c {
-            '"' => { in_quotes = !in_quotes; started = true; }
-            c if c.is_whitespace() && !in_quotes => {
-                if started { args.push(std::mem::take(&mut cur)); started = false; }
+            '"' => {
+                in_quotes = !in_quotes;
+                started = true;
             }
-            c => { cur.push(c); started = true; }
+            c if c.is_whitespace() && !in_quotes => {
+                if started {
+                    args.push(std::mem::take(&mut cur));
+                    started = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                started = true;
+            }
         }
     }
-    if started { args.push(cur); }
-    if args.is_empty() { args.push(String::new()); }
+    if started {
+        args.push(cur);
+    }
+    if args.is_empty() {
+        args.push(String::new());
+    }
     args
+}
+
+/// Materialize the MSVCRT data imports for a newly loaded native process.
+/// Function imports are routed through API trampolines, but variables such as
+/// `_wcmdln` are dereferenced directly from the IAT before any handler can run.
+pub fn initialize_process_data(
+    memory: &mut webwine_api::vm::memory::GuestMemory,
+    cmdline: &str,
+) -> webwine_api::error::Result<()> {
+    use webwine_api::vm::memory::PageProt;
+
+    memory.allocate(CRT_DATA_BASE, CRT_DATA_SIZE, PageProt::RW)?;
+    let mut cursor = CRT_DATA_BASE;
+
+    let mut narrow_cmd = cmdline.as_bytes().to_vec();
+    narrow_cmd.push(0);
+    let acmdln = cursor;
+    memory.write_bytes(cursor, &narrow_cmd)?;
+    cursor += narrow_cmd.len() as u32;
+
+    cursor = (cursor + 3) & !3;
+    let mut wide_cmd: Vec<u8> = cmdline
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    wide_cmd.extend_from_slice(&[0, 0]);
+    let wcmdln = cursor;
+    memory.write_bytes(cursor, &wide_cmd)?;
+    cursor += wide_cmd.len() as u32;
+
+    let args = tokenize_cmdline(cmdline);
+    let argc = args.len() as u32;
+    cursor = (cursor + 3) & !3;
+    let argv = cursor;
+    cursor += (argc + 1) * 4;
+    let wargv = cursor;
+    cursor += (argc + 1) * 4;
+    let environ = cursor;
+    cursor += 4;
+    let wenviron = cursor;
+    cursor += 4;
+
+    for (i, arg) in args.iter().enumerate() {
+        let mut narrow = arg.as_bytes().to_vec();
+        narrow.push(0);
+        let arg_va = cursor;
+        memory.write_bytes(cursor, &narrow)?;
+        cursor += narrow.len() as u32;
+        memory.write_u32(argv + i as u32 * 4, arg_va)?;
+
+        cursor = (cursor + 1) & !1;
+        let mut wide: Vec<u8> = arg
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        wide.extend_from_slice(&[0, 0]);
+        let arg_wva = cursor;
+        memory.write_bytes(cursor, &wide)?;
+        cursor += wide.len() as u32;
+        memory.write_u32(wargv + i as u32 * 4, arg_wva)?;
+    }
+    if cursor > CRT_DATA_BASE + CRT_DATA_SIZE {
+        return Err(webwine_api::error::VmError::Internal(
+            "command line exceeds CRT data region".into(),
+        ));
+    }
+
+    memory.write_u32(argv + argc * 4, 0)?;
+    memory.write_u32(wargv + argc * 4, 0)?;
+    memory.write_u32(environ, 0)?;
+    memory.write_u32(wenviron, 0)?;
+    memory.write_u32(CRT_ACMDLN_SLOT, acmdln)?;
+    memory.write_u32(CRT_WCMDLN_SLOT, wcmdln)?;
+    memory.write_u32(CRT_ARGC_SLOT, argc)?;
+    memory.write_u32(CRT_ARGV_SLOT, argv)?;
+    memory.write_u32(CRT_WARGV_SLOT, wargv)?;
+    memory.write_u32(CRT_ENVIRON_SLOT, environ)?;
+    memory.write_u32(CRT_WENVIRON_SLOT, wenviron)?;
+    memory.write_u32(CRT_FMODE_SLOT, 0)?;
+    memory.write_u32(CRT_COMMODE_SLOT, 0)?;
+    Ok(())
 }
 
 // __getmainargs(int* argc, char*** argv, char*** env, int wild, _startupinfo*)
@@ -1397,9 +1711,18 @@ pub(crate) fn getmainargs(ctx: &mut ApiContext) -> Handled {
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, argc); }
-    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
-    if env_p != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    if argc_p != 0 {
+        let _ = ctx.memory.write_u32(argc_p, argc);
+    }
+    if argv_p != 0 {
+        let _ = ctx.memory.write_u32(argv_p, argv);
+    }
+    if env_p != 0 {
+        let _ = ctx.memory.write_u32(env_p, env);
+    }
+    let _ = ctx.memory.write_u32(CRT_ARGC_SLOT, argc);
+    let _ = ctx.memory.write_u32(CRT_ARGV_SLOT, argv);
+    let _ = ctx.memory.write_u32(CRT_ENVIRON_SLOT, env);
     ctx.ret_cdecl(0);
     Handled::Ok
 }
@@ -1425,17 +1748,24 @@ pub(crate) fn wgetmainargs(ctx: &mut ApiContext) -> Handled {
     let env = ctx.heap_alloc(4);
     let _ = ctx.memory.write_u32(env, 0);
 
-    if argc_p != 0 { let _ = ctx.memory.write_u32(argc_p, argc); }
-    if argv_p != 0 { let _ = ctx.memory.write_u32(argv_p, argv); }
-    if env_p != 0 { let _ = ctx.memory.write_u32(env_p, env); }
+    if argc_p != 0 {
+        let _ = ctx.memory.write_u32(argc_p, argc);
+    }
+    if argv_p != 0 {
+        let _ = ctx.memory.write_u32(argv_p, argv);
+    }
+    if env_p != 0 {
+        let _ = ctx.memory.write_u32(env_p, env);
+    }
+    let _ = ctx.memory.write_u32(CRT_ARGC_SLOT, argc);
+    let _ = ctx.memory.write_u32(CRT_WARGV_SLOT, argv);
+    let _ = ctx.memory.write_u32(CRT_WENVIRON_SLOT, env);
     ctx.ret_cdecl(0);
     Handled::Ok
 }
 
 pub(crate) fn p_commode(ctx: &mut ApiContext) -> Handled {
-    let va = 0x7FFD_F530u32;
-    let _ = ctx.memory.write_u32(va, 0);
-    ctx.ret_cdecl(va);
+    ctx.ret_cdecl(CRT_COMMODE_SLOT);
     Handled::Ok
 }
 
@@ -1444,31 +1774,18 @@ pub(crate) fn p_commode(ctx: &mut ApiContext) -> Handled {
 // command line, so returning 0 here makes it dereference NULL and crash. We keep
 // the char* in a fixed scratch slot and point it at a fresh cmdline buffer.
 pub(crate) fn p_acmdln(ctx: &mut ApiContext) -> Handled {
-    let slot = 0x7FFD_F550u32;
-    let line = format!("{}\0", ctx.cmdline);
-    let buf = ctx.heap_alloc(line.len() as u32);
-    let _ = ctx.memory.write_bytes(buf, line.as_bytes());
-    let _ = ctx.memory.write_u32(slot, buf);
-    ctx.ret_cdecl(slot);
+    ctx.ret_cdecl(CRT_ACMDLN_SLOT);
     Handled::Ok
 }
 
 // __p__wcmdln() -> wchar_t**: wide-char variant of the above.
 pub(crate) fn p_wcmdln(ctx: &mut ApiContext) -> Handled {
-    let slot = 0x7FFD_F554u32;
-    let mut wide: Vec<u8> = ctx.cmdline.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-    wide.extend_from_slice(&[0, 0]);
-    let buf = ctx.heap_alloc(wide.len() as u32);
-    let _ = ctx.memory.write_bytes(buf, &wide);
-    let _ = ctx.memory.write_u32(slot, buf);
-    ctx.ret_cdecl(slot);
+    ctx.ret_cdecl(CRT_WCMDLN_SLOT);
     Handled::Ok
 }
 
 pub(crate) fn p_fmode(ctx: &mut ApiContext) -> Handled {
-    let va = 0x7FFD_F540u32;
-    let _ = ctx.memory.write_u32(va, 0);
-    ctx.ret_cdecl(va);
+    ctx.ret_cdecl(CRT_FMODE_SLOT);
     Handled::Ok
 }
 
@@ -1612,8 +1929,8 @@ pub(crate) fn stub_void_1(c: &mut ApiContext) -> Handled {
 /// _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string comparison, cdecl, 3 args.
 /// Returns negative/0/positive like strcmp.
 pub(crate) fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
-    let p1    = ctx.arg(0);
-    let p2    = ctx.arg(1);
+    let p1 = ctx.arg(0);
+    let p2 = ctx.arg(1);
     let count = ctx.arg(2) as usize;
     let a: Vec<u16> = {
         let s = ctx.wstr(p1);
@@ -1625,15 +1942,18 @@ pub(crate) fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
     };
     // Case-fold both sides using to_uppercase on each char.
     let fold = |units: &[u16]| -> Vec<u16> {
-        units.iter().flat_map(|&u| {
-            char::from_u32(u as u32)
-                .map(|ch| {
-                    ch.to_uppercase()
-                        .flat_map(|c| c.encode_utf16(&mut [0u16; 2]).to_vec())
-                        .collect::<Vec<u16>>()
-                })
-                .unwrap_or_else(|| vec![u])
-        }).collect()
+        units
+            .iter()
+            .flat_map(|&u| {
+                char::from_u32(u as u32)
+                    .map(|ch| {
+                        ch.to_uppercase()
+                            .flat_map(|c| c.encode_utf16(&mut [0u16; 2]).to_vec())
+                            .collect::<Vec<u16>>()
+                    })
+                    .unwrap_or_else(|| vec![u])
+            })
+            .collect()
     };
     let fa = fold(&a);
     let fb = fold(&b);

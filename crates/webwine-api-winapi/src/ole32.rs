@@ -49,6 +49,15 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 1);
             Handled::Ok
         }),
+        ("ole32.dll", "CoRegisterClassObject", |c| {
+            if c.arg(4) != 0 { let _ = c.memory.write_u32(c.arg(4), 1); }
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("ole32.dll", "CoRevokeClassObject", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
         ("ole32.dll", "CoCreateGuid", |c| {
             let p = c.arg(0);
             if p != 0 {
