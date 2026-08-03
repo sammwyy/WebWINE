@@ -178,7 +178,8 @@ export type UiEvent =
   | { kind: "gpu_draw_tris"; hwnd: number; texture: number; blend: number; verts: number[] }
   | { kind: "gpu_present"; hwnd: number }
   | { kind: "dialog_layout"; hwnd: number; title: string; width: number; height: number; controls: DialogControlData[] }
-  | { kind: "control_text"; hwnd: number; control_hwnd: number; text: string };
+  | { kind: "control_text"; hwnd: number; control_hwnd: number; text: string }
+  | { kind: "control_state"; hwnd: number; control_hwnd: number; enabled: boolean; checked: boolean; visible: boolean };
 
 export interface DialogControlData {
   hwnd: number;

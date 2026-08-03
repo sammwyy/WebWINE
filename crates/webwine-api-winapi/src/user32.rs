@@ -67,6 +67,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "DefDlgProcA", crate::dialog::def_dlg_proc),
         ("user32.dll", "DefDlgProcW", crate::dialog::def_dlg_proc),
         ("user32.dll", "ShowWindow", show_window),
+        ("user32.dll", "EnableWindow", enable_window),
         ("user32.dll", "UpdateWindow", update_window),
         ("user32.dll", "DestroyWindow", destroy_window),
         ("user32.dll", "SetWindowTextA", set_window_text_a),
@@ -939,6 +940,39 @@ fn show_window(ctx: &mut ApiContext) -> Handled {
         w.needs_paint = true;
     }
     ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn enable_window(ctx: &mut ApiContext) -> Handled {
+    let hwnd = ctx.arg(0);
+    let enabled = ctx.arg(1) != 0;
+    
+    let prev_state = if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
+        let prev = w.enabled;
+        w.enabled = enabled;
+        prev
+    } else {
+        false
+    };
+
+    let mut top_level = hwnd;
+    let mut curr = ctx.gui.windows.get(&hwnd).and_then(|w| w.parent);
+    while let Some(p) = curr {
+        top_level = p;
+        curr = ctx.gui.windows.get(&p).and_then(|w| w.parent);
+    }
+
+    if let Some(w) = ctx.gui.windows.get(&hwnd) {
+        ctx.ui_events.push(UiEvent::ControlState {
+            hwnd: top_level,
+            control_hwnd: hwnd,
+            enabled: w.enabled,
+            checked: w.checked,
+            visible: w.visible,
+        });
+    }
+
+    ctx.ret_stdcall(prev_state as u32, 2);
     Handled::Ok
 }
 

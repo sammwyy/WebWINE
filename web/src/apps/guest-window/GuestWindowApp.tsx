@@ -120,6 +120,19 @@ export function handleUiEvents(
         }
         break;
       }
+      case "control_state": {
+        const g = guestWindows.get(key(pid, ev.hwnd));
+        if (g) {
+          const ctrl = g.dialogControls.find((c) => c.hwnd === ev.control_hwnd);
+          if (ctrl) {
+            ctrl.enabled = ev.enabled;
+            ctrl.checked = ev.checked;
+            ctrl.visible = ev.visible;
+            g.setDialogControls?.([...g.dialogControls]);
+          }
+        }
+        break;
+      }
       case "beep":
         beep(ev.freq, ev.duration);
         break;

@@ -197,6 +197,13 @@ pub enum UiEvent {
         control_hwnd: u32,
         text: String,
     },
+    ControlState {
+        hwnd: u32,
+        control_hwnd: u32,
+        enabled: bool,
+        checked: bool,
+        visible: bool,
+    },
 
     // A modal file picker the guest is blocked on (GetOpenFileName/GetSaveFileName).
     // The host shows a picker and replies via `post_dialog_reply`. `filter` is the
