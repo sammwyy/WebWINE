@@ -217,8 +217,8 @@ fn fill_d3dcaps8(ctx: &mut ApiContext, out: u32) {
     w(8, 0x0000_0001); // Caps = D3DCAPS_READ_SCANLINE
     w(12, 0x0000_0002); // Caps2 = D3DCAPS2_FULLSCREENGAMMA
     w(20, 0x8000_0000); // PresentationIntervals = IMMEDIATE
-    // DevCaps: HWTRANSFORMANDLIGHT(0x10000) + HWRASTERIZATION(0x80000) +
-    // DRAWPRIMTLVERTEX/DRAWPRIMITIVES2(EX) + memory caps — enable all.
+                        // DevCaps: HWTRANSFORMANDLIGHT(0x10000) + HWRASTERIZATION(0x80000) +
+                        // DRAWPRIMTLVERTEX/DRAWPRIMITIVES2(EX) + memory caps — enable all.
     w(28, 0x00FF_FFFF); // DevCaps
     w(32, 0x00FF_FFFF); // PrimitiveMiscCaps
     w(36, 0x00FF_FFFF); // RasterCaps
@@ -256,7 +256,7 @@ fn fill_d3dcaps8(ctx: &mut ApiContext, out: u32) {
     w(184, 0x000F_FFFF); // MaxVertexIndex
     w(188, 1); // MaxStreams
     w(192, 256); // MaxStreamStride
-    // VertexShaderVersion / PixelShaderVersion left 0 → fixed-function only.
+                 // VertexShaderVersion / PixelShaderVersion left 0 → fixed-function only.
 }
 
 fn d3d8_get_device_caps(ctx: &mut ApiContext) -> Handled {
@@ -314,7 +314,16 @@ fn d3d8_create_device(ctx: &mut ApiContext) -> Handled {
         let dev_va = ctx.heap_alloc(DEV_SIZE);
         let _ = ctx.memory.write_u32(dev_va, vtable_va);
         let _ = ctx.memory.write_u32(dev_va + DEV_HWND, hwnd);
-        for off in [DEV_BB, DEV_DEPTH, DEV_FVF, DEV_STREAM_VB, DEV_STREAM_STRIDE, DEV_TEXTURE, DEV_BLEND_EN, DEV_DESTBLEND] {
+        for off in [
+            DEV_BB,
+            DEV_DEPTH,
+            DEV_FVF,
+            DEV_STREAM_VB,
+            DEV_STREAM_STRIDE,
+            DEV_TEXTURE,
+            DEV_BLEND_EN,
+            DEV_DESTBLEND,
+        ] {
             let _ = ctx.memory.write_u32(dev_va + off, 0);
         }
         let _ = ctx.memory.write_u32(out_ptr, dev_va);
@@ -599,7 +608,7 @@ fn dev_present(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ── D3D8 render-state setters + draw emission (generic, no game-specific code) ─
+// D3D8 render-state setters + draw emission (generic, no game-specific code)
 
 fn dev_set_vertex_shader(ctx: &mut ApiContext) -> Handled {
     // SetVertexShader(this, Handle). For the fixed-function pipeline `Handle` is
@@ -655,7 +664,11 @@ fn dev_blend_mode(ctx: &ApiContext, dev: u32) -> u32 {
     if ctx.memory.read_u32(dev + DEV_BLEND_EN).unwrap_or(0) == 0 {
         return 0;
     }
-    if ctx.memory.read_u32(dev + DEV_DESTBLEND).unwrap_or(0) == 2 { 2 } else { 1 }
+    if ctx.memory.read_u32(dev + DEV_DESTBLEND).unwrap_or(0) == 2 {
+        2
+    } else {
+        1
+    }
 }
 
 /// Byte offsets of diffuse color and the first texcoord within a vertex, derived
@@ -688,14 +701,21 @@ fn fvf_layout(fvf: u32) -> FvfLayout {
     if fvf & 0x080 != 0 {
         off += 4; // D3DFVF_SPECULAR
     }
-    let uv_off = if (fvf >> 8) & 0xF >= 1 { Some(off) } else { None }; // D3DFVF_TEX1+
+    let uv_off = if (fvf >> 8) & 0xF >= 1 {
+        Some(off)
+    } else {
+        None
+    }; // D3DFVF_TEX1+
     FvfLayout { color_off, uv_off }
 }
 
 /// One source vertex -> [x, y, u, v, r, g, b, a] (screen px, 0..1 uv, 0..1 rgba).
 fn read_vertex(ctx: &ApiContext, base: u32, layout: &FvfLayout) -> [f32; 8] {
     let f = |o: u32| f32::from_bits(ctx.memory.read_u32(base + o).unwrap_or(0));
-    let (u, v) = layout.uv_off.map(|o| (f(o), f(o + 4))).unwrap_or((0.0, 0.0));
+    let (u, v) = layout
+        .uv_off
+        .map(|o| (f(o), f(o + 4)))
+        .unwrap_or((0.0, 0.0));
     let (r, g, b, a) = layout
         .color_off
         .map(|o| {
@@ -752,14 +772,23 @@ fn triangle_indices(prim_type: u32, prim_count: u32) -> Vec<usize> {
 
 /// Read `prim_count` triangle primitives starting at `base` (stride bytes/vertex)
 /// and emit them as a GpuDrawTris command (expanded to a flat TRIANGLES list).
-fn emit_draw(ctx: &mut ApiContext, dev: u32, prim_type: u32, base: u32, stride: u32, prim_count: u32) {
+fn emit_draw(
+    ctx: &mut ApiContext,
+    dev: u32,
+    prim_type: u32,
+    base: u32,
+    stride: u32,
+    prim_count: u32,
+) {
     if !(4..=6).contains(&prim_type) || prim_count == 0 || stride == 0 {
         return; // only triangle topologies are drawn
     }
     let fvf = ctx.memory.read_u32(dev + DEV_FVF).unwrap_or(0);
     let layout = fvf_layout(fvf);
     let vcount = vertex_count_for(prim_type, prim_count);
-    let src: Vec<[f32; 8]> = (0..vcount).map(|i| read_vertex(ctx, base + i * stride, &layout)).collect();
+    let src: Vec<[f32; 8]> = (0..vcount)
+        .map(|i| read_vertex(ctx, base + i * stride, &layout))
+        .collect();
     let mut verts: Vec<f32> = Vec::new();
     for i in triangle_indices(prim_type, prim_count) {
         if let Some(vrt) = src.get(i) {
@@ -772,7 +801,13 @@ fn emit_draw(ctx: &mut ApiContext, dev: u32, prim_type: u32, base: u32, stride: 
     let hwnd = ctx.memory.read_u32(dev + DEV_HWND).unwrap_or(0);
     let texture = ctx.memory.read_u32(dev + DEV_TEXTURE).unwrap_or(0);
     let blend = dev_blend_mode(ctx, dev);
-    ctx.ui_events.push(webwine_api::vm::process::UiEvent::GpuDrawTris { hwnd, texture, blend, verts });
+    ctx.ui_events
+        .push(webwine_api::vm::process::UiEvent::GpuDrawTris {
+            hwnd,
+            texture,
+            blend,
+            verts,
+        });
 }
 
 fn dev_draw_primitive(ctx: &mut ApiContext) -> Handled {
@@ -787,7 +822,14 @@ fn dev_draw_primitive(ctx: &mut ApiContext) -> Handled {
     if vb != 0 {
         let scratch = ctx.memory.read_u32(vb + 16).unwrap_or(0); // VB data buffer
         if scratch != 0 {
-            emit_draw(ctx, dev, prim_type, scratch + start * stride, stride, prim_count);
+            emit_draw(
+                ctx,
+                dev,
+                prim_type,
+                scratch + start * stride,
+                stride,
+                prim_count,
+            );
         }
     }
     ctx.ret_stdcall(S_OK, 4);
@@ -816,7 +858,10 @@ fn tex_unlock_rect(ctx: &mut ApiContext) -> Handled {
     let (w, h, scratch) = (res_w(ctx, tex), res_h(ctx, tex), res_scratch(ctx, tex));
     let hwnd = ctx.memory.read_u32(tex + 4).unwrap_or(0);
     if w > 0 && h > 0 && scratch != 0 {
-        let bgra = ctx.memory.read_bytes(scratch, (w * h * 4) as usize).unwrap_or_default();
+        let bgra = ctx
+            .memory
+            .read_bytes(scratch, (w * h * 4) as usize)
+            .unwrap_or_default();
         let mut rgba = vec![0u8; bgra.len()];
         for o in (0..bgra.len()).step_by(4) {
             rgba[o] = bgra[o + 2];
@@ -824,7 +869,14 @@ fn tex_unlock_rect(ctx: &mut ApiContext) -> Handled {
             rgba[o + 2] = bgra[o];
             rgba[o + 3] = bgra[o + 3];
         }
-        ctx.ui_events.push(webwine_api::vm::process::UiEvent::GpuTexture { hwnd, id: tex, w, h, pixels: rgba });
+        ctx.ui_events
+            .push(webwine_api::vm::process::UiEvent::GpuTexture {
+                hwnd,
+                id: tex,
+                w,
+                h,
+                pixels: rgba,
+            });
     }
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok

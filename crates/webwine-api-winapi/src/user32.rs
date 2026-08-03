@@ -1,8 +1,8 @@
 use super::{ApiContext, Handled, WinApiRegistry};
+use std::collections::HashMap;
 use webwine_api::vm::process::{
     GdiObject, GuestMsg, MenuItem, MenuItemData, UiEvent, WindowEntry, GDI_TAG,
 };
-use std::collections::HashMap;
 
 // Window messages we care about.
 const WM_DESTROY: u32 = 0x0002;
@@ -43,16 +43,46 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "DialogBoxParamW", create_dialog),
         ("user32.dll", "DialogBoxIndirectParamA", create_dialog),
         ("user32.dll", "DialogBoxIndirectParamW", create_dialog),
-        ("user32.dll", "EndDialog", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "IsDialogMessageW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "IsDialogMessageA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "GetDlgItem", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "SendDlgItemMessageW", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("user32.dll", "SendDlgItemMessageA", |c| { c.ret_stdcall(0, 5); Handled::Ok }),
-        ("user32.dll", "SetDlgItemTextW", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
-        ("user32.dll", "GetDlgItemTextW", |c| { c.ret_stdcall(0, 4); Handled::Ok }),
-        ("user32.dll", "CheckDlgButton", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
-        ("user32.dll", "IsDlgButtonChecked", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "EndDialog", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "IsDialogMessageW", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "IsDialogMessageA", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetDlgItem", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "SendDlgItemMessageW", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("user32.dll", "SendDlgItemMessageA", |c| {
+            c.ret_stdcall(0, 5);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetDlgItemTextW", |c| {
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetDlgItemTextW", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "CheckDlgButton", |c| {
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "IsDlgButtonChecked", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
         ("user32.dll", "ShowWindow", show_window),
         ("user32.dll", "UpdateWindow", update_window),
         ("user32.dll", "DestroyWindow", destroy_window),
@@ -148,17 +178,48 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(h, 1);
             Handled::Ok
         }),
-        ("user32.dll", "GetShellWindow", |c| { c.ret_stdcall(0, 0); Handled::Ok }),
-        ("user32.dll", "FindWindowA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "FindWindowW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "GetDoubleClickTime", |c| { c.ret_stdcall(500, 0); Handled::Ok }),
-        ("user32.dll", "GetCaretBlinkTime", |c| { c.ret_stdcall(500, 0); Handled::Ok }),
+        ("user32.dll", "GetShellWindow", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
+        ("user32.dll", "FindWindowA", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "FindWindowW", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetDoubleClickTime", |c| {
+            c.ret_stdcall(500, 0);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetCaretBlinkTime", |c| {
+            c.ret_stdcall(500, 0);
+            Handled::Ok
+        }),
         // RegisterWindowMessage: hand out unique IDs in the 0xC000-0xFFFF range
         // (0 means failure, which makes apps that register many messages misbehave).
-        ("user32.dll", "RegisterWindowMessageW", register_window_message),
-        ("user32.dll", "RegisterWindowMessageA", register_window_message),
-        ("user32.dll", "SystemParametersInfoW", system_parameters_info),
-        ("user32.dll", "SystemParametersInfoA", system_parameters_info),
+        (
+            "user32.dll",
+            "RegisterWindowMessageW",
+            register_window_message,
+        ),
+        (
+            "user32.dll",
+            "RegisterWindowMessageA",
+            register_window_message,
+        ),
+        (
+            "user32.dll",
+            "SystemParametersInfoW",
+            system_parameters_info,
+        ),
+        (
+            "user32.dll",
+            "SystemParametersInfoA",
+            system_parameters_info,
+        ),
         ("user32.dll", "ReleaseDC", |c| {
             c.ret_stdcall(1, 2);
             Handled::Ok
@@ -172,9 +233,18 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "SetMenu", set_menu),
         ("user32.dll", "GetMenu", get_menu),
         ("user32.dll", "DestroyMenu", destroy_menu),
-        ("user32.dll", "DrawMenuBar", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("user32.dll", "EnableMenuItem", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("user32.dll", "CheckMenuItem", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "DrawMenuBar", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "EnableMenuItem", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "CheckMenuItem", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -206,7 +276,8 @@ fn msgbox_common(ctx: &mut ApiContext, title: String, text: String, style: u32) 
         return Handled::Block; // still on screen, awaiting the user
     }
     ctx.gui.dialog_pending = true;
-    ctx.ui_events.push(UiEvent::MessageBox { title, text, style });
+    ctx.ui_events
+        .push(UiEvent::MessageBox { title, text, style });
     Handled::Block
 }
 
@@ -304,7 +375,7 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
     Handled::Ok
 }
 
-// ─── menus ───────────────────────────────────────────────────────────────────
+// menus
 // Menu items added via AppendMenu build a tree in `gui.menus`; SetMenu resolves
 // it and emits UiEvent::SetMenu so the frontend draws the menu bar. A clicked
 // leaf posts WM_COMMAND(id) back through the normal message pump.
@@ -331,7 +402,13 @@ fn append_menu(ctx: &mut ApiContext, wide: bool) -> Handled {
     let text_ptr = ctx.arg(3);
 
     let item = if flags & MF_SEPARATOR != 0 {
-        MenuItem { text: String::new(), id: 0, submenu: None, separator: true, disabled: false }
+        MenuItem {
+            text: String::new(),
+            id: 0,
+            submenu: None,
+            separator: true,
+            disabled: false,
+        }
     } else {
         let text = if text_ptr == 0 {
             String::new()
@@ -342,9 +419,21 @@ fn append_menu(ctx: &mut ApiContext, wide: bool) -> Handled {
         };
         let disabled = flags & (MF_GRAYED | MF_DISABLED) != 0;
         if flags & MF_POPUP != 0 {
-            MenuItem { text, id: 0, submenu: Some(id_or_sub), separator: false, disabled }
+            MenuItem {
+                text,
+                id: 0,
+                submenu: Some(id_or_sub),
+                separator: false,
+                disabled,
+            }
         } else {
-            MenuItem { text, id: id_or_sub, submenu: None, separator: false, disabled }
+            MenuItem {
+                text,
+                id: id_or_sub,
+                submenu: None,
+                separator: false,
+                disabled,
+            }
         }
     };
     if let Some(items) = ctx.gui.menus.get_mut(&hmenu) {
@@ -444,7 +533,12 @@ fn create_dialog(ctx: &mut ApiContext) -> Handled {
         height: h,
     });
     // The dialog manager sends WM_INITDIALOG before the dialog becomes visible.
-    ctx.gui.queue.push_back(GuestMsg { hwnd, message: WM_INITDIALOG, wparam: 0, lparam: init_param });
+    ctx.gui.queue.push_back(GuestMsg {
+        hwnd,
+        message: WM_INITDIALOG,
+        wparam: 0,
+        lparam: init_param,
+    });
     ctx.ret_stdcall(hwnd, 5);
     Handled::Ok
 }
@@ -949,7 +1043,9 @@ fn new_gdi_handle(ctx: &mut ApiContext) -> u32 {
 // CreateCompatibleDC(hdc) -> memory DC handle.
 pub(crate) fn create_compatible_dc(ctx: &mut ApiContext) -> Handled {
     let h = new_gdi_handle(ctx);
-    ctx.gui.gdi_objects.insert(h, GdiObject::MemDc { bitmap: 0 });
+    ctx.gui
+        .gdi_objects
+        .insert(h, GdiObject::MemDc { bitmap: 0 });
     ctx.ret_stdcall(h, 1);
     Handled::Ok
 }
@@ -976,7 +1072,16 @@ pub(crate) fn create_dib_section(ctx: &mut ApiContext) -> Handled {
     }
 
     let h = new_gdi_handle(ctx);
-    ctx.gui.gdi_objects.insert(h, GdiObject::Dib { bits, width, height, bpp, top_down });
+    ctx.gui.gdi_objects.insert(
+        h,
+        GdiObject::Dib {
+            bits,
+            width,
+            height,
+            bpp,
+            top_down,
+        },
+    );
     ctx.ret_stdcall(h, 6);
     Handled::Ok
 }
@@ -988,7 +1093,16 @@ pub(crate) fn create_compatible_bitmap(ctx: &mut ApiContext) -> Handled {
     let size = (width.max(0) * height.max(0) * 4).max(4) as u32;
     let bits = ctx.heap_alloc(size);
     let h = new_gdi_handle(ctx);
-    ctx.gui.gdi_objects.insert(h, GdiObject::Dib { bits, width, height, bpp: 32, top_down: true });
+    ctx.gui.gdi_objects.insert(
+        h,
+        GdiObject::Dib {
+            bits,
+            width,
+            height,
+            bpp: 32,
+            top_down: true,
+        },
+    );
     ctx.ret_stdcall(h, 3);
     Handled::Ok
 }
@@ -997,38 +1111,72 @@ pub(crate) fn create_compatible_bitmap(ctx: &mut ApiContext) -> Handled {
 fn dib_of_dc(ctx: &ApiContext, dc: u32) -> Option<(u32, i32, i32, u16, bool)> {
     let bitmap = match ctx.gui.gdi_objects.get(&dc) {
         Some(GdiObject::MemDc { bitmap }) => *bitmap,
-        Some(GdiObject::Dib { bits, width, height, bpp, top_down }) =>
-            return Some((*bits, *width, *height, *bpp, *top_down)),
+        Some(GdiObject::Dib {
+            bits,
+            width,
+            height,
+            bpp,
+            top_down,
+        }) => return Some((*bits, *width, *height, *bpp, *top_down)),
         None => return None,
     };
     match ctx.gui.gdi_objects.get(&bitmap) {
-        Some(GdiObject::Dib { bits, width, height, bpp, top_down }) =>
-            Some((*bits, *width, *height, *bpp, *top_down)),
+        Some(GdiObject::Dib {
+            bits,
+            width,
+            height,
+            bpp,
+            top_down,
+        }) => Some((*bits, *width, *height, *bpp, *top_down)),
         _ => None,
     }
 }
 
 // Read a w*h region from a DIB's guest memory and convert to RGBA8888.
 fn read_dib_rgba(
-    ctx: &ApiContext, bits: u32, dib_w: i32, dib_h: i32, bpp: u16, top_down: bool,
-    sx: i32, sy: i32, w: i32, h: i32,
+    ctx: &ApiContext,
+    bits: u32,
+    dib_w: i32,
+    dib_h: i32,
+    bpp: u16,
+    top_down: bool,
+    sx: i32,
+    sy: i32,
+    w: i32,
+    h: i32,
 ) -> Vec<u8> {
     let bytespp = (bpp / 8).max(1) as i32;
     let stride = ((dib_w * bpp as i32 + 31) / 32) * 4;
     let mut out = vec![0u8; (w.max(0) * h.max(0) * 4) as usize];
     for row in 0..h {
         // For bottom-up DIBs, row 0 is at the bottom of the buffer.
-        let src_row = if top_down { sy + row } else { dib_h - 1 - (sy + row) };
-        if src_row < 0 || src_row >= dib_h { continue; }
+        let src_row = if top_down {
+            sy + row
+        } else {
+            dib_h - 1 - (sy + row)
+        };
+        if src_row < 0 || src_row >= dib_h {
+            continue;
+        }
         for col in 0..w {
             let src_col = sx + col;
-            if src_col < 0 || src_col >= dib_w { continue; }
-            let off = bits as i64 + src_row as i64 * stride as i64 + src_col as i64 * bytespp as i64;
+            if src_col < 0 || src_col >= dib_w {
+                continue;
+            }
+            let off =
+                bits as i64 + src_row as i64 * stride as i64 + src_col as i64 * bytespp as i64;
             let px = ctx.memory.read_u32(off as u32).unwrap_or(0);
             // DIB pixels are BGRA/BGRX little-endian.
-            let (b, g, r) = ((px & 0xFF) as u8, ((px >> 8) & 0xFF) as u8, ((px >> 16) & 0xFF) as u8);
+            let (b, g, r) = (
+                (px & 0xFF) as u8,
+                ((px >> 8) & 0xFF) as u8,
+                ((px >> 16) & 0xFF) as u8,
+            );
             let di = ((row * w + col) * 4) as usize;
-            out[di] = r; out[di + 1] = g; out[di + 2] = b; out[di + 3] = 0xFF;
+            out[di] = r;
+            out[di + 1] = g;
+            out[di + 2] = b;
+            out[di + 3] = 0xFF;
         }
     }
     out
@@ -1037,14 +1185,28 @@ fn read_dib_rgba(
 // BitBlt(hdcDest, x, y, w, h, hdcSrc, sx, sy, rop) -> blit memory DC to a window.
 pub(crate) fn bit_blt(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
-    let (x, y, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
+    let (x, y, w, h) = (
+        ctx.arg(1) as i32,
+        ctx.arg(2) as i32,
+        ctx.arg(3) as i32,
+        ctx.arg(4) as i32,
+    );
     let src = ctx.arg(5);
     let (sx, sy) = (ctx.arg(6) as i32, ctx.arg(7) as i32);
 
     if let Some((bits, dw, dh, bpp, td)) = dib_of_dc(ctx, src) {
         if ctx.gui.windows.contains_key(&dest) {
             let pixels = read_dib_rgba(ctx, bits, dw, dh, bpp, td, sx, sy, w, h);
-            ctx.ui_events.push(UiEvent::Blit { hwnd: dest, x, y, w, h, src_w: w, src_h: h, pixels });
+            ctx.ui_events.push(UiEvent::Blit {
+                hwnd: dest,
+                x,
+                y,
+                w,
+                h,
+                src_w: w,
+                src_h: h,
+                pixels,
+            });
         }
     }
     ctx.ret_stdcall(1, 9);
@@ -1054,14 +1216,33 @@ pub(crate) fn bit_blt(ctx: &mut ApiContext) -> Handled {
 // StretchBlt(hdcDest, x, y, w, h, hdcSrc, sx, sy, sw, sh, rop) -> 11 args.
 pub(crate) fn stretch_blt(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
-    let (x, y, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
+    let (x, y, w, h) = (
+        ctx.arg(1) as i32,
+        ctx.arg(2) as i32,
+        ctx.arg(3) as i32,
+        ctx.arg(4) as i32,
+    );
     let src = ctx.arg(5);
-    let (sx, sy, sw, sh) = (ctx.arg(6) as i32, ctx.arg(7) as i32, ctx.arg(8) as i32, ctx.arg(9) as i32);
+    let (sx, sy, sw, sh) = (
+        ctx.arg(6) as i32,
+        ctx.arg(7) as i32,
+        ctx.arg(8) as i32,
+        ctx.arg(9) as i32,
+    );
 
     if let Some((bits, dw, dh, bpp, td)) = dib_of_dc(ctx, src) {
         if ctx.gui.windows.contains_key(&dest) {
             let pixels = read_dib_rgba(ctx, bits, dw, dh, bpp, td, sx, sy, sw, sh);
-            ctx.ui_events.push(UiEvent::Blit { hwnd: dest, x, y, w, h, src_w: sw, src_h: sh, pixels });
+            ctx.ui_events.push(UiEvent::Blit {
+                hwnd: dest,
+                x,
+                y,
+                w,
+                h,
+                src_w: sw,
+                src_h: sh,
+                pixels,
+            });
         }
     }
     ctx.ret_stdcall(1, 11);
@@ -1072,8 +1253,18 @@ pub(crate) fn stretch_blt(ctx: &mut ApiContext) -> Handled {
 //               usage, rop) -> 13 args. Blits a caller-supplied DIB buffer.
 pub(crate) fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
-    let (xd, yd, wd, hd) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
-    let (xs, ys, ws, hs) = (ctx.arg(5) as i32, ctx.arg(6) as i32, ctx.arg(7) as i32, ctx.arg(8) as i32);
+    let (xd, yd, wd, hd) = (
+        ctx.arg(1) as i32,
+        ctx.arg(2) as i32,
+        ctx.arg(3) as i32,
+        ctx.arg(4) as i32,
+    );
+    let (xs, ys, ws, hs) = (
+        ctx.arg(5) as i32,
+        ctx.arg(6) as i32,
+        ctx.arg(7) as i32,
+        ctx.arg(8) as i32,
+    );
     let bits = ctx.arg(9);
     let bmi = ctx.arg(10);
     let dib_w = ctx.memory.read_u32(bmi + 4).unwrap_or(0) as i32;
@@ -1081,8 +1272,28 @@ pub(crate) fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
     let bpp = ((ctx.memory.read_u32(bmi + 12).unwrap_or(0) >> 16) as u16).max(1);
 
     if ctx.gui.windows.contains_key(&dest) {
-        let pixels = read_dib_rgba(ctx, bits, dib_w, raw_h.abs(), bpp, raw_h < 0, xs, ys, ws, hs);
-        ctx.ui_events.push(UiEvent::Blit { hwnd: dest, x: xd, y: yd, w: wd, h: hd, src_w: ws, src_h: hs, pixels });
+        let pixels = read_dib_rgba(
+            ctx,
+            bits,
+            dib_w,
+            raw_h.abs(),
+            bpp,
+            raw_h < 0,
+            xs,
+            ys,
+            ws,
+            hs,
+        );
+        ctx.ui_events.push(UiEvent::Blit {
+            hwnd: dest,
+            x: xd,
+            y: yd,
+            w: wd,
+            h: hd,
+            src_w: ws,
+            src_h: hs,
+            pixels,
+        });
     }
     ctx.ret_stdcall(hs.max(0) as u32, 13);
     Handled::Ok
@@ -1092,7 +1303,12 @@ pub(crate) fn stretch_dibits(ctx: &mut ApiContext) -> Handled {
 //                   *bits, *bmi, usage) -> 12 args.
 pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
     let dest = ctx.arg(0);
-    let (xd, yd, w, h) = (ctx.arg(1) as i32, ctx.arg(2) as i32, ctx.arg(3) as i32, ctx.arg(4) as i32);
+    let (xd, yd, w, h) = (
+        ctx.arg(1) as i32,
+        ctx.arg(2) as i32,
+        ctx.arg(3) as i32,
+        ctx.arg(4) as i32,
+    );
     let (xs, ys) = (ctx.arg(5) as i32, ctx.arg(6) as i32);
     let bits = ctx.arg(9);
     let bmi = ctx.arg(10);
@@ -1102,7 +1318,16 @@ pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
 
     if ctx.gui.windows.contains_key(&dest) {
         let pixels = read_dib_rgba(ctx, bits, dib_w, raw_h.abs(), bpp, raw_h < 0, xs, ys, w, h);
-        ctx.ui_events.push(UiEvent::Blit { hwnd: dest, x: xd, y: yd, w, h, src_w: w, src_h: h, pixels });
+        ctx.ui_events.push(UiEvent::Blit {
+            hwnd: dest,
+            x: xd,
+            y: yd,
+            w,
+            h,
+            src_w: w,
+            src_h: h,
+            pixels,
+        });
     }
     ctx.ret_stdcall(h.max(0) as u32, 12);
     Handled::Ok
@@ -1112,12 +1337,12 @@ pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn get_device_caps(ctx: &mut ApiContext) -> Handled {
     let index = ctx.arg(1);
     let v = match index {
-        8 => 1920,   // HORZRES
-        10 => 1080,  // VERTRES
-        12 => 32,    // BITSPIXEL
-        14 => 1,     // PLANES
+        8 => 1920,     // HORZRES
+        10 => 1080,    // VERTRES
+        12 => 32,      // BITSPIXEL
+        14 => 1,       // PLANES
         88 | 90 => 96, // LOGPIXELSX / LOGPIXELSY (DPI)
-        104 => 1,    // SHADEBLENDCAPS
+        104 => 1,      // SHADEBLENDCAPS
         _ => 0,
     };
     ctx.ret_stdcall(v, 2);

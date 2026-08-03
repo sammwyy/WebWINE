@@ -1293,7 +1293,7 @@ function parentPath(path: string): string | null {
   return normalized.slice(0, idx);
 }
 
-// ── file-picker filter helpers ───────────────────────────────────────────────
+// file-picker filter helpers
 function parsePickerFilter(filter: string): { label: string; pattern: string }[] {
   if (!filter) return [];
   const parts = filter.split("|");
