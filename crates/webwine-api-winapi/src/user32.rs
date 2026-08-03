@@ -1596,11 +1596,16 @@ pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
 }
 
 // wsprintfA/W(dst, fmt, ...) -> chars written (excl. null terminator).
-// Declared WINAPI (stdcall) but variadic: the real user32.dll implementation
-// pops exactly as many stack dwords as the format string consumed, so the
-// stack cleanup here must track that count rather than use a fixed arity —
-// the previous "unimplemented" fallback always popped 1 arg regardless of
-// how many were actually pushed, corrupting the caller's stack.
+// Declared WINAPI in the header, but MSVC always compiles a call to a
+// variadic function as __cdecl regardless of the declared convention — so
+// every call site does `call [wsprintfW]; add esp, N` itself. The real
+// user32.dll implementation therefore pops nothing (plain `ret`); it must
+// NOT clean any args here, or the caller's own `add esp` double-cleans the
+// stack and corrupts it. (Confirmed against foobar2000's installer: call
+// sites at 0x406630/0x406ab2 are followed by `add esp, 0xc` / `add esp,
+// 0x10`.) The previous "unimplemented" fallback popped a fixed 1 arg, and
+// an earlier version of this stub popped 2+consumed — both wrong for the
+// same reason.
 fn wsprintf(ctx: &mut ApiContext, wide: bool) -> Handled {
     let dst = ctx.arg(0);
     let fmt_ptr = ctx.arg(1);
@@ -1662,7 +1667,7 @@ fn wsprintf(ctx: &mut ApiContext, wide: bool) -> Handled {
         bytes.push(0);
         let _ = ctx.memory.write_bytes(dst, &bytes);
     }
-    ctx.ret_stdcall(n, 2 + consumed);
+    ctx.ret_cdecl(n);
     Handled::Ok
 }
 
