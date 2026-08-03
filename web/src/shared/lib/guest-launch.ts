@@ -4,6 +4,7 @@ import { openTextReader } from "../../apps/text-reader/TextReaderApp";
 import { openRegedit } from "../../apps/regedit/RegeditApp";
 import { openPhotoViewer } from "../../apps/photo-viewer/PhotoViewerApp";
 import { openMediaPlayer } from "../../apps/media-player/MediaPlayerApp";
+import { openTaskManager } from "../../apps/task-manager/TaskManagerApp";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import {
   parseShortcutTarget,
@@ -130,6 +131,9 @@ async function launchShellAction(action: ShellAction, runtime: RuntimeBridge, ta
       return;
     case "regedit":
       openRegedit(runtime);
+      return;
+    case "task-manager":
+      openTaskManager(runtime);
       return;
     default:
       // Delegate any unhandled or custom virtualApp actions to the client

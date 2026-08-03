@@ -6,8 +6,8 @@
  * to the Zustand log store instead of touching the DOM directly.
  */
 
-import type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, UiEvent } from "../wasm/worker";
-export type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, UiEvent } from "../wasm/worker";
+import type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, SystemMemoryInfo, UiEvent } from "../wasm/worker";
+export type { DirectoryEntry, LogEvent, NamedValue, PeInfo, ProcessInfo, RegValue, SystemMemoryInfo, UiEvent } from "../wasm/worker";
 
 export interface ProcessHandlers {
   stdout?: (text: string) => void;
@@ -294,6 +294,28 @@ export class RuntimeBridge {
 
   killProcess(pid: number): void {
     this.send({ type: "kill_process", pid });
+  }
+
+  async listProcesses(): Promise<ProcessInfo[]> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { processes: ProcessInfo[] }).processes),
+        reject,
+      });
+      this.send({ type: "list_processes", requestId });
+    });
+  }
+
+  async getSystemMemory(): Promise<SystemMemoryInfo> {
+    const requestId = this.nextId();
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, {
+        resolve: (r) => resolve((r as { info: SystemMemoryInfo }).info),
+        reject,
+      });
+      this.send({ type: "get_system_memory", requestId });
+    });
   }
 
   async inspectPe(path: string): Promise<PeInfo> {

@@ -10,10 +10,15 @@ use crate::vm::memory::{GuestMemory, PageProt};
 use crate::vm::process::{ConsoleStreams, GuestProcess, ProcessState, UiEvent};
 use crate::winapi::WinApiRegistry;
 
-// Region where dependent DLLs are mapped (between the heap top and the stack).
+// Region where dependent DLLs are mapped (above the growable process heap).
 // Each DLL is placed at the next free, section-aligned slot and base-relocated.
-const DLL_REGION_BASE: u32 = 0x3000_0000;
-const DLL_REGION_END: u32 = 0x6000_0000;
+// Layout (low → high):
+//   0x0040_0000  main PE image
+//   0x1000_0000  process heap (grows up toward DLL_REGION_BASE) ≈ 1 GiB
+//   0x5000_0000  loaded DLL images
+//   0x6FF0_0000  stack
+const DLL_REGION_BASE: u32 = 0x5000_0000;
+const DLL_REGION_END: u32 = 0x6FE0_0000;
 
 /// Extract the message-table resource (RT_MESSAGETABLE) into an id->text map.
 /// cmd.exe and other system apps load their banner/messages/output templates
@@ -203,8 +208,10 @@ fn parse_message_data(bytes: &[u8], base: usize, out: &mut std::collections::Has
 
 // Fixed virtual address layout
 const HEAP_BASE: u32 = 0x1000_0000;
-// Initial reservation; ensure_mapped grows toward the DLL region (0x3000_0000).
-// 64 MB covers heavy CRT/game startups without hammering resize on every bump.
+// Initial reservation; ensure_mapped grows toward DLL_REGION_BASE (0x5000_0000)
+// → up to ~1 GiB of guest heap for large games. 64 MB covers CRT/startup; big
+// game asset loads grow the region in 1 MB steps without pre-committing 1 GiB
+// of host RAM in the browser.
 const HEAP_SIZE: u32 = 0x0400_0000; // 64 MB
 const STACK_BASE: u32 = 0x6FF0_0000;
 const STACK_SIZE: u32 = 0x0010_0000; // 1 MB
@@ -518,6 +525,9 @@ pub fn load_pe(
         heap_base: HEAP_BASE,
         heap_next: HEAP_BASE,
         heap_sizes: std::collections::HashMap::new(),
+        heap_free_list: Vec::new(),
+        // Bump heap may grow up to the DLL region (≈1 GiB of guest VA).
+        heap_limit: DLL_REGION_BASE,
         memory: mem,
         cpu,
         handles: HandleTable::new(pid),

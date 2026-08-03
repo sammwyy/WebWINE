@@ -47,6 +47,10 @@ pub struct ApiContext<'a> {
     pub next_child_pid: u32,
     pub heap_next: &'a mut u32,
     pub heap_sizes: &'a mut std::collections::HashMap<u32, u32>,
+    /// Coalesced free list for HeapFree reuse (sorted by address).
+    pub heap_free_list: &'a mut Vec<(u32, u32)>,
+    /// Exclusive upper bound for bump growth (DLL region base).
+    pub heap_limit: u32,
     pub fs: &'a mut VirtualFileSystem,
     pub registry: &'a mut crate::registry::Registry,
     pub logs: &'a mut LogBuffer,
@@ -180,21 +184,42 @@ impl<'a> ApiContext<'a> {
         Some((handled, retval))
     }
 
-    /// Bump allocator on the process heap, tracking sizes so realloc can copy.
+    /// Process heap allocator with free-list reuse + bump growth.
     ///
     /// - `size == 0` still returns a unique non-NULL block (Windows HeapAlloc /
-    ///   CRT `malloc(0)` behaviour) so callers never treat NULL as "success".
-    /// - Returns `0` only on real OOM (cannot back the range with guest memory).
+    ///   CRT `malloc(0)` behaviour).
+    /// - Prefer a free-list block (first-fit) so alloc/free loops in games do
+    ///   not exhaust the ~1 GiB guest heap high-water mark.
+    /// - Returns `0` only on real OOM.
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
-        // Minimum 16-byte granule keeps alignment and matches non-NULL malloc(0).
         let size = size.max(1);
         let aligned = (size + 15) & !15;
+
+        // 1) First-fit from the free list.
+        if let Some(idx) = self
+            .heap_free_list
+            .iter()
+            .position(|&(_, s)| s >= aligned)
+        {
+            let (ptr, block) = self.heap_free_list.remove(idx);
+            let rem = block - aligned;
+            if rem >= 16 {
+                // Split: keep the tail free.
+                self.heap_free_insert(ptr.wrapping_add(aligned), rem);
+            }
+            self.heap_sizes.insert(ptr, size);
+            return ptr;
+        }
+
+        // 2) Bump allocate (must stay below heap_limit / DLL region).
         let ptr = *self.heap_next;
         let new_next = match ptr.checked_add(aligned) {
             Some(n) => n,
             None => return 0,
         };
-        // Must fully map before publishing the pointer / advancing the cursor.
+        if new_next > self.heap_limit {
+            return 0;
+        }
         if !self.memory.ensure_mapped(ptr, new_next) {
             return 0;
         }
@@ -216,44 +241,122 @@ impl<'a> ApiContext<'a> {
         ptr
     }
 
-    /// Reallocate `old` to `new_size`, preserving contents. Grows the last
-    /// block in place; otherwise allocates a fresh block and copies.
-    /// Returns 0 on failure (and leaves `old` intact when possible).
+    /// Return a block to the free list (coalescing neighbours).
+    pub fn heap_free_block(&mut self, ptr: u32) {
+        if ptr == 0 {
+            return;
+        }
+        let size = match self.heap_sizes.remove(&ptr) {
+            Some(s) => (s + 15) & !15,
+            None => return, // unknown / double-free: ignore
+        };
+        // If this was the most recent bump allocation, rewind the cursor.
+        if ptr.wrapping_add(size) == *self.heap_next {
+            *self.heap_next = ptr;
+            // Also absorb any free blocks that now sit at the new tip.
+            self.heap_free_list
+                .retain(|&(p, s)| {
+                    if p.wrapping_add(s) == *self.heap_next {
+                        // shouldn't happen after rewind
+                        true
+                    } else if p == *self.heap_next {
+                        false
+                    } else {
+                        true
+                    }
+                });
+            // Pull free blocks that abut the tip into the rewind.
+            loop {
+                if let Some(i) = self
+                    .heap_free_list
+                    .iter()
+                    .position(|&(p, s)| p.wrapping_add(s) == *self.heap_next)
+                {
+                    let (p, s) = self.heap_free_list.remove(i);
+                    *self.heap_next = p;
+                    let _ = s;
+                } else {
+                    break;
+                }
+            }
+            return;
+        }
+        self.heap_free_insert(ptr, size);
+    }
+
+    fn heap_free_insert(&mut self, mut ptr: u32, mut size: u32) {
+        // Insert sorted by address, coalescing with immediate neighbours.
+        let mut i = 0;
+        while i < self.heap_free_list.len() && self.heap_free_list[i].0 < ptr {
+            i += 1;
+        }
+        // Merge with previous?
+        if i > 0 {
+            let (pp, ps) = self.heap_free_list[i - 1];
+            if pp.wrapping_add(ps) == ptr {
+                ptr = pp;
+                size += ps;
+                self.heap_free_list.remove(i - 1);
+                i -= 1;
+            }
+        }
+        // Merge with next?
+        if i < self.heap_free_list.len() {
+            let (np, ns) = self.heap_free_list[i];
+            if ptr.wrapping_add(size) == np {
+                size += ns;
+                self.heap_free_list.remove(i);
+            }
+        }
+        self.heap_free_list.insert(i, (ptr, size));
+    }
+
+    /// Reallocate `old` to `new_size`, preserving contents.
     pub fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32 {
         if old == 0 {
             return self.heap_alloc(new_size);
         }
         if new_size == 0 {
-            // HeapReAlloc(..., 0) frees on Windows with some flags; we keep a
-            // non-NULL empty block to match our malloc(0) policy.
             return self.heap_alloc(0);
         }
         let old_size = self.heap_sizes.get(&old).copied().unwrap_or(0);
         let aligned_old = (old_size + 15) & !15;
         let aligned_new = (new_size + 15) & !15;
 
-        // Most-recent allocation? Extend (or shrink) in place.
+        // In-place shrink: keep block, free the tail if large enough.
+        if aligned_new <= aligned_old {
+            self.heap_sizes.insert(old, new_size);
+            let rem = aligned_old - aligned_new;
+            if rem >= 16 {
+                // Temporarily park tail as free without removing `old` from sizes.
+                self.heap_free_insert(old.wrapping_add(aligned_new), rem);
+                // If this was the tip allocation, rewind the bump cursor.
+                if old.wrapping_add(aligned_old) == *self.heap_next {
+                    *self.heap_next = old.wrapping_add(aligned_new);
+                }
+            }
+            return old;
+        }
+
+        // Most-recent allocation? Extend in place.
         if old.wrapping_add(aligned_old) == *self.heap_next {
             let new_next = match old.checked_add(aligned_new) {
-                Some(n) => n,
-                None => return 0,
+                Some(n) if n <= self.heap_limit => n,
+                _ => return 0,
             };
-            if aligned_new > aligned_old {
-                if !self.memory.ensure_mapped(old, new_next) {
-                    return 0;
-                }
-                // Zero the extension so HEAP_ZERO_MEMORY-like consumers are safe.
-                let ext = (aligned_new - aligned_old) as usize;
-                let _ = self
-                    .memory
-                    .write_bytes(old.wrapping_add(aligned_old), &vec![0u8; ext]);
+            if !self.memory.ensure_mapped(old, new_next) {
+                return 0;
             }
+            let ext = (aligned_new - aligned_old) as usize;
+            let _ = self
+                .memory
+                .write_bytes(old.wrapping_add(aligned_old), &vec![0u8; ext]);
             *self.heap_next = new_next;
             self.heap_sizes.insert(old, new_size);
             return old;
         }
 
-        // Otherwise allocate and copy the overlap.
+        // Allocate fresh, copy, free old.
         let new_ptr = self.heap_alloc(new_size);
         if new_ptr == 0 {
             return 0;
@@ -264,7 +367,7 @@ impl<'a> ApiContext<'a> {
                 let _ = self.memory.write_bytes(new_ptr, &bytes);
             }
         }
-        // Caller may still free `old`; we don't reclaim (bump allocator).
+        self.heap_free_block(old);
         new_ptr
     }
 }

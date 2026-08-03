@@ -3,4 +3,4 @@ pub mod handles;
 pub mod memory;
 pub mod process;
 
-pub use process::{ProcessInfo, ProcessState};
+pub use process::{ProcessInfo, ProcessState, SystemMemoryInfo};

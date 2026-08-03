@@ -111,9 +111,7 @@ fn rtl_alloc(ctx: &mut ApiContext) -> Handled {
 
 fn rtl_free(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(2);
-    if p != 0 {
-        ctx.heap_sizes.remove(&p);
-    }
+    ctx.heap_free_block(p);
     ctx.ret_stdcall(1, 3); // TRUE
     Handled::Ok
 }

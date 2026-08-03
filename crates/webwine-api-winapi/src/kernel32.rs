@@ -2257,12 +2257,10 @@ fn heap_alloc(ctx: &mut ApiContext) -> Handled {
 }
 
 fn heap_free(ctx: &mut ApiContext) -> Handled {
-    // HeapFree(hHeap, dwFlags, lpMem) — bump heap does not reclaim VA, but drop
-    // size tracking so HeapSize/realloc treat it as gone.
+    // HeapFree(hHeap, dwFlags, lpMem) — return the block to the free list so
+    // subsequent HeapAlloc can reuse it (critical for game asset load loops).
     let p = ctx.arg(2);
-    if p != 0 {
-        ctx.heap_sizes.remove(&p);
-    }
+    ctx.heap_free_block(p);
     ctx.ret_stdcall(1, 3);
     Handled::Ok
 }

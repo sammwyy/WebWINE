@@ -44,6 +44,20 @@ export const useRuntimeStore = create<RuntimeStore>((set) => ({
       ),
     );
 
+    // Pin Task Manager on the guest desktop (Start Menu already has all apps).
+    try {
+      const taskmgr = AppRegistry.getAppByAction("task-manager");
+      if (taskmgr) {
+        const lnk = new TextEncoder().encode(taskmgr.exePath);
+        await rt.mountFile(
+          "C:\\Users\\guest\\Desktop\\Task Manager.lnk",
+          lnk.buffer.slice(lnk.byteOffset, lnk.byteOffset + lnk.byteLength),
+        );
+      }
+    } catch {
+      /* non-fatal */
+    }
+
     rt.onVfsChanged(() => {
       saveVfsSnapshot(rt);
     });

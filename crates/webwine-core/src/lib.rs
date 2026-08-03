@@ -3,7 +3,7 @@ pub mod pe;
 pub mod vm;
 pub mod winapi;
 
-pub use webwine_api::{error, fs, logs, registry};
+pub use webwine_api::{error, fs, logs, registry, SystemMemoryInfo};
 pub use vm::{ProcessInfo, ProcessState, SliceResult};
 pub use vm::executor::SliceResult as RunResult;
 pub use fs::vfs::{DirEntry, EntryKind};

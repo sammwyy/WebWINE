@@ -17,6 +17,8 @@ type InMsg =
   | { type: "post_message"; pid: number; hwnd: number; message: number; wparam: number; lparam: number }
   | { type: "post_dialog_reply"; pid: number; button: number; file: string }
   | { type: "kill_process"; pid: number }
+  | { type: "list_processes"; requestId: string }
+  | { type: "get_system_memory"; requestId: string }
   | { type: "export_vfs"; requestId: string }
   | { type: "import_vfs"; bytes: ArrayBuffer }
   | { type: "reg_list_subkeys"; requestId: string; path: string }
@@ -34,6 +36,8 @@ type OutMsg =
   | { type: "file_data"; requestId: string; path: string; bytes: ArrayBuffer }
   | { type: "pe_info"; requestId: string; info: PeInfo }
   | { type: "process_launched"; requestId: string; pid: number; info: ProcessInfo; launchLogs: LogEvent[] }
+  | { type: "process_list"; requestId: string; processes: ProcessInfo[] }
+  | { type: "system_memory"; requestId: string; info: SystemMemoryInfo }
   | { type: "process_stdout"; pid: number; text: string }
   | { type: "process_stderr"; pid: number; text: string }
   | { type: "process_ui"; pid: number; events: UiEvent[] }
@@ -112,6 +116,29 @@ export interface ProcessInfo {
        | { state: "waiting_for_input" }
        | { state: "exited"; exit_code: number }
        | { state: "crashed"; reason: string };
+  /** Live HeapAlloc/malloc bytes. */
+  heap_used: number;
+  heap_blocks: number;
+  /** Bytes on the free list (reusable). */
+  heap_free: number;
+  heap_free_blocks: number;
+  /** Bump cursor extent (heap_next - heap_base). */
+  heap_committed: number;
+  /** Max guest heap capacity for this process (~1 GiB layout). */
+  heap_limit: number;
+  /** Sum of all mapped GuestMemory region sizes. */
+  mapped_bytes: number;
+  region_count: number;
+}
+
+/** Aggregate memory snapshot from the WASM VM (Task Manager). */
+export interface SystemMemoryInfo {
+  processes: ProcessInfo[];
+  total_heap_used: number;
+  total_heap_free: number;
+  total_heap_committed: number;
+  total_mapped: number;
+  heap_limit_per_process: number;
 }
 
 export interface PeInfo {
@@ -365,6 +392,12 @@ self.onmessage = async (e: MessageEvent<InMsg>) => {
     } else if (msg.type === "kill_process") {
       runtime.killProcess(msg.pid);
       flushLogs();
+    } else if (msg.type === "list_processes") {
+      const processes = runtime.listProcesses() as ProcessInfo[];
+      send({ type: "process_list", requestId: msg.requestId, processes });
+    } else if (msg.type === "get_system_memory") {
+      const info = runtime.getSystemMemory() as SystemMemoryInfo;
+      send({ type: "system_memory", requestId: msg.requestId, info });
     } else if (msg.type === "delete_node") {
       runtime.deleteNode(msg.path);
       flushLogs();

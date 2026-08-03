@@ -129,3 +129,13 @@ AppRegistry.registerApp(
   },
   undefined,
 );
+
+AppRegistry.registerApp(
+  {
+    name: "Task Manager",
+    exePath: "C:\\Windows\\System32\\Taskmgr.exe",
+    icon: "apps/taskmgr.webp",
+    action: "task-manager",
+  },
+  undefined,
+);

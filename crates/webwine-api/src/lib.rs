@@ -8,4 +8,4 @@ pub mod winapi;
 pub use error::{Result, VmError};
 pub use fs::vfs::{DirEntry, EntryKind};
 pub use logs::{LogEvent, LogLevel};
-pub use vm::process::{ProcessInfo, ProcessState};
+pub use vm::process::{ProcessInfo, ProcessState, SystemMemoryInfo};

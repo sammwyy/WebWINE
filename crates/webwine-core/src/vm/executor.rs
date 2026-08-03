@@ -198,6 +198,8 @@ fn handle_trampoline(
             next_child_pid: proc.next_child_pid,
             heap_next: &mut proc.heap_next,
             heap_sizes: &mut proc.heap_sizes,
+            heap_free_list: &mut proc.heap_free_list,
+            heap_limit: proc.heap_limit,
             fs,
             registry,
             logs,

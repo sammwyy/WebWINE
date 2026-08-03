@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult};
+use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult, SystemMemoryInfo};
 use webwine_core::registry::{RegValue, RegistrySnapshot};
 
 /// One value row for the regedit UI.
@@ -129,6 +129,13 @@ impl Runtime {
     pub fn list_processes(&self) -> Result<JsValue, JsValue> {
         let list: Vec<ProcessInfo> = self.vm.list_processes();
         serde_wasm_bindgen::to_value(&list).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Aggregate memory snapshot (heap blocks, free list, mapped regions) for Task Manager.
+    #[wasm_bindgen(js_name = getSystemMemory)]
+    pub fn get_system_memory(&self) -> Result<JsValue, JsValue> {
+        let info: SystemMemoryInfo = self.vm.system_memory();
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen(js_name = killProcess)]

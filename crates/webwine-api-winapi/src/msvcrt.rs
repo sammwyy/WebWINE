@@ -1916,13 +1916,10 @@ pub(crate) fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> S
 
 // ── CRT lifecycle / locale / SEH (named implementations) ────────────────────
 
-/// free(ptr): drop size tracking so realloc/_msize treat the block as released.
-/// The bump heap does not reclaim address space (same trade-off as before).
+/// free(ptr): return the block to the process free list (coalescing).
 pub(crate) fn free_fn(c: &mut ApiContext) -> Handled {
     let p = c.arg(0);
-    if p != 0 {
-        c.heap_sizes.remove(&p);
-    }
+    c.heap_free_block(p);
     c.ret_cdecl(0);
     Handled::Ok
 }

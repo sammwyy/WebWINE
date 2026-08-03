@@ -476,6 +476,10 @@ impl WebWineVm {
         self.processes.list_info()
     }
 
+    pub fn system_memory(&self) -> crate::SystemMemoryInfo {
+        self.processes.system_memory()
+    }
+
     pub fn kill_process(&mut self, pid: u32) -> Result<()> {
         use crate::vm::process::ProcessState;
         let proc = self

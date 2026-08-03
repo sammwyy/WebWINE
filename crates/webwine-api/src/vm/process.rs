@@ -23,6 +23,34 @@ pub struct ProcessInfo {
     pub image_base: u32,
     pub entry_point: u32,
     pub state: ProcessState,
+    /// Sum of live heap block sizes (bytes currently allocated via HeapAlloc/malloc).
+    pub heap_used: u64,
+    /// Number of live heap blocks.
+    pub heap_blocks: u32,
+    /// Bytes sitting on the free list (reusable without bumping).
+    pub heap_free: u64,
+    /// Free-list block count.
+    pub heap_free_blocks: u32,
+    /// High-water mark: heap_next - heap_base (bump cursor extent).
+    pub heap_committed: u64,
+    /// Max guest VA the heap can grow into (toward the DLL region).
+    pub heap_limit: u64,
+    /// Sum of all mapped GuestMemory region sizes for this process.
+    pub mapped_bytes: u64,
+    /// Number of mapped regions (image, heap, stack, DLLs, …).
+    pub region_count: u32,
+}
+
+/// Aggregate memory snapshot for Task Manager.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemMemoryInfo {
+    pub processes: Vec<ProcessInfo>,
+    pub total_heap_used: u64,
+    pub total_heap_free: u64,
+    pub total_heap_committed: u64,
+    pub total_mapped: u64,
+    /// Soft guest heap capacity per process (~1 GiB layout).
+    pub heap_limit_per_process: u64,
 }
 
 pub struct ConsoleStreams {
@@ -366,6 +394,11 @@ pub struct GuestProcess {
     pub heap_base: u32,
     pub heap_next: u32,                                  // bump allocator pointer
     pub heap_sizes: std::collections::HashMap<u32, u32>, // ptr -> size, for realloc
+    /// Coalesced free blocks `(ptr, size)` sorted by address — HeapFree reclaims
+    /// here so games that alloc/read/free in a loop do not exhaust the bump heap.
+    pub heap_free_list: Vec<(u32, u32)>,
+    /// Exclusive upper bound the bump heap may grow to (DLL region base).
+    pub heap_limit: u32,
     pub memory: GuestMemory,
     pub cpu: X86Cpu,
     pub handles: HandleTable,
@@ -419,12 +452,26 @@ pub fn parent_dir(path: &str) -> String {
 
 impl GuestProcess {
     pub fn info(&self) -> ProcessInfo {
+        let heap_used: u64 = self.heap_sizes.values().map(|&s| s as u64).sum();
+        let heap_free: u64 = self.heap_free_list.iter().map(|&(_, s)| s as u64).sum();
+        let mapped_bytes: u64 = self.memory.regions.values().map(|r| r.size as u64).sum();
+        let heap_committed = self
+            .heap_next
+            .saturating_sub(self.heap_base) as u64;
         ProcessInfo {
             pid: self.pid,
             path: self.path.clone(),
             image_base: self.image_base,
             entry_point: self.entry_point,
             state: self.state.clone(),
+            heap_used,
+            heap_blocks: self.heap_sizes.len() as u32,
+            heap_free,
+            heap_free_blocks: self.heap_free_list.len() as u32,
+            heap_committed,
+            heap_limit: self.heap_limit.saturating_sub(self.heap_base) as u64,
+            mapped_bytes,
+            region_count: self.memory.regions.len() as u32,
         }
     }
 
@@ -439,6 +486,8 @@ impl GuestProcess {
             heap_base: 0,
             heap_next: 0,
             heap_sizes: std::collections::HashMap::new(),
+            heap_free_list: Vec::new(),
+            heap_limit: 0,
             memory: GuestMemory::new(),
             cpu: X86Cpu::new(),
             handles: HandleTable::new(pid),
@@ -492,6 +541,28 @@ impl ProcessTable {
     }
     pub fn list_info(&self) -> Vec<ProcessInfo> {
         self.processes.values().map(|p| p.info()).collect()
+    }
+
+    /// Aggregate heap/mapped stats across all guest processes (Task Manager).
+    pub fn system_memory(&self) -> SystemMemoryInfo {
+        let processes = self.list_info();
+        let total_heap_used = processes.iter().map(|p| p.heap_used).sum();
+        let total_heap_free = processes.iter().map(|p| p.heap_free).sum();
+        let total_heap_committed = processes.iter().map(|p| p.heap_committed).sum();
+        let total_mapped = processes.iter().map(|p| p.mapped_bytes).sum();
+        let heap_limit_per_process = processes
+            .iter()
+            .map(|p| p.heap_limit)
+            .max()
+            .unwrap_or(0x4000_0000); // ~1 GiB default layout
+        SystemMemoryInfo {
+            processes,
+            total_heap_used,
+            total_heap_free,
+            total_heap_committed,
+            total_mapped,
+            heap_limit_per_process,
+        }
     }
 }
 
