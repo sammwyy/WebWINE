@@ -4,173 +4,197 @@ use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
 use crate::{
-    com_qi, make_object, register_vtable, s0_1, s0_2, s0_3, s0_4, s0_5, s0_6, s0_7, s0_9, s1_1,
-    s1_2, Vtable,
+    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5, hr_ok_6, hr_ok_7,
+    hr_ok_9, make_object, register_vtable, Vtable,
 };
 
 const S_OK: u32 = 0x0000_0000;
+const D3DERR_INVALIDCALL: u32 = 0x8876_086F;
 
-// IDirect3DDevice8 object layout (guest heap). Beyond the COM vtable ptr the
-// device carries its window + the render state the draw calls need, so the D3D8
-// state tracker stays self-contained (no host-side per-device map).
+// IDirect3DDevice8 object layout (guest heap).
 const DEV_HWND: u32 = 4;
-const DEV_BB: u32 = 8; // cached backbuffer surface VA
-const DEV_DEPTH: u32 = 12; // cached depth/RT surface VA
-const DEV_FVF: u32 = 16; // current FVF (vertex format) from SetVertexShader
-const DEV_STREAM_VB: u32 = 20; // bound vertex buffer VA (SetStreamSource)
-const DEV_STREAM_STRIDE: u32 = 24; // bound vertex stride
-const DEV_TEXTURE: u32 = 28; // current texture VA (stage 0) — used as the GPU texture id
-const DEV_BLEND_EN: u32 = 32; // D3DRS_ALPHABLENDENABLE
-const DEV_DESTBLEND: u32 = 36; // D3DRS_DESTBLEND
-const DEV_SIZE: u32 = 40;
+const DEV_BB: u32 = 8;
+const DEV_DEPTH: u32 = 12;
+const DEV_FVF: u32 = 16;
+const DEV_STREAM_VB: u32 = 20;
+const DEV_STREAM_STRIDE: u32 = 24;
+const DEV_TEXTURE: u32 = 28;
+const DEV_BLEND_EN: u32 = 32;
+const DEV_DESTBLEND: u32 = 36;
+const DEV_IB: u32 = 40; // index buffer VA
+const DEV_BASE_VERTEX: u32 = 44;
+const DEV_VP_X: u32 = 48;
+const DEV_VP_Y: u32 = 52;
+const DEV_VP_W: u32 = 56;
+const DEV_VP_H: u32 = 60;
+const DEV_SIZE: u32 = 64;
 
 pub(crate) const IDIRECT3D8: Vtable = &[
     ("IDirect3D8::QueryInterface", com_qi),
-    ("IDirect3D8::AddRef", s1_1),
-    ("IDirect3D8::Release", s1_1),
-    ("IDirect3D8::RegisterSoftwareDevice", s0_2),
-    ("IDirect3D8::GetAdapterCount", s1_1), // returns 1
-    (
-        "IDirect3D8::GetAdapterIdentifier",
-        d3d8_get_adapter_identifier,
-    ),
-    ("IDirect3D8::GetAdapterModeCount", s1_2), // returns 1
-    ("IDirect3D8::EnumAdapterModes", s0_4),
-    (
-        "IDirect3D8::GetAdapterDisplayMode",
-        d3d8_get_adapter_display_mode,
-    ),
-    ("IDirect3D8::CheckDeviceType", s0_6),
-    ("IDirect3D8::CheckDeviceFormat", s0_7), // this + 6 args
-    ("IDirect3D8::CheckDeviceMultiSampleType", s0_6),
-    ("IDirect3D8::CheckDepthStencilMatch", s0_6),
+    ("IDirect3D8::AddRef", com_addref),
+    ("IDirect3D8::Release", com_release),
+    ("IDirect3D8::RegisterSoftwareDevice", hr_ok_2),
+    ("IDirect3D8::GetAdapterCount", d3d8_get_adapter_count),
+    ("IDirect3D8::GetAdapterIdentifier", d3d8_get_adapter_identifier),
+    ("IDirect3D8::GetAdapterModeCount", d3d8_get_adapter_mode_count),
+    ("IDirect3D8::EnumAdapterModes", d3d8_enum_adapter_modes),
+    ("IDirect3D8::GetAdapterDisplayMode", d3d8_get_adapter_display_mode),
+    ("IDirect3D8::CheckDeviceType", hr_ok_6),
+    ("IDirect3D8::CheckDeviceFormat", hr_ok_7),
+    ("IDirect3D8::CheckDeviceMultiSampleType", hr_ok_6),
+    ("IDirect3D8::CheckDepthStencilMatch", hr_ok_6),
     ("IDirect3D8::GetDeviceCaps", d3d8_get_device_caps),
-    ("IDirect3D8::GetAdapterMonitor", s0_2),
+    ("IDirect3D8::GetAdapterMonitor", d3d8_get_adapter_monitor),
     ("IDirect3D8::CreateDevice", d3d8_create_device),
 ];
 
-// IDirect3DDevice8: 94 slots, all stubs except IUnknown. Per-slot arg counts
-// preserved from the original device dispatcher (most default to 4).
+// IDirect3DDevice8 — 94 slots. Arg counts match the real COM interface (this + params).
 pub(crate) const IDIRECT3DDEVICE8: Vtable = &[
     ("IDirect3DDevice8::QueryInterface", com_qi),
-    ("IDirect3DDevice8::AddRef", s1_1),
-    ("IDirect3DDevice8::Release", s1_1),
-    ("IDirect3DDevice8::TestCooperativeLevel", s0_4),
-    ("IDirect3DDevice8::GetAvailableTextureMem", s0_4),
-    ("IDirect3DDevice8::ResourceManagerDiscardBytes", s0_4),
+    ("IDirect3DDevice8::AddRef", com_addref),
+    ("IDirect3DDevice8::Release", com_release),
+    ("IDirect3DDevice8::TestCooperativeLevel", hr_ok_1),
+    ("IDirect3DDevice8::GetAvailableTextureMem", dev_get_available_texture_mem),
+    ("IDirect3DDevice8::ResourceManagerDiscardBytes", hr_ok_2),
     ("IDirect3DDevice8::GetDirect3D", d3d8_device_get_direct3d),
     ("IDirect3DDevice8::GetDeviceCaps", dev_get_device_caps),
-    ("IDirect3DDevice8::GetDisplayMode", s0_4),
-    ("IDirect3DDevice8::GetCreationParameters", s0_4),
-    ("IDirect3DDevice8::SetCursorProperties", s0_4),
-    ("IDirect3DDevice8::SetCursorPosition", s0_4),
-    ("IDirect3DDevice8::ShowCursor", s0_4),
-    ("IDirect3DDevice8::CreateAdditionalSwapChain", s0_4),
-    ("IDirect3DDevice8::Reset", s0_2),
+    ("IDirect3DDevice8::GetDisplayMode", dev_get_display_mode),
+    ("IDirect3DDevice8::GetCreationParameters", dev_get_creation_params),
+    ("IDirect3DDevice8::SetCursorProperties", hr_ok_4),
+    ("IDirect3DDevice8::SetCursorPosition", hr_ok_4),
+    ("IDirect3DDevice8::ShowCursor", dev_show_cursor),
+    ("IDirect3DDevice8::CreateAdditionalSwapChain", hr_ok_3),
+    ("IDirect3DDevice8::Reset", hr_ok_2),
     ("IDirect3DDevice8::Present", dev_present),
     ("IDirect3DDevice8::GetBackBuffer", dev_get_backbuffer),
-    ("IDirect3DDevice8::GetRasterStatus", s0_4),
-    ("IDirect3DDevice8::SetGammaRamp", s0_4),
-    ("IDirect3DDevice8::GetGammaRamp", s0_4),
+    ("IDirect3DDevice8::GetRasterStatus", dev_get_raster_status),
+    ("IDirect3DDevice8::SetGammaRamp", hr_ok_3),
+    ("IDirect3DDevice8::GetGammaRamp", hr_ok_2),
     ("IDirect3DDevice8::CreateTexture", dev_create_texture),
-    ("IDirect3DDevice8::CreateVolumeTexture", s0_4),
-    ("IDirect3DDevice8::CreateCubeTexture", s0_4),
-    (
-        "IDirect3DDevice8::CreateVertexBuffer",
-        dev_create_vertex_buffer,
-    ),
-    ("IDirect3DDevice8::CreateIndexBuffer", s0_6),
-    ("IDirect3DDevice8::CreateRenderTarget", s0_4),
-    ("IDirect3DDevice8::CreateDepthStencilSurface", s0_4),
-    (
-        "IDirect3DDevice8::CreateImageSurface",
-        dev_create_image_surface,
-    ),
-    ("IDirect3DDevice8::CopyRects", s0_4),
-    ("IDirect3DDevice8::UpdateTexture", s0_4),
-    ("IDirect3DDevice8::GetFrontBuffer", s0_4),
-    ("IDirect3DDevice8::SetRenderTarget", s0_4),
+    ("IDirect3DDevice8::CreateVolumeTexture", hr_ok_9),
+    ("IDirect3DDevice8::CreateCubeTexture", hr_ok_7),
+    ("IDirect3DDevice8::CreateVertexBuffer", dev_create_vertex_buffer),
+    ("IDirect3DDevice8::CreateIndexBuffer", dev_create_index_buffer),
+    ("IDirect3DDevice8::CreateRenderTarget", dev_create_render_target),
+    ("IDirect3DDevice8::CreateDepthStencilSurface", dev_create_depth_stencil),
+    ("IDirect3DDevice8::CreateImageSurface", dev_create_image_surface),
+    ("IDirect3DDevice8::CopyRects", hr_ok_6),
+    ("IDirect3DDevice8::UpdateTexture", hr_ok_3),
+    ("IDirect3DDevice8::GetFrontBuffer", hr_ok_2),
+    ("IDirect3DDevice8::SetRenderTarget", dev_set_render_target),
     ("IDirect3DDevice8::GetRenderTarget", dev_get_surface_2),
-    (
-        "IDirect3DDevice8::GetDepthStencilSurface",
-        dev_get_surface_2,
-    ),
-    ("IDirect3DDevice8::BeginScene", s0_1),
-    ("IDirect3DDevice8::EndScene", s0_1),
+    ("IDirect3DDevice8::GetDepthStencilSurface", dev_get_surface_2),
+    ("IDirect3DDevice8::BeginScene", hr_ok_1),
+    ("IDirect3DDevice8::EndScene", hr_ok_1),
     ("IDirect3DDevice8::Clear", dev_clear),
-    ("IDirect3DDevice8::SetTransform", s0_3),
-    ("IDirect3DDevice8::GetTransform", s0_4),
-    ("IDirect3DDevice8::MultiplyTransform", s0_4),
-    ("IDirect3DDevice8::SetViewport", s0_2),
-    ("IDirect3DDevice8::GetViewport", s0_4),
-    ("IDirect3DDevice8::SetMaterial", s0_4),
-    ("IDirect3DDevice8::GetMaterial", s0_4),
-    ("IDirect3DDevice8::SetLight", s0_4),
-    ("IDirect3DDevice8::GetLight", s0_4),
-    ("IDirect3DDevice8::LightEnable", s0_4),
-    ("IDirect3DDevice8::GetLightEnable", s0_4),
-    ("IDirect3DDevice8::SetClipPlane", s0_4),
-    ("IDirect3DDevice8::GetClipPlane", s0_4),
+    ("IDirect3DDevice8::SetTransform", hr_ok_3),
+    ("IDirect3DDevice8::GetTransform", dev_get_transform),
+    ("IDirect3DDevice8::MultiplyTransform", hr_ok_3),
+    ("IDirect3DDevice8::SetViewport", dev_set_viewport),
+    ("IDirect3DDevice8::GetViewport", dev_get_viewport),
+    ("IDirect3DDevice8::SetMaterial", hr_ok_2),
+    ("IDirect3DDevice8::GetMaterial", hr_ok_2),
+    ("IDirect3DDevice8::SetLight", hr_ok_3),
+    ("IDirect3DDevice8::GetLight", hr_ok_3),
+    ("IDirect3DDevice8::LightEnable", hr_ok_3),
+    ("IDirect3DDevice8::GetLightEnable", dev_get_light_enable),
+    ("IDirect3DDevice8::SetClipPlane", hr_ok_3),
+    ("IDirect3DDevice8::GetClipPlane", hr_ok_3),
     ("IDirect3DDevice8::SetRenderState", dev_set_render_state),
-    ("IDirect3DDevice8::GetRenderState", s0_4),
-    ("IDirect3DDevice8::BeginStateBlock", s0_4),
-    ("IDirect3DDevice8::EndStateBlock", s0_4),
-    ("IDirect3DDevice8::ApplyStateBlock", s0_4),
-    ("IDirect3DDevice8::CaptureStateBlock", s0_4),
-    ("IDirect3DDevice8::DeleteStateBlock", s0_4),
-    ("IDirect3DDevice8::CreateStateBlock", s0_4),
-    ("IDirect3DDevice8::SetClipStatus", s0_4),
-    ("IDirect3DDevice8::GetClipStatus", s0_4),
-    ("IDirect3DDevice8::GetTexture", s0_4),
+    ("IDirect3DDevice8::GetRenderState", dev_get_render_state),
+    ("IDirect3DDevice8::BeginStateBlock", hr_ok_1),
+    ("IDirect3DDevice8::EndStateBlock", dev_end_state_block),
+    ("IDirect3DDevice8::ApplyStateBlock", hr_ok_2),
+    ("IDirect3DDevice8::CaptureStateBlock", hr_ok_2),
+    ("IDirect3DDevice8::DeleteStateBlock", hr_ok_2),
+    ("IDirect3DDevice8::CreateStateBlock", dev_create_state_block),
+    ("IDirect3DDevice8::SetClipStatus", hr_ok_2),
+    ("IDirect3DDevice8::GetClipStatus", hr_ok_2),
+    ("IDirect3DDevice8::GetTexture", dev_get_texture),
     ("IDirect3DDevice8::SetTexture", dev_set_texture),
-    ("IDirect3DDevice8::GetTextureStageState", s0_4),
-    ("IDirect3DDevice8::SetTextureStageState", s0_4),
-    ("IDirect3DDevice8::ValidateDevice", s0_4),
-    ("IDirect3DDevice8::GetInfo", s0_4),
-    ("IDirect3DDevice8::SetPaletteEntries", s0_4),
-    ("IDirect3DDevice8::GetPaletteEntries", s0_4),
-    ("IDirect3DDevice8::SetCurrentTexturePalette", s0_4),
-    ("IDirect3DDevice8::GetCurrentTexturePalette", s0_4),
+    ("IDirect3DDevice8::GetTextureStageState", hr_ok_4),
+    ("IDirect3DDevice8::SetTextureStageState", hr_ok_4),
+    ("IDirect3DDevice8::ValidateDevice", dev_validate_device),
+    ("IDirect3DDevice8::GetInfo", hr_ok_4),
+    ("IDirect3DDevice8::SetPaletteEntries", hr_ok_3),
+    ("IDirect3DDevice8::GetPaletteEntries", hr_ok_3),
+    ("IDirect3DDevice8::SetCurrentTexturePalette", hr_ok_2),
+    ("IDirect3DDevice8::GetCurrentTexturePalette", dev_get_current_texture_palette),
     ("IDirect3DDevice8::DrawPrimitive", dev_draw_primitive),
-    ("IDirect3DDevice8::DrawIndexedPrimitive", s0_6),
+    ("IDirect3DDevice8::DrawIndexedPrimitive", dev_draw_indexed_primitive),
     ("IDirect3DDevice8::DrawPrimitiveUP", dev_draw_primitive_up),
-    ("IDirect3DDevice8::DrawIndexedPrimitiveUP", s0_9),
-    ("IDirect3DDevice8::ProcessVertices", s0_4),
-    ("IDirect3DDevice8::CreateVertexShader", s0_4),
+    ("IDirect3DDevice8::DrawIndexedPrimitiveUP", hr_ok_9),
+    ("IDirect3DDevice8::ProcessVertices", hr_ok_6),
+    ("IDirect3DDevice8::CreateVertexShader", hr_ok_5),
     ("IDirect3DDevice8::SetVertexShader", dev_set_vertex_shader),
-    ("IDirect3DDevice8::GetVertexShader", s0_4),
-    ("IDirect3DDevice8::DeleteVertexShader", s0_4),
-    ("IDirect3DDevice8::SetVertexShaderConstant", s0_4),
-    ("IDirect3DDevice8::GetVertexShaderConstant", s0_4),
-    ("IDirect3DDevice8::GetVertexShaderDeclaration", s0_4),
-    ("IDirect3DDevice8::GetVertexShaderFunction", s0_4),
+    ("IDirect3DDevice8::GetVertexShader", dev_get_vertex_shader),
+    ("IDirect3DDevice8::DeleteVertexShader", hr_ok_2),
+    ("IDirect3DDevice8::SetVertexShaderConstant", hr_ok_4),
+    ("IDirect3DDevice8::GetVertexShaderConstant", hr_ok_4),
+    ("IDirect3DDevice8::GetVertexShaderDeclaration", hr_ok_4),
+    ("IDirect3DDevice8::GetVertexShaderFunction", hr_ok_4),
     ("IDirect3DDevice8::SetStreamSource", dev_set_stream_source),
-    ("IDirect3DDevice8::GetStreamSource", s0_4),
-    ("IDirect3DDevice8::SetIndices", s0_3),
-    ("IDirect3DDevice8::GetIndices", s0_4),
-    ("IDirect3DDevice8::CreatePixelShader", s0_4),
-    ("IDirect3DDevice8::SetPixelShader", s0_4),
-    ("IDirect3DDevice8::GetPixelShader", s0_4),
-    ("IDirect3DDevice8::DeletePixelShader", s0_4),
-    ("IDirect3DDevice8::SetPixelShaderConstant", s0_4),
-    ("IDirect3DDevice8::GetPixelShaderConstant", s0_4),
-    ("IDirect3DDevice8::GetPixelShaderFunction", s0_4),
+    ("IDirect3DDevice8::GetStreamSource", dev_get_stream_source),
+    ("IDirect3DDevice8::SetIndices", dev_set_indices),
+    ("IDirect3DDevice8::GetIndices", dev_get_indices),
+    ("IDirect3DDevice8::CreatePixelShader", hr_ok_3),
+    ("IDirect3DDevice8::SetPixelShader", hr_ok_2),
+    ("IDirect3DDevice8::GetPixelShader", dev_get_pixel_shader),
+    ("IDirect3DDevice8::DeletePixelShader", hr_ok_2),
+    ("IDirect3DDevice8::SetPixelShaderConstant", hr_ok_4),
+    ("IDirect3DDevice8::GetPixelShaderConstant", hr_ok_4),
+    ("IDirect3DDevice8::GetPixelShaderFunction", hr_ok_4),
 ];
 
 pub fn register(r: &mut WinApiRegistry) {
-    r.add("d3d8.dll", "Direct3DCreate8", d3d8_create_stub);
+    r.add("d3d8.dll", "Direct3DCreate8", d3d8_create);
     register_vtable(r, IDIRECT3D8);
     register_vtable(r, IDIRECT3DDEVICE8);
     register_vtable(r, IDIRECT3DSURFACE8);
     register_vtable(r, IDIRECT3DVERTEXBUFFER8);
+    register_vtable(r, IDIRECT3DINDEXBUFFER8);
     register_vtable(r, IDIRECT3DTEXTURE8);
 }
 
 /// `Direct3DCreate8(SDKVersion) -> IDirect3D8*` (returned directly in EAX).
-fn d3d8_create_stub(ctx: &mut ApiContext) -> Handled {
+fn d3d8_create(ctx: &mut ApiContext) -> Handled {
     let obj_va = make_object(ctx, IDIRECT3D8, 0);
     ctx.ret_stdcall(obj_va, 1);
     Handled::Ok
+}
+
+fn d3d8_get_adapter_count(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+fn d3d8_get_adapter_mode_count(ctx: &mut ApiContext) -> Handled {
+    // GetAdapterModeCount(this, Adapter) → 1 mode
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn d3d8_enum_adapter_modes(ctx: &mut ApiContext) -> Handled {
+    // EnumAdapterModes(this, Adapter, Mode, pMode)
+    let out = ctx.arg(3);
+    if out != 0 {
+        write_display_mode(ctx, out);
+    }
+    ctx.ret_stdcall(S_OK, 4);
+    Handled::Ok
+}
+
+fn d3d8_get_adapter_monitor(ctx: &mut ApiContext) -> Handled {
+    // HMONITOR — return a non-null fake monitor handle.
+    ctx.ret_stdcall(0x0001_0001, 2);
+    Handled::Ok
+}
+
+fn write_display_mode(ctx: &mut ApiContext, out: u32) {
+    let _ = ctx.memory.write_u32(out, 640);
+    let _ = ctx.memory.write_u32(out + 4, 480);
+    let _ = ctx.memory.write_u32(out + 8, 60);
+    let _ = ctx.memory.write_u32(out + 12, 22); // D3DFMT_X8R8G8B8
 }
 
 fn d3d8_get_adapter_identifier(ctx: &mut ApiContext) -> Handled {
@@ -187,13 +211,9 @@ fn d3d8_get_adapter_identifier(ctx: &mut ApiContext) -> Handled {
 }
 
 fn d3d8_get_adapter_display_mode(ctx: &mut ApiContext) -> Handled {
-    // GetAdapterDisplayMode(this, adapter, pMode)
     let out = ctx.arg(2);
     if out != 0 {
-        let _ = ctx.memory.write_u32(out, 640);
-        let _ = ctx.memory.write_u32(out + 4, 480);
-        let _ = ctx.memory.write_u32(out + 8, 0); // RefreshRate
-        let _ = ctx.memory.write_u32(out + 12, 22); // D3DFMT_X8R8G8B8
+        write_display_mode(ctx, out);
     }
     ctx.ret_stdcall(S_OK, 3);
     Handled::Ok
@@ -314,18 +334,12 @@ fn d3d8_create_device(ctx: &mut ApiContext) -> Handled {
         let dev_va = ctx.heap_alloc(DEV_SIZE);
         let _ = ctx.memory.write_u32(dev_va, vtable_va);
         let _ = ctx.memory.write_u32(dev_va + DEV_HWND, hwnd);
-        for off in [
-            DEV_BB,
-            DEV_DEPTH,
-            DEV_FVF,
-            DEV_STREAM_VB,
-            DEV_STREAM_STRIDE,
-            DEV_TEXTURE,
-            DEV_BLEND_EN,
-            DEV_DESTBLEND,
-        ] {
+        for off in (4..DEV_SIZE).step_by(4) {
             let _ = ctx.memory.write_u32(dev_va + off, 0);
         }
+        let _ = ctx.memory.write_u32(dev_va + DEV_HWND, hwnd);
+        let _ = ctx.memory.write_u32(dev_va + DEV_VP_W, 640);
+        let _ = ctx.memory.write_u32(dev_va + DEV_VP_H, 480);
         let _ = ctx.memory.write_u32(out_ptr, dev_va);
     }
     ctx.ret_stdcall(S_OK, 7);
@@ -385,61 +399,76 @@ fn res_scratch(ctx: &ApiContext, obj: u32) -> u32 {
     ctx.memory.read_u32(obj + 16).unwrap_or(0)
 }
 
-// IDirect3DSurface8 (IUnknown + 8): GetDevice, {Set,Get,Free}PrivateData,
-// GetContainer, GetDesc, LockRect, UnlockRect.
+// IDirect3DSurface8 (IUnknown + 8).
 pub(crate) const IDIRECT3DSURFACE8: Vtable = &[
     ("IDirect3DSurface8::QueryInterface", com_qi),
-    ("IDirect3DSurface8::AddRef", s1_1),
-    ("IDirect3DSurface8::Release", s1_1),
-    ("IDirect3DSurface8::GetDevice", s0_2),
-    ("IDirect3DSurface8::SetPrivateData", s0_5),
-    ("IDirect3DSurface8::GetPrivateData", s0_4),
-    ("IDirect3DSurface8::FreePrivateData", s0_2),
-    ("IDirect3DSurface8::GetContainer", s0_3),
+    ("IDirect3DSurface8::AddRef", com_addref),
+    ("IDirect3DSurface8::Release", com_release),
+    ("IDirect3DSurface8::GetDevice", res_get_device),
+    ("IDirect3DSurface8::SetPrivateData", hr_ok_5),
+    ("IDirect3DSurface8::GetPrivateData", hr_ok_4),
+    ("IDirect3DSurface8::FreePrivateData", hr_ok_2),
+    ("IDirect3DSurface8::GetContainer", hr_ok_3),
     ("IDirect3DSurface8::GetDesc", surf_get_desc),
     ("IDirect3DSurface8::LockRect", surf_lock_rect),
-    ("IDirect3DSurface8::UnlockRect", s0_1),
+    ("IDirect3DSurface8::UnlockRect", hr_ok_1),
 ];
 
-// IDirect3DVertexBuffer8 (IUnknown + IDirect3DResource8 methods + Lock/Unlock/GetDesc).
+// IDirect3DVertexBuffer8 / IndexBuffer share resource methods.
 pub(crate) const IDIRECT3DVERTEXBUFFER8: Vtable = &[
     ("IDirect3DVertexBuffer8::QueryInterface", com_qi),
-    ("IDirect3DVertexBuffer8::AddRef", s1_1),
-    ("IDirect3DVertexBuffer8::Release", s1_1),
-    ("IDirect3DVertexBuffer8::GetDevice", s0_2),
-    ("IDirect3DVertexBuffer8::SetPrivateData", s0_5),
-    ("IDirect3DVertexBuffer8::GetPrivateData", s0_4),
-    ("IDirect3DVertexBuffer8::FreePrivateData", s0_2),
-    ("IDirect3DVertexBuffer8::SetPriority", s0_2),
-    ("IDirect3DVertexBuffer8::GetPriority", s0_1),
-    ("IDirect3DVertexBuffer8::PreLoad", s0_1),
-    ("IDirect3DVertexBuffer8::GetType", s0_1),
+    ("IDirect3DVertexBuffer8::AddRef", com_addref),
+    ("IDirect3DVertexBuffer8::Release", com_release),
+    ("IDirect3DVertexBuffer8::GetDevice", res_get_device),
+    ("IDirect3DVertexBuffer8::SetPrivateData", hr_ok_5),
+    ("IDirect3DVertexBuffer8::GetPrivateData", hr_ok_4),
+    ("IDirect3DVertexBuffer8::FreePrivateData", hr_ok_2),
+    ("IDirect3DVertexBuffer8::SetPriority", hr_ok_2),
+    ("IDirect3DVertexBuffer8::GetPriority", res_get_priority),
+    ("IDirect3DVertexBuffer8::PreLoad", hr_ok_1),
+    ("IDirect3DVertexBuffer8::GetType", res_get_type_vb),
     ("IDirect3DVertexBuffer8::Lock", vb_lock),
-    ("IDirect3DVertexBuffer8::Unlock", s0_1),
-    ("IDirect3DVertexBuffer8::GetDesc", s0_2),
+    ("IDirect3DVertexBuffer8::Unlock", hr_ok_1),
+    ("IDirect3DVertexBuffer8::GetDesc", vb_get_desc),
 ];
 
-// IDirect3DTexture8 (IUnknown + Resource8 + BaseTexture8 + texture methods).
+pub(crate) const IDIRECT3DINDEXBUFFER8: Vtable = &[
+    ("IDirect3DIndexBuffer8::QueryInterface", com_qi),
+    ("IDirect3DIndexBuffer8::AddRef", com_addref),
+    ("IDirect3DIndexBuffer8::Release", com_release),
+    ("IDirect3DIndexBuffer8::GetDevice", res_get_device),
+    ("IDirect3DIndexBuffer8::SetPrivateData", hr_ok_5),
+    ("IDirect3DIndexBuffer8::GetPrivateData", hr_ok_4),
+    ("IDirect3DIndexBuffer8::FreePrivateData", hr_ok_2),
+    ("IDirect3DIndexBuffer8::SetPriority", hr_ok_2),
+    ("IDirect3DIndexBuffer8::GetPriority", res_get_priority),
+    ("IDirect3DIndexBuffer8::PreLoad", hr_ok_1),
+    ("IDirect3DIndexBuffer8::GetType", res_get_type_ib),
+    ("IDirect3DIndexBuffer8::Lock", vb_lock),
+    ("IDirect3DIndexBuffer8::Unlock", hr_ok_1),
+    ("IDirect3DIndexBuffer8::GetDesc", ib_get_desc),
+];
+
 pub(crate) const IDIRECT3DTEXTURE8: Vtable = &[
     ("IDirect3DTexture8::QueryInterface", com_qi),
-    ("IDirect3DTexture8::AddRef", s1_1),
-    ("IDirect3DTexture8::Release", s1_1),
-    ("IDirect3DTexture8::GetDevice", s0_2),
-    ("IDirect3DTexture8::SetPrivateData", s0_5),
-    ("IDirect3DTexture8::GetPrivateData", s0_4),
-    ("IDirect3DTexture8::FreePrivateData", s0_2),
-    ("IDirect3DTexture8::SetPriority", s0_2),
-    ("IDirect3DTexture8::GetPriority", s0_1),
-    ("IDirect3DTexture8::PreLoad", s0_1),
-    ("IDirect3DTexture8::GetType", s0_1),
-    ("IDirect3DTexture8::SetLOD", s0_2),
-    ("IDirect3DTexture8::GetLOD", s0_1),
-    ("IDirect3DTexture8::GetLevelCount", s1_1), // 1 level
-    ("IDirect3DTexture8::GetLevelDesc", s0_3),
+    ("IDirect3DTexture8::AddRef", com_addref),
+    ("IDirect3DTexture8::Release", com_release),
+    ("IDirect3DTexture8::GetDevice", res_get_device),
+    ("IDirect3DTexture8::SetPrivateData", hr_ok_5),
+    ("IDirect3DTexture8::GetPrivateData", hr_ok_4),
+    ("IDirect3DTexture8::FreePrivateData", hr_ok_2),
+    ("IDirect3DTexture8::SetPriority", hr_ok_2),
+    ("IDirect3DTexture8::GetPriority", res_get_priority),
+    ("IDirect3DTexture8::PreLoad", hr_ok_1),
+    ("IDirect3DTexture8::GetType", res_get_type_tex),
+    ("IDirect3DTexture8::SetLOD", hr_ok_2),
+    ("IDirect3DTexture8::GetLOD", res_get_lod),
+    ("IDirect3DTexture8::GetLevelCount", tex_get_level_count),
+    ("IDirect3DTexture8::GetLevelDesc", tex_get_level_desc),
     ("IDirect3DTexture8::GetSurfaceLevel", tex_get_surface_level),
     ("IDirect3DTexture8::LockRect", tex_lock_rect),
     ("IDirect3DTexture8::UnlockRect", tex_unlock_rect),
-    ("IDirect3DTexture8::AddDirtyRect", s0_2),
+    ("IDirect3DTexture8::AddDirtyRect", hr_ok_2),
 ];
 
 /// Fill a D3DSURFACE_DESC enough for the caller (Format, Type, w/h at the usual
@@ -852,8 +881,7 @@ fn dev_draw_primitive_up(ctx: &mut ApiContext) -> Handled {
 }
 
 fn tex_unlock_rect(ctx: &mut ApiContext) -> Handled {
-    // UnlockRect(this, Level) — upload what the guest wrote into our scratch as a
-    // GPU texture. D3DFMT_A8R8G8B8 is BGRA in memory; WebGL wants RGBA.
+    // UnlockRect(this, Level) — upload scratch as a GPU texture (BGRA→RGBA).
     let tex = ctx.arg(0);
     let (w, h, scratch) = (res_w(ctx, tex), res_h(ctx, tex), res_scratch(ctx, tex));
     let hwnd = ctx.memory.read_u32(tex + 4).unwrap_or(0);
@@ -877,6 +905,416 @@ fn tex_unlock_rect(ctx: &mut ApiContext) -> Handled {
                 h,
                 pixels: rgba,
             });
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+// ── Additional device / resource handlers ───────────────────────────────────
+
+fn dev_get_available_texture_mem(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(64 * 1024 * 1024, 1);
+    Handled::Ok
+}
+
+fn dev_get_display_mode(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        write_display_mode(ctx, out);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_get_creation_params(ctx: &mut ApiContext) -> Handled {
+    // D3DDEVICE_CREATION_PARAMETERS
+    let out = ctx.arg(1);
+    let hwnd = ctx.memory.read_u32(ctx.arg(0) + DEV_HWND).unwrap_or(0);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0); // AdapterOrdinal
+        let _ = ctx.memory.write_u32(out + 4, 1); // DeviceType HAL
+        let _ = ctx.memory.write_u32(out + 8, hwnd);
+        let _ = ctx.memory.write_u32(out + 12, 0x0000_0040); // D3DCREATE_HARDWARE_VERTEXPROCESSING
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_show_cursor(ctx: &mut ApiContext) -> Handled {
+    // BOOL ShowCursor(bShow) — return previous visibility (TRUE).
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn dev_get_raster_status(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0); // InVBlank = FALSE
+        let _ = ctx.memory.write_u32(out + 4, 0); // ScanLine
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_create_index_buffer(ctx: &mut ApiContext) -> Handled {
+    // CreateIndexBuffer(this, Length, Usage, Format, Pool, ppIndexBuffer)
+    let len = ctx.arg(1);
+    let hwnd = ctx.memory.read_u32(ctx.arg(0) + DEV_HWND).unwrap_or(0);
+    let out = ctx.arg(5);
+    if out != 0 {
+        let ib = make_resource(ctx, IDIRECT3DINDEXBUFFER8, hwnd, len, 1, len.max(4));
+        let _ = ctx.memory.write_u32(out, ib);
+    }
+    ctx.ret_stdcall(S_OK, 6);
+    Handled::Ok
+}
+
+fn dev_create_render_target(ctx: &mut ApiContext) -> Handled {
+    // CreateRenderTarget(this, W, H, Format, MultiSample, Lockable, ppSurface)
+    let (w, h) = (ctx.arg(1), ctx.arg(2));
+    let hwnd = ctx.memory.read_u32(ctx.arg(0) + DEV_HWND).unwrap_or(0);
+    let out = ctx.arg(6);
+    if out != 0 {
+        let surf = make_resource(ctx, IDIRECT3DSURFACE8, hwnd, w, h, w * h * 4);
+        let _ = ctx.memory.write_u32(out, surf);
+    }
+    ctx.ret_stdcall(S_OK, 7);
+    Handled::Ok
+}
+
+fn dev_create_depth_stencil(ctx: &mut ApiContext) -> Handled {
+    // CreateDepthStencilSurface(this, W, H, Format, MultiSample, ppSurface)
+    let (w, h) = (ctx.arg(1), ctx.arg(2));
+    let hwnd = ctx.memory.read_u32(ctx.arg(0) + DEV_HWND).unwrap_or(0);
+    let out = ctx.arg(5);
+    if out != 0 {
+        let surf = make_resource(ctx, IDIRECT3DSURFACE8, hwnd, w, h, w * h * 4);
+        let _ = ctx.memory.write_u32(out, surf);
+    }
+    ctx.ret_stdcall(S_OK, 6);
+    Handled::Ok
+}
+
+fn dev_set_render_target(ctx: &mut ApiContext) -> Handled {
+    // SetRenderTarget(this, pRenderTarget, pNewZStencil)
+    let dev = ctx.arg(0);
+    let rt = ctx.arg(1);
+    let zs = ctx.arg(2);
+    if rt != 0 {
+        let _ = ctx.memory.write_u32(dev + DEV_BB, rt);
+    }
+    if zs != 0 {
+        let _ = ctx.memory.write_u32(dev + DEV_DEPTH, zs);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_get_transform(ctx: &mut ApiContext) -> Handled {
+    // GetTransform(this, State, pMatrix) — identity 4×4 float matrix.
+    let out = ctx.arg(2);
+    if out != 0 {
+        let identity: [u32; 16] = [
+            0x3F80_0000, 0, 0, 0, // 1 0 0 0
+            0, 0x3F80_0000, 0, 0, // 0 1 0 0
+            0, 0, 0x3F80_0000, 0, // 0 0 1 0
+            0, 0, 0, 0x3F80_0000, // 0 0 0 1
+        ];
+        for (i, v) in identity.iter().enumerate() {
+            let _ = ctx.memory.write_u32(out + i as u32 * 4, *v);
+        }
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_set_viewport(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let vp = ctx.arg(1);
+    if vp != 0 {
+        let _ = ctx
+            .memory
+            .write_u32(dev + DEV_VP_X, ctx.memory.read_u32(vp).unwrap_or(0));
+        let _ = ctx
+            .memory
+            .write_u32(dev + DEV_VP_Y, ctx.memory.read_u32(vp + 4).unwrap_or(0));
+        let _ = ctx
+            .memory
+            .write_u32(dev + DEV_VP_W, ctx.memory.read_u32(vp + 8).unwrap_or(640));
+        let _ = ctx
+            .memory
+            .write_u32(dev + DEV_VP_H, ctx.memory.read_u32(vp + 12).unwrap_or(480));
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_get_viewport(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx
+            .memory
+            .write_u32(out, ctx.memory.read_u32(dev + DEV_VP_X).unwrap_or(0));
+        let _ = ctx
+            .memory
+            .write_u32(out + 4, ctx.memory.read_u32(dev + DEV_VP_Y).unwrap_or(0));
+        let _ = ctx
+            .memory
+            .write_u32(out + 8, ctx.memory.read_u32(dev + DEV_VP_W).unwrap_or(640));
+        let _ = ctx
+            .memory
+            .write_u32(out + 12, ctx.memory.read_u32(dev + DEV_VP_H).unwrap_or(480));
+        // MinZ / MaxZ as floats 0.0 / 1.0
+        let _ = ctx.memory.write_u32(out + 16, 0);
+        let _ = ctx.memory.write_u32(out + 20, 0x3F80_0000);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_get_light_enable(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(2);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_get_render_state(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let state = ctx.arg(1);
+    let out = ctx.arg(2);
+    let val = match state {
+        27 => ctx.memory.read_u32(dev + DEV_BLEND_EN).unwrap_or(0), // ALPHABLENDENABLE
+        20 => ctx.memory.read_u32(dev + DEV_DESTBLEND).unwrap_or(0), // DESTBLEND
+        _ => 0,
+    };
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, val);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_end_state_block(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 1); // fake token
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_create_state_block(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(2);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 1);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_get_texture(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let stage = ctx.arg(1);
+    let out = ctx.arg(2);
+    if out != 0 {
+        let tex = if stage == 0 {
+            ctx.memory.read_u32(dev + DEV_TEXTURE).unwrap_or(0)
+        } else {
+            0
+        };
+        let _ = ctx.memory.write_u32(out, tex);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_validate_device(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 1); // one pass
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_get_current_texture_palette(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_draw_indexed_primitive(ctx: &mut ApiContext) -> Handled {
+    // DrawIndexedPrimitive(Type, minIndex, NumVertices, startIndex, primCount)
+    // Without a full index fetcher we still report S_OK so the frame continues.
+    let _ = D3DERR_INVALIDCALL;
+    ctx.ret_stdcall(S_OK, 6);
+    Handled::Ok
+}
+
+fn dev_get_vertex_shader(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx
+            .memory
+            .write_u32(out, ctx.memory.read_u32(dev + DEV_FVF).unwrap_or(0));
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn dev_get_stream_source(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let pp = ctx.arg(2);
+    let pstride = ctx.arg(3);
+    if pp != 0 {
+        let _ = ctx
+            .memory
+            .write_u32(pp, ctx.memory.read_u32(dev + DEV_STREAM_VB).unwrap_or(0));
+    }
+    if pstride != 0 {
+        let _ = ctx.memory.write_u32(
+            pstride,
+            ctx.memory.read_u32(dev + DEV_STREAM_STRIDE).unwrap_or(0),
+        );
+    }
+    ctx.ret_stdcall(S_OK, 4);
+    Handled::Ok
+}
+
+fn dev_set_indices(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let _ = ctx.memory.write_u32(dev + DEV_IB, ctx.arg(1));
+    let _ = ctx.memory.write_u32(dev + DEV_BASE_VERTEX, ctx.arg(2));
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_get_indices(ctx: &mut ApiContext) -> Handled {
+    let dev = ctx.arg(0);
+    let pp = ctx.arg(1);
+    let pbase = ctx.arg(2);
+    if pp != 0 {
+        let _ = ctx
+            .memory
+            .write_u32(pp, ctx.memory.read_u32(dev + DEV_IB).unwrap_or(0));
+    }
+    if pbase != 0 {
+        let _ = ctx.memory.write_u32(
+            pbase,
+            ctx.memory.read_u32(dev + DEV_BASE_VERTEX).unwrap_or(0),
+        );
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn dev_get_pixel_shader(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn res_get_device(ctx: &mut ApiContext) -> Handled {
+    // Return a fresh IDirect3DDevice8 shell (games usually only null-checks).
+    let out = ctx.arg(1);
+    if out != 0 {
+        let hwnd = ctx.memory.read_u32(ctx.arg(0) + 4).unwrap_or(0);
+        let vtable_va = ctx.heap_alloc((IDIRECT3DDEVICE8.len() * 4) as u32);
+        for (i, (name, _)) in IDIRECT3DDEVICE8.iter().enumerate() {
+            let tramp = ctx.api_resolve_trampoline(crate::VTBL, name);
+            let _ = ctx.memory.write_u32(vtable_va + i as u32 * 4, tramp);
+        }
+        let dev = ctx.heap_alloc(DEV_SIZE);
+        let _ = ctx.memory.write_u32(dev, vtable_va);
+        let _ = ctx.memory.write_u32(dev + DEV_HWND, hwnd);
+        let _ = ctx.memory.write_u32(out, dev);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn res_get_priority(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn res_get_type_vb(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(6, 1); // D3DRTYPE_VERTEXBUFFER
+    Handled::Ok
+}
+fn res_get_type_ib(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(7, 1); // D3DRTYPE_INDEXBUFFER
+    Handled::Ok
+}
+fn res_get_type_tex(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(3, 1); // D3DRTYPE_TEXTURE
+    Handled::Ok
+}
+
+fn res_get_lod(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn tex_get_level_count(ctx: &mut ApiContext) -> Handled {
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+fn tex_get_level_desc(ctx: &mut ApiContext) -> Handled {
+    // GetLevelDesc(this, Level, pDesc) — reuse surface desc layout.
+    let this = ctx.arg(0);
+    let desc = ctx.arg(2);
+    if desc != 0 {
+        let (w, h) = (res_w(ctx, this), res_h(ctx, this));
+        let _ = ctx.memory.write_u32(desc, 21); // A8R8G8B8
+        let _ = ctx.memory.write_u32(desc + 4, 3); // TEXTURE
+        let _ = ctx.memory.write_u32(desc + 12, 1); // MANAGED
+        let _ = ctx.memory.write_u32(desc + 16, w * h * 4);
+        let _ = ctx.memory.write_u32(desc + 24, w);
+        let _ = ctx.memory.write_u32(desc + 28, h);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn vb_get_desc(ctx: &mut ApiContext) -> Handled {
+    let this = ctx.arg(0);
+    let desc = ctx.arg(1);
+    if desc != 0 {
+        let size = res_w(ctx, this);
+        let _ = ctx.memory.write_u32(desc, 0); // Format
+        let _ = ctx.memory.write_u32(desc + 4, 6); // VERTEXBUFFER
+        let _ = ctx.memory.write_u32(desc + 8, 0); // Usage
+        let _ = ctx.memory.write_u32(desc + 12, 1); // Pool
+        let _ = ctx.memory.write_u32(desc + 16, size);
+        let _ = ctx.memory.write_u32(desc + 20, 0); // FVF
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn ib_get_desc(ctx: &mut ApiContext) -> Handled {
+    let this = ctx.arg(0);
+    let desc = ctx.arg(1);
+    if desc != 0 {
+        let size = res_w(ctx, this);
+        let _ = ctx.memory.write_u32(desc, 101); // D3DFMT_INDEX16
+        let _ = ctx.memory.write_u32(desc + 4, 7); // INDEXBUFFER
+        let _ = ctx.memory.write_u32(desc + 8, 0);
+        let _ = ctx.memory.write_u32(desc + 12, 1);
+        let _ = ctx.memory.write_u32(desc + 16, size);
     }
     ctx.ret_stdcall(S_OK, 2);
     Handled::Ok

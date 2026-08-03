@@ -11,7 +11,10 @@ use webwine_api::vm::process::{DDrawSurface, UiEvent};
 use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
-use crate::{com_qi, make_object, register_vtable, s0_1, s0_2, s0_3, s0_4, s1_1, Vtable};
+use crate::{
+    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5, hr_ok_6, make_object,
+    register_vtable, Vtable,
+};
 
 // HRESULT constants
 const S_OK: u32 = 0x0000_0000;
@@ -42,115 +45,89 @@ const DDSD_PITCH: u32 = 0x0000_0008;
 
 pub(crate) const IDDRAW7: Vtable = &[
     ("IDirectDraw7::QueryInterface", com_qi),
-    ("IDirectDraw7::AddRef", s1_1),
-    ("IDirectDraw7::Release", s1_1),
-    ("IDirectDraw7::Compact", s0_1),
+    ("IDirectDraw7::AddRef", com_addref),
+    ("IDirectDraw7::Release", com_release),
+    ("IDirectDraw7::Compact", hr_ok_1),
     ("IDirectDraw7::CreateClipper", iddraw7_create_clipper),
-    ("IDirectDraw7::CreatePalette", s0_4),
+    ("IDirectDraw7::CreatePalette", hr_ok_5),
     ("IDirectDraw7::CreateSurface", iddraw7_create_surface),
-    ("IDirectDraw7::DuplicateSurface", s0_1),
-    ("IDirectDraw7::EnumDisplayModes", s0_3),
-    ("IDirectDraw7::EnumSurfaces", s0_1),
-    ("IDirectDraw7::FlipToGDISurface", s0_1),
+    ("IDirectDraw7::DuplicateSurface", hr_ok_3),
+    ("IDirectDraw7::EnumDisplayModes", iddraw7_enum_display_modes),
+    ("IDirectDraw7::EnumSurfaces", hr_ok_5),
+    ("IDirectDraw7::FlipToGDISurface", hr_ok_1),
     ("IDirectDraw7::GetCaps", iddraw7_get_caps),
     ("IDirectDraw7::GetDisplayMode", iddraw7_get_display_mode),
-    ("IDirectDraw7::GetFourCCCodes", s0_1),
-    ("IDirectDraw7::GetGDISurface", s0_1),
-    (
-        "IDirectDraw7::GetMonitorFrequency",
-        iddraw7_get_monitor_frequency,
-    ),
-    ("IDirectDraw7::GetScanLine", s0_1),
-    (
-        "IDirectDraw7::GetVerticalBlankStatus",
-        iddraw7_get_vblank_status,
-    ),
-    ("IDirectDraw7::Initialize", s0_1),
-    ("IDirectDraw7::RestoreDisplayMode", s0_1),
-    ("IDirectDraw7::SetCooperativeLevel", s0_3),
+    ("IDirectDraw7::GetFourCCCodes", iddraw7_get_fourcc),
+    ("IDirectDraw7::GetGDISurface", hr_ok_2),
+    ("IDirectDraw7::GetMonitorFrequency", iddraw7_get_monitor_frequency),
+    ("IDirectDraw7::GetScanLine", iddraw7_get_scan_line),
+    ("IDirectDraw7::GetVerticalBlankStatus", iddraw7_get_vblank_status),
+    ("IDirectDraw7::Initialize", hr_ok_2),
+    ("IDirectDraw7::RestoreDisplayMode", hr_ok_1),
+    ("IDirectDraw7::SetCooperativeLevel", iddraw7_set_cooperative_level),
     ("IDirectDraw7::SetDisplayMode", iddraw7_set_display_mode),
-    ("IDirectDraw7::WaitForVerticalBlank", s0_3),
-    (
-        "IDirectDraw7::GetAvailableVidMem",
-        iddraw7_get_available_vidmem,
-    ),
-    ("IDirectDraw7::GetSurfaceFromDC", s0_1),
-    ("IDirectDraw7::RestoreAllSurfaces", s0_1),
-    ("IDirectDraw7::TestCooperativeLevel", s0_1),
-    (
-        "IDirectDraw7::GetDeviceIdentifier",
-        iddraw7_get_device_identifier,
-    ),
-    ("IDirectDraw7::StartModeTest", s0_1),
-    ("IDirectDraw7::EvaluateMode", s0_1),
-    ("IDirectDraw7::_reserved30", s0_1),
-    ("IDirectDraw7::_reserved31", s0_1),
-    ("IDirectDraw7::_reserved32", s0_1),
+    ("IDirectDraw7::WaitForVerticalBlank", hr_ok_3),
+    ("IDirectDraw7::GetAvailableVidMem", iddraw7_get_available_vidmem),
+    ("IDirectDraw7::GetSurfaceFromDC", hr_ok_3),
+    ("IDirectDraw7::RestoreAllSurfaces", hr_ok_1),
+    ("IDirectDraw7::TestCooperativeLevel", hr_ok_1),
+    ("IDirectDraw7::GetDeviceIdentifier", iddraw7_get_device_identifier),
+    ("IDirectDraw7::StartModeTest", hr_ok_4),
+    ("IDirectDraw7::EvaluateMode", hr_ok_3),
+    ("IDirectDraw7::_reserved30", hr_ok_1),
+    ("IDirectDraw7::_reserved31", hr_ok_1),
+    ("IDirectDraw7::_reserved32", hr_ok_1),
 ];
 
 pub(crate) const IDDSURFACE7: Vtable = &[
     ("IDirectDrawSurface7::QueryInterface", com_qi),
-    ("IDirectDrawSurface7::AddRef", s1_1),
+    ("IDirectDrawSurface7::AddRef", com_addref),
     ("IDirectDrawSurface7::Release", iddsurface7_release),
-    ("IDirectDrawSurface7::AddAttachedSurface", s0_1),
-    ("IDirectDrawSurface7::AddOverlayDirtyRect", s0_1),
+    ("IDirectDrawSurface7::AddAttachedSurface", hr_ok_2),
+    ("IDirectDrawSurface7::AddOverlayDirtyRect", hr_ok_2),
     ("IDirectDrawSurface7::Blt", iddsurface7_blt),
-    ("IDirectDrawSurface7::BltBatch", s0_1),
+    ("IDirectDrawSurface7::BltBatch", hr_ok_4),
     ("IDirectDrawSurface7::BltFast", iddsurface7_blt_fast),
-    ("IDirectDrawSurface7::DeleteAttachedSurface", s0_1),
-    ("IDirectDrawSurface7::EnumAttachedSurfaces", s0_1),
-    ("IDirectDrawSurface7::EnumOverlayZOrders", s0_1),
+    ("IDirectDrawSurface7::DeleteAttachedSurface", hr_ok_3),
+    ("IDirectDrawSurface7::EnumAttachedSurfaces", hr_ok_3),
+    ("IDirectDrawSurface7::EnumOverlayZOrders", hr_ok_4),
     ("IDirectDrawSurface7::Flip", iddsurface7_flip),
-    (
-        "IDirectDrawSurface7::GetAttachedSurface",
-        iddsurface7_get_attached_surface,
-    ),
-    ("IDirectDrawSurface7::GetBltStatus", s0_2),
-    ("IDirectDrawSurface7::GetCaps", s0_1),
-    ("IDirectDrawSurface7::GetClipper", s0_1),
-    ("IDirectDrawSurface7::GetColorKey", s0_1),
-    ("IDirectDrawSurface7::GetDC", s0_1),
-    ("IDirectDrawSurface7::GetFlipStatus", s0_2),
-    ("IDirectDrawSurface7::GetOverlayPosition", s0_1),
-    ("IDirectDrawSurface7::GetPalette", s0_1),
-    ("IDirectDrawSurface7::GetPixelFormat", s0_1),
-    (
-        "IDirectDrawSurface7::GetSurfaceDesc",
-        iddsurface7_get_surface_desc,
-    ),
-    ("IDirectDrawSurface7::Initialize", s0_1),
-    ("IDirectDrawSurface7::IsLost", s0_1),
+    ("IDirectDrawSurface7::GetAttachedSurface", iddsurface7_get_attached_surface),
+    ("IDirectDrawSurface7::GetBltStatus", hr_ok_2),
+    ("IDirectDrawSurface7::GetCaps", iddsurface7_get_caps),
+    ("IDirectDrawSurface7::GetClipper", hr_ok_2),
+    ("IDirectDrawSurface7::GetColorKey", iddsurface7_get_color_key),
+    ("IDirectDrawSurface7::GetDC", hr_ok_2),
+    ("IDirectDrawSurface7::GetFlipStatus", hr_ok_2),
+    ("IDirectDrawSurface7::GetOverlayPosition", hr_ok_3),
+    ("IDirectDrawSurface7::GetPalette", hr_ok_2),
+    ("IDirectDrawSurface7::GetPixelFormat", iddsurface7_get_pixel_format),
+    ("IDirectDrawSurface7::GetSurfaceDesc", iddsurface7_get_surface_desc),
+    ("IDirectDrawSurface7::Initialize", hr_ok_3),
+    ("IDirectDrawSurface7::IsLost", hr_ok_1), // DD_OK = not lost
     ("IDirectDrawSurface7::Lock", iddsurface7_lock),
-    ("IDirectDrawSurface7::ReleaseDC", s0_1),
-    ("IDirectDrawSurface7::Restore", s0_1),
-    ("IDirectDrawSurface7::SetClipper", s0_2),
-    (
-        "IDirectDrawSurface7::SetColorKey",
-        iddsurface7_set_color_key,
-    ),
-    ("IDirectDrawSurface7::SetOverlayPosition", s0_1),
-    ("IDirectDrawSurface7::SetPalette", s0_1),
+    ("IDirectDrawSurface7::ReleaseDC", hr_ok_2),
+    ("IDirectDrawSurface7::Restore", hr_ok_1),
+    ("IDirectDrawSurface7::SetClipper", hr_ok_2),
+    ("IDirectDrawSurface7::SetColorKey", iddsurface7_set_color_key),
+    ("IDirectDrawSurface7::SetOverlayPosition", hr_ok_3),
+    ("IDirectDrawSurface7::SetPalette", hr_ok_2),
     ("IDirectDrawSurface7::Unlock", iddsurface7_unlock),
-    ("IDirectDrawSurface7::UpdateOverlay", s0_1),
-    ("IDirectDrawSurface7::UpdateOverlayDisplay", s0_1),
-    ("IDirectDrawSurface7::UpdateOverlayZOrder", s0_1),
-    (
-        "IDirectDrawSurface7::GetDDInterface",
-        iddsurface7_get_ddinterface,
-    ),
+    ("IDirectDrawSurface7::UpdateOverlay", hr_ok_6),
+    ("IDirectDrawSurface7::UpdateOverlayDisplay", hr_ok_2),
+    ("IDirectDrawSurface7::UpdateOverlayZOrder", hr_ok_3),
+    ("IDirectDrawSurface7::GetDDInterface", iddsurface7_get_ddinterface),
 ];
 
-// Clipper is a pure no-op (just balance the stack). Note: matching the original,
-// its AddRef/Release/QI return DD_OK(0), not a refcount, and QI does not fill ppv.
 pub(crate) const IDDCLIPPER: Vtable = &[
-    ("IDirectDrawClipper::QueryInterface", s0_3),
-    ("IDirectDrawClipper::AddRef", s0_1),
-    ("IDirectDrawClipper::Release", s0_1),
-    ("IDirectDrawClipper::GetClipList", s0_2),
-    ("IDirectDrawClipper::GetHWnd", s0_2),
-    ("IDirectDrawClipper::Initialize", s0_2),
-    ("IDirectDrawClipper::IsClipListChanged", s0_2),
-    ("IDirectDrawClipper::SetClipList", s0_3),
+    ("IDirectDrawClipper::QueryInterface", com_qi),
+    ("IDirectDrawClipper::AddRef", com_addref),
+    ("IDirectDrawClipper::Release", com_release),
+    ("IDirectDrawClipper::GetClipList", hr_ok_4),
+    ("IDirectDrawClipper::GetHWnd", iddclipper_get_hwnd),
+    ("IDirectDrawClipper::Initialize", hr_ok_3),
+    ("IDirectDrawClipper::IsClipListChanged", iddclipper_is_changed),
+    ("IDirectDrawClipper::SetClipList", hr_ok_3),
 ];
 
 pub fn register(r: &mut WinApiRegistry) {
@@ -394,6 +371,119 @@ fn iddraw7_get_device_identifier(ctx: &mut ApiContext) -> Handled {
         let _ = ctx.memory.write_u32(out + 524, 0x1234); // UniqueId.dwVendorId
     }
     ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn iddraw7_set_cooperative_level(ctx: &mut ApiContext) -> Handled {
+    // SetCooperativeLevel(this, hWnd, dwFlags) — record hwnd for blits.
+    let hwnd = ctx.arg(1);
+    if hwnd != 0 {
+        ctx.dll_state.insert("ddraw.hwnd".into(), hwnd);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn iddraw7_enum_display_modes(ctx: &mut ApiContext) -> Handled {
+    // EnumDisplayModes(this, flags, desc, context, callback) — invoke nothing;
+    // games treat "no modes enumerated then GetDisplayMode" as fine.
+    ctx.ret_stdcall(S_OK, 5);
+    Handled::Ok
+}
+
+fn iddraw7_get_fourcc(ctx: &mut ApiContext) -> Handled {
+    let pnum = ctx.arg(1);
+    if pnum != 0 {
+        let _ = ctx.memory.write_u32(pnum, 0);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn iddraw7_get_scan_line(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddsurface7_get_caps(ctx: &mut ApiContext) -> Handled {
+    let this = ctx.arg(0);
+    let out = ctx.arg(1);
+    let sid = surface_id_of(ctx, this);
+    if out != 0 {
+        let caps = ctx
+            .gui
+            .ddraw_surfaces
+            .get(&sid)
+            .map(|s| match s.kind {
+                webwine_api::vm::process::DDrawSurfaceKind::Primary => {
+                    DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP
+                }
+                webwine_api::vm::process::DDrawSurfaceKind::Offscreen => DDSCAPS_OFFSCREENPLAIN,
+            })
+            .unwrap_or(DDSCAPS_OFFSCREENPLAIN);
+        let _ = ctx.memory.write_u32(out, caps);
+        let _ = ctx.memory.write_u32(out + 4, 0);
+        let _ = ctx.memory.write_u32(out + 8, 0);
+        let _ = ctx.memory.write_u32(out + 12, 0);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddsurface7_get_color_key(ctx: &mut ApiContext) -> Handled {
+    let this = ctx.arg(0);
+    let out = ctx.arg(2);
+    let sid = surface_id_of(ctx, this);
+    if out != 0 {
+        let ck = ctx
+            .gui
+            .ddraw_surfaces
+            .get(&sid)
+            .and_then(|s| s.color_key)
+            .unwrap_or(0);
+        let _ = ctx.memory.write_u32(out, ck);
+        let _ = ctx.memory.write_u32(out + 4, ck);
+    }
+    ctx.ret_stdcall(S_OK, 3);
+    Handled::Ok
+}
+
+fn iddsurface7_get_pixel_format(ctx: &mut ApiContext) -> Handled {
+    // DDPIXELFORMAT for 32-bit RGB
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 32); // dwSize
+        let _ = ctx.memory.write_u32(out + 4, 0x40); // DDPF_RGB
+        let _ = ctx.memory.write_u32(out + 12, 32); // dwRGBBitCount
+        let _ = ctx.memory.write_u32(out + 16, 0x00FF_0000); // R
+        let _ = ctx.memory.write_u32(out + 20, 0x0000_FF00); // G
+        let _ = ctx.memory.write_u32(out + 24, 0x0000_00FF); // B
+        let _ = ctx.memory.write_u32(out + 28, 0xFF00_0000); // A
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddclipper_get_hwnd(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let hwnd = ctx.dll_state.get("ddraw.hwnd").copied().unwrap_or(0);
+        let _ = ctx.memory.write_u32(out, hwnd);
+    }
+    ctx.ret_stdcall(S_OK, 2);
+    Handled::Ok
+}
+
+fn iddclipper_is_changed(ctx: &mut ApiContext) -> Handled {
+    let out = ctx.arg(1);
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, 0);
+    }
+    ctx.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
 
