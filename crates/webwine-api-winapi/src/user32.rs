@@ -29,9 +29,15 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("user32.dll", "RegisterClassA", register_class_a),
-        ("user32.dll", "RegisterClassW", register_class_a),
+        ("user32.dll", "RegisterClassW", register_class_w),
         ("user32.dll", "RegisterClassExA", register_class_ex_a),
-        ("user32.dll", "RegisterClassExW", register_class_ex_a),
+        ("user32.dll", "RegisterClassExW", register_class_ex_w),
+        ("user32.dll", "GetClassInfoA", |c| get_class_info(c, false, false)),
+        ("user32.dll", "GetClassInfoW", |c| get_class_info(c, true, false)),
+        ("user32.dll", "GetClassInfoExA", |c| get_class_info(c, false, true)),
+        ("user32.dll", "GetClassInfoExW", |c| get_class_info(c, true, true)),
+        ("user32.dll", "UnregisterClassA", |c| unregister_class(c, false)),
+        ("user32.dll", "UnregisterClassW", |c| unregister_class(c, true)),
         ("user32.dll", "CreateWindowExA", create_window_ex_a),
         ("user32.dll", "CreateWindowExW", create_window_ex_w),
         // Dialogs: create a real guest window with the dialog proc as its WndProc.
@@ -558,50 +564,226 @@ fn system_parameters_info(ctx: &mut ApiContext) -> Handled {
 }
 
 // window classes
+//
+// We store name → WndProc. GetClassInfo fills a WNDCLASS[EX] from that map (or
+// from built-in system class names) so apps that probe before CreateWindow work.
+// Lookup is case-insensitive (Windows class names are).
 
-// WNDCLASSA: style@0, lpfnWndProc@4, â€¦, lpszClassName@36
+const ERROR_CLASS_DOES_NOT_EXIST: u32 = 1410;
+const ERROR_NOACCESS: u32 = 998;
+
+// WNDCLASSA: style@0, lpfnWndProc@4, …, lpszClassName@36
 fn register_class_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let wndproc = ctx.memory.read_u32(p + 4).unwrap_or(0);
     let name_ptr = ctx.memory.read_u32(p + 36).unwrap_or(0);
-    let name = read_class_name(ctx, name_ptr);
-    ctx.gui.classes.insert(name, wndproc);
-    ctx.ret_stdcall(1, 1); // atom
-    Handled::Ok
+    let name = read_class_name(ctx, name_ptr, false);
+    register_class(ctx, name, wndproc)
 }
 
-// WNDCLASSEXA: cbSize@0, style@4, lpfnWndProc@8, â€¦, lpszClassName@40
+fn register_class_w(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let wndproc = ctx.memory.read_u32(p + 4).unwrap_or(0);
+    let name_ptr = ctx.memory.read_u32(p + 36).unwrap_or(0);
+    let name = read_class_name(ctx, name_ptr, true);
+    register_class(ctx, name, wndproc)
+}
+
+// WNDCLASSEXA: cbSize@0, style@4, lpfnWndProc@8, …, lpszClassName@40
 fn register_class_ex_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let wndproc = ctx.memory.read_u32(p + 8).unwrap_or(0);
     let name_ptr = ctx.memory.read_u32(p + 40).unwrap_or(0);
-    let name = read_class_name(ctx, name_ptr);
+    let name = read_class_name(ctx, name_ptr, false);
+    register_class(ctx, name, wndproc)
+}
+
+fn register_class_ex_w(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let wndproc = ctx.memory.read_u32(p + 8).unwrap_or(0);
+    let name_ptr = ctx.memory.read_u32(p + 40).unwrap_or(0);
+    let name = read_class_name(ctx, name_ptr, true);
+    register_class(ctx, name, wndproc)
+}
+
+fn register_class(ctx: &mut ApiContext, name: String, wndproc: u32) -> Handled {
+    // Replace any existing entry with the same case-insensitive name.
+    let key = class_lookup_key(&name);
+    ctx.gui.classes.retain(|k, _| class_lookup_key(k) != key);
     ctx.gui.classes.insert(name, wndproc);
+    // Atom is non-zero on success (Wine returns the real atom; 1 is fine).
     ctx.ret_stdcall(1, 1);
     Handled::Ok
 }
 
-fn read_class_name(ctx: &ApiContext, ptr: u32) -> String {
+fn unregister_class(ctx: &mut ApiContext, wide: bool) -> Handled {
+    // UnregisterClass(lpClassName, hInstance) — 2 args.
+    let name = read_class_name(ctx, ctx.arg(0), wide);
+    let key = class_lookup_key(&name);
+    let removed = ctx
+        .gui
+        .classes
+        .keys()
+        .any(|k| class_lookup_key(k) == key);
+    if removed {
+        ctx.gui.classes.retain(|k, _| class_lookup_key(k) != key);
+        ctx.ret_stdcall(1, 2);
+    } else {
+        ctx.cpu.last_error = ERROR_CLASS_DOES_NOT_EXIST;
+        ctx.ret_stdcall(0, 2);
+    }
+    Handled::Ok
+}
+
+/// GetClassInfo[Ex](A|W): BOOL/ATOM GetClassInfo(hInstance, name, lpWndClass).
+fn get_class_info(ctx: &mut ApiContext, wide: bool, ex: bool) -> Handled {
+    let name_ptr = ctx.arg(1);
+    let out = ctx.arg(2);
+    let nargs = 3u32;
+
+    if out == 0 {
+        ctx.cpu.last_error = ERROR_NOACCESS;
+        ctx.ret_stdcall(0, nargs);
+        return Handled::Ok;
+    }
+
+    let name = read_class_name(ctx, name_ptr, wide);
+    if name.is_empty() {
+        ctx.cpu.last_error = ERROR_CLASS_DOES_NOT_EXIST;
+        ctx.ret_stdcall(0, nargs);
+        return Handled::Ok;
+    }
+
+    let hinstance = ctx.arg(0);
+    let wndproc = lookup_class_wndproc(ctx, &name);
+
+    let Some(wndproc) = wndproc else {
+        ctx.cpu.last_error = ERROR_CLASS_DOES_NOT_EXIST;
+        ctx.ret_stdcall(0, nargs);
+        return Handled::Ok;
+    };
+
+    // Write WNDCLASS[EX] fields. lpszClassName / lpszMenuName stay as the
+    // caller's name pointer (Wine does the same for ClassName).
+    if ex {
+        // WNDCLASSEX: cbSize@0 style@4 lpfnWndProc@8 cbClsExtra@12 cbWndExtra@16
+        // hInstance@20 hIcon@24 hCursor@28 hbrBackground@32 lpszMenuName@36
+        // lpszClassName@40 hIconSm@44
+        let cb_size = ctx.memory.read_u32(out).unwrap_or(0);
+        // If caller left cbSize 0, still fill the rest (some apps are sloppy).
+        let _ = cb_size;
+        let _ = ctx.memory.write_u32(out + 4, 0); // style
+        let _ = ctx.memory.write_u32(out + 8, wndproc);
+        let _ = ctx.memory.write_u32(out + 12, 0); // cbClsExtra
+        let _ = ctx.memory.write_u32(out + 16, 0); // cbWndExtra
+        let _ = ctx.memory.write_u32(out + 20, hinstance);
+        let _ = ctx.memory.write_u32(out + 24, 0); // hIcon
+        let _ = ctx.memory.write_u32(out + 28, 0); // hCursor
+        let _ = ctx.memory.write_u32(out + 32, 0); // hbrBackground
+        let _ = ctx.memory.write_u32(out + 36, 0); // lpszMenuName
+        let _ = ctx.memory.write_u32(out + 40, name_ptr); // lpszClassName
+        let _ = ctx.memory.write_u32(out + 44, 0); // hIconSm
+    } else {
+        // WNDCLASS: style@0 lpfnWndProc@4 cbClsExtra@8 cbWndExtra@12
+        // hInstance@16 hIcon@20 hCursor@24 hbrBackground@28 lpszMenuName@32
+        // lpszClassName@36
+        let _ = ctx.memory.write_u32(out, 0); // style
+        let _ = ctx.memory.write_u32(out + 4, wndproc);
+        let _ = ctx.memory.write_u32(out + 8, 0);
+        let _ = ctx.memory.write_u32(out + 12, 0);
+        let _ = ctx.memory.write_u32(out + 16, hinstance);
+        let _ = ctx.memory.write_u32(out + 20, 0);
+        let _ = ctx.memory.write_u32(out + 24, 0);
+        let _ = ctx.memory.write_u32(out + 28, 0);
+        let _ = ctx.memory.write_u32(out + 32, 0);
+        let _ = ctx.memory.write_u32(out + 36, name_ptr);
+    }
+
+    ctx.cpu.last_error = 0;
+    // Non-zero atom on success (Wine returns the class atom).
+    ctx.ret_stdcall(1, nargs);
+    Handled::Ok
+}
+
+fn class_lookup_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
+fn lookup_class_wndproc(ctx: &ApiContext, name: &str) -> Option<u32> {
+    let key = class_lookup_key(name);
+    if let Some((_, &wp)) = ctx
+        .gui
+        .classes
+        .iter()
+        .find(|(k, _)| class_lookup_key(k) == key)
+    {
+        return Some(wp);
+    }
+    // Built-in system classes (Wine/user32 always provides these).
+    if is_builtin_class(&key) {
+        return Some(0); // DefWindowProc-like; CreateWindow may still work via other paths
+    }
+    None
+}
+
+fn is_builtin_class(key: &str) -> bool {
+    matches!(
+        key,
+        "button"
+            | "static"
+            | "edit"
+            | "listbox"
+            | "combobox"
+            | "scrollbar"
+            | "mdiclient"
+            | "#32768" // menu
+            | "#32769" // desktop
+            | "#32770" // dialog
+            | "#32771" // task switch
+            | "#32772" // icon title
+            | "toolbarwindow32"
+            | "msctls_statusbar32"
+            | "msctls_progress32"
+            | "systreeview32"
+            | "syslistview32"
+            | "systabcontrol32"
+            | "tooltips_class32"
+    )
+}
+
+fn read_class_name(ctx: &ApiContext, ptr: u32, wide: bool) -> String {
     // Class name may be an atom (small integer) rather than a string pointer.
     if ptr == 0 {
         return String::new();
     }
     if ptr < 0x1_0000 {
-        return format!("#atom{ptr}");
+        // Known system atoms.
+        return match ptr {
+            0x8000 => "#32768".into(),
+            0x8001 => "#32769".into(),
+            0x8002 => "#32770".into(),
+            0x8003 => "#32771".into(),
+            0x8004 => "#32772".into(),
+            _ => format!("#{ptr}"),
+        };
     }
-    ctx.cstr(ptr)
+    if wide {
+        ctx.wstr(ptr)
+    } else {
+        ctx.cstr(ptr)
+    }
 }
 
 // window creation
 
 fn create_window_ex_a(ctx: &mut ApiContext) -> Handled {
-    let class = read_class_name(ctx, ctx.arg(1));
+    let class = read_class_name(ctx, ctx.arg(1), false);
     let title = ctx.cstr(ctx.arg(2));
     create_window(ctx, class, title)
 }
 
 fn create_window_ex_w(ctx: &mut ApiContext) -> Handled {
-    let class = read_class_name(ctx, ctx.arg(1));
+    let class = read_class_name(ctx, ctx.arg(1), true);
     let title = ctx.wstr(ctx.arg(2));
     create_window(ctx, class, title)
 }
@@ -612,7 +794,7 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
     let w = norm_dim(ctx.arg(6), 480);
     let h = norm_dim(ctx.arg(7), 320);
 
-    let wndproc = ctx.gui.classes.get(&class).copied().unwrap_or(0);
+    let wndproc = lookup_class_wndproc(ctx, &class).unwrap_or(0);
     let hwnd = ctx.gui.next_hwnd;
     ctx.gui.next_hwnd += 4;
     ctx.gui.windows.insert(
