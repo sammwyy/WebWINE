@@ -29,9 +29,17 @@ const DISP_E_BADVARTYPE: u32 = 0x8002_0008;
 pub fn register(r: &mut WinApiRegistry) {
     r.add("oleaut32.dll", "SysAllocString", sys_alloc_string);
     r.add("oleaut32.dll", "SysAllocStringLen", sys_alloc_string_len);
-    r.add("oleaut32.dll", "SysAllocStringByteLen", sys_alloc_string_byte_len);
+    r.add(
+        "oleaut32.dll",
+        "SysAllocStringByteLen",
+        sys_alloc_string_byte_len,
+    );
     r.add("oleaut32.dll", "SysReAllocString", sys_realloc_string);
-    r.add("oleaut32.dll", "SysReAllocStringLen", sys_realloc_string_len);
+    r.add(
+        "oleaut32.dll",
+        "SysReAllocStringLen",
+        sys_realloc_string_len,
+    );
     r.add("oleaut32.dll", "SysFreeString", sys_free_string);
     r.add("oleaut32.dll", "SysStringLen", sys_string_len);
     r.add("oleaut32.dll", "SysStringByteLen", sys_string_byte_len);
@@ -40,8 +48,16 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("oleaut32.dll", "VariantCopy", variant_copy);
     r.add("oleaut32.dll", "VariantCopyInd", variant_copy);
     r.add("oleaut32.dll", "OleLoadPicture", ole_load_picture);
-    r.add("oleaut32.dll", "SystemTimeToVariantTime", system_time_to_variant_time);
-    r.add("oleaut32.dll", "VariantTimeToSystemTime", variant_time_to_system_time);
+    r.add(
+        "oleaut32.dll",
+        "SystemTimeToVariantTime",
+        system_time_to_variant_time,
+    );
+    r.add(
+        "oleaut32.dll",
+        "VariantTimeToSystemTime",
+        variant_time_to_system_time,
+    );
     // Ordinals used by older linkers / MFC.
     r.add("oleaut32.dll", "#2", sys_alloc_string);
     r.add("oleaut32.dll", "#4", sys_alloc_string_len);
@@ -54,7 +70,7 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("oleaut32.dll", "#185", variant_time_to_system_time);
 }
 
-// ── BSTR ────────────────────────────────────────────────────────────────────
+// BSTR
 // Layout (Wine bstr_t simplified): [DWORD byte_len][WCHAR data...][L'\0']
 // The BSTR pointer returned to the guest points at the WCHAR data (after the
 // length prefix). SysFreeString frees the block at bstr - 4.
@@ -75,13 +91,7 @@ fn sys_alloc_string_len(c: &mut ApiContext) -> Handled {
     let pch = c.arg(0);
     let len = c.arg(1);
     let units: Vec<u16> = (0..len)
-        .map(|i| {
-            if pch != 0 {
-                c.read_u16(pch + i * 2)
-            } else {
-                0
-            }
-        })
+        .map(|i| if pch != 0 { c.read_u16(pch + i * 2) } else { 0 })
         .collect();
     let bstr = alloc_bstr(c, &units);
     c.return_stdcall(bstr, 2);
@@ -152,13 +162,7 @@ fn sys_realloc_string_len(c: &mut ApiContext) -> Handled {
         free_bstr(c, old);
     }
     let units: Vec<u16> = (0..len)
-        .map(|i| {
-            if pch != 0 {
-                c.read_u16(pch + i * 2)
-            } else {
-                0
-            }
-        })
+        .map(|i| if pch != 0 { c.read_u16(pch + i * 2) } else { 0 })
         .collect();
     let bstr = alloc_bstr(c, &units);
     c.write_u32(pp, bstr);
@@ -192,7 +196,7 @@ fn sys_string_byte_len(c: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// ── VARIANT ─────────────────────────────────────────────────────────────────
+// VARIANT
 // 16-byte x86 VARIANT: vt(u16) @0, wReserved1..3, union @8 (8 bytes).
 
 fn variant_init(c: &mut ApiContext) -> Handled {
@@ -260,11 +264,14 @@ fn variant_copy(c: &mut ApiContext) -> Handled {
             c.write_bytes(dest, &[0u8; 16]);
             c.write_u16(dest, VT_BSTR);
             c.write_u32(dest + 8, new_bstr);
-            c.return_stdcall(if bstr == 0 || new_bstr != 0 {
-                S_OK
-            } else {
-                E_OUTOFMEMORY
-            }, 2);
+            c.return_stdcall(
+                if bstr == 0 || new_bstr != 0 {
+                    S_OK
+                } else {
+                    E_OUTOFMEMORY
+                },
+                2,
+            );
         }
         VT_DISPATCH | VT_UNKNOWN => {
             // No COM refcounting yet — copy pointer bits.

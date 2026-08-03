@@ -209,6 +209,8 @@ fn handle_trampoline(
             cmdline: proc.cmdline.as_str(),
             messages: &proc.messages,
             strings: &proc.strings,
+            dialogs: &proc.dialogs,
+            dialogs_by_name: &proc.dialogs_by_name,
             proc_addr: api.proc_addr_map(),
             api_dispatcher: Some(api),
             tls_slots: &mut proc.tls_slots,

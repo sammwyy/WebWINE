@@ -64,6 +64,10 @@ pub struct ApiContext<'a> {
     /// Message-table resource (id -> text) for FormatMessage(FROM_HMODULE).
     pub messages: &'a std::collections::HashMap<u32, String>,
     pub strings: &'a std::collections::HashMap<u32, String>,
+    /// RT_DIALOG templates by numeric resource id.
+    pub dialogs: &'a std::collections::HashMap<u32, Vec<u8>>,
+    /// RT_DIALOG templates by lowercase resource name.
+    pub dialogs_by_name: &'a std::collections::HashMap<String, Vec<u8>>,
     pub proc_addr: &'a std::collections::HashMap<String, u32>,
     pub api_dispatcher: Option<&'a dyn ApiDispatcher>,
     pub tls_slots: &'a mut std::collections::HashMap<u32, u32>,

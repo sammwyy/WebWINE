@@ -8,7 +8,7 @@
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import { ICON_CANVAS_PX, ICON_CSS_PX } from "./icon-registry";
 
-// ── Image normalisation ─────────────────────────────────────────────────────
+// Image normalisation
 
 /**
  * Convert raw image bytes (ICO container, PNG, BMP…) to a normalised
@@ -36,7 +36,7 @@ export async function normaliseImageBytes(
   );
 }
 
-// ── ICO container ───────────────────────────────────────────────────────────
+// ICO container
 
 interface IcoDirEntry {
   w: number;
@@ -115,7 +115,7 @@ function parseIcoDirectory(raw: Uint8Array): IcoDirEntry[] {
   return entries;
 }
 
-// ── Candidate ranking ───────────────────────────────────────────────────────
+// Candidate ranking
 
 interface IconCandidate {
   w: number;
@@ -219,7 +219,7 @@ async function iconLooksUsable(dataUri: string): Promise<boolean> {
   }
 }
 
-// ── Single-image decode (PNG or DIB from ICO/PE) ────────────────────────────
+// Single-image decode (PNG or DIB from ICO/PE)
 
 async function decodeIcoImage(
   raw: Uint8Array,
@@ -503,7 +503,7 @@ async function dibToBmpBlob(
   return blobToCanvas(new Blob([bmp.buffer], { type: "image/bmp" }), size);
 }
 
-// ── Canvas helpers ──────────────────────────────────────────────────────────
+// Canvas helpers
 
 async function canvasToDataUri(
   source: OffscreenCanvas,
@@ -558,7 +558,7 @@ function blobToDataUri(blob: Blob): Promise<string> {
   });
 }
 
-// ── PE icon extraction ──────────────────────────────────────────────────────
+// PE icon extraction
 
 const RT_ICON = 3;
 const RT_GROUP_ICON = 14;

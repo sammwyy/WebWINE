@@ -3,6 +3,7 @@ pub mod codepage;
 pub mod comctl32;
 pub mod comdlg32;
 pub mod dbghelp;
+pub mod dialog;
 pub mod extra_dlls;
 pub mod gdi32;
 pub mod gdiplus;

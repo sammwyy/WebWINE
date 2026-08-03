@@ -40,61 +40,32 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "UnregisterClassW", |c| unregister_class(c, true)),
         ("user32.dll", "CreateWindowExA", create_window_ex_a),
         ("user32.dll", "CreateWindowExW", create_window_ex_w),
-        // Dialogs: create a real guest window with the dialog proc as its WndProc.
-        // Controls aren't laid out from the template yet, but the window + message
-        // loop run (WM_INITDIALOG is queued).
-        ("user32.dll", "CreateDialogParamA", create_dialog),
-        ("user32.dll", "CreateDialogParamW", create_dialog),
-        ("user32.dll", "CreateDialogIndirectParamA", create_dialog),
-        ("user32.dll", "CreateDialogIndirectParamW", create_dialog),
-        ("user32.dll", "DialogBoxParamA", create_dialog),
-        ("user32.dll", "DialogBoxParamW", create_dialog),
-        ("user32.dll", "DialogBoxIndirectParamA", create_dialog),
-        ("user32.dll", "DialogBoxIndirectParamW", create_dialog),
-        ("user32.dll", "EndDialog", |c| {
-            c.ret_stdcall(1, 2);
-            Handled::Ok
-        }),
-        ("user32.dll", "IsDialogMessageW", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("user32.dll", "IsDialogMessageA", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("user32.dll", "GetDlgItem", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
-        ("user32.dll", "SendDlgItemMessageW", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("user32.dll", "SendDlgItemMessageA", |c| {
-            c.ret_stdcall(0, 5);
-            Handled::Ok
-        }),
-        ("user32.dll", "SetDlgItemTextA", |c| {
-            c.ret_stdcall(1, 3);
-            Handled::Ok
-        }),
-        ("user32.dll", "SetDlgItemTextW", |c| {
-            c.ret_stdcall(1, 3);
-            Handled::Ok
-        }),
-        ("user32.dll", "GetDlgItemTextW", |c| {
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
-        ("user32.dll", "CheckDlgButton", |c| {
-            c.ret_stdcall(1, 3);
-            Handled::Ok
-        }),
-        ("user32.dll", "IsDlgButtonChecked", |c| {
-            c.ret_stdcall(0, 2);
-            Handled::Ok
-        }),
+        ("user32.dll", "CreateDialogParamA", |c| crate::dialog::create_dialog_param(c, false)),
+        ("user32.dll", "CreateDialogParamW", |c| crate::dialog::create_dialog_param(c, true)),
+        ("user32.dll", "CreateDialogIndirectParamA", |c| crate::dialog::create_dialog_indirect(c, false)),
+        ("user32.dll", "CreateDialogIndirectParamW", |c| crate::dialog::create_dialog_indirect(c, true)),
+        ("user32.dll", "DialogBoxParamA", |c| crate::dialog::dialog_box_param(c, false)),
+        ("user32.dll", "DialogBoxParamW", |c| crate::dialog::dialog_box_param(c, true)),
+        ("user32.dll", "DialogBoxIndirectParamA", |c| crate::dialog::dialog_box_indirect(c, false)),
+        ("user32.dll", "DialogBoxIndirectParamW", |c| crate::dialog::dialog_box_indirect(c, true)),
+        ("user32.dll", "EndDialog", crate::dialog::end_dialog),
+        ("user32.dll", "IsDialogMessageA", crate::dialog::is_dialog_message),
+        ("user32.dll", "IsDialogMessageW", crate::dialog::is_dialog_message),
+        ("user32.dll", "GetDlgItem", crate::dialog::get_dlg_item),
+        ("user32.dll", "SendDlgItemMessageA", crate::dialog::send_dlg_item_message),
+        ("user32.dll", "SendDlgItemMessageW", crate::dialog::send_dlg_item_message),
+        ("user32.dll", "SetDlgItemTextA", |c| crate::dialog::set_dlg_item_text(c, false)),
+        ("user32.dll", "SetDlgItemTextW", |c| crate::dialog::set_dlg_item_text(c, true)),
+        ("user32.dll", "GetDlgItemTextA", |c| crate::dialog::get_dlg_item_text(c, false)),
+        ("user32.dll", "GetDlgItemTextW", |c| crate::dialog::get_dlg_item_text(c, true)),
+        ("user32.dll", "CheckDlgButton", crate::dialog::check_dlg_button),
+        ("user32.dll", "IsDlgButtonChecked", crate::dialog::is_dlg_button_checked),
+        ("user32.dll", "MapDialogRect", crate::dialog::map_dialog_rect),
+        ("user32.dll", "GetDialogBaseUnits", crate::dialog::get_dialog_base_units),
+        ("user32.dll", "GetNextDlgTabItem", crate::dialog::get_next_dlg_tab_item),
+        ("user32.dll", "GetNextDlgGroupItem", crate::dialog::get_next_dlg_group_item),
+        ("user32.dll", "DefDlgProcA", crate::dialog::def_dlg_proc),
+        ("user32.dll", "DefDlgProcW", crate::dialog::def_dlg_proc),
         ("user32.dll", "ShowWindow", show_window),
         ("user32.dll", "UpdateWindow", update_window),
         ("user32.dll", "DestroyWindow", destroy_window),
@@ -799,16 +770,7 @@ fn create_window(ctx: &mut ApiContext, class: String, title: String) -> Handled 
     ctx.gui.next_hwnd += 4;
     ctx.gui.windows.insert(
         hwnd,
-        WindowEntry {
-            wndproc,
-            needs_paint: true,
-            width: w,
-            height: h,
-            pen_color: 0x00_0000,   // black
-            brush_color: 0xFF_FFFF, // white
-            cur_x: 0,
-            cur_y: 0,
-        },
+        WindowEntry::new_toplevel(wndproc, w, h, &class, &title),
     );
 
     ctx.ui_events.push(UiEvent::CreateWindow {
@@ -949,47 +911,7 @@ fn destroy_menu(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// CreateDialogParam/DialogBoxParam(hInst, lpTemplate, hWndParent, lpDialogFunc,
-// dwInitParam) â€” 5 args. Create a guest window whose WndProc is the dialog proc,
-// then queue WM_INITDIALOG so the proc initializes. Returns the HWND.
-const WM_INITDIALOG: u32 = 0x0110;
-fn create_dialog(ctx: &mut ApiContext) -> Handled {
-    let dlgproc = ctx.arg(3);
-    let init_param = ctx.arg(4);
-    let (w, h) = (600, 460);
-    let hwnd = ctx.gui.next_hwnd;
-    ctx.gui.next_hwnd += 4;
-    ctx.gui.windows.insert(
-        hwnd,
-        WindowEntry {
-            wndproc: dlgproc,
-            needs_paint: true,
-            width: w,
-            height: h,
-            pen_color: 0x00_0000,
-            brush_color: 0xFF_FFFF,
-            cur_x: 0,
-            cur_y: 0,
-        },
-    );
-    ctx.ui_events.push(UiEvent::CreateWindow {
-        hwnd,
-        title: "Dialog".to_string(),
-        x: 120,
-        y: 70,
-        width: w,
-        height: h,
-    });
-    // The dialog manager sends WM_INITDIALOG before the dialog becomes visible.
-    ctx.gui.queue.push_back(GuestMsg {
-        hwnd,
-        message: WM_INITDIALOG,
-        wparam: 0,
-        lparam: init_param,
-    });
-    ctx.ret_stdcall(hwnd, 5);
-    Handled::Ok
-}
+
 
 fn norm_coord(v: u32, default: i32) -> i32 {
     if v == CW_USEDEFAULT {

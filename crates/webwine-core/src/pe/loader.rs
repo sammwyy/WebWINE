@@ -107,6 +107,117 @@ pub fn extract_message_table(pe: &PE, bytes: &[u8]) -> std::collections::HashMap
     out
 }
 
+/// RT_DIALOG = 5. Returns (id → template bytes, lowercase name → template bytes).
+pub fn extract_dialogs(pe: &PE, bytes: &[u8]) -> (HashMap<u32, Vec<u8>>, HashMap<String, Vec<u8>>) {
+    let mut by_id = HashMap::new();
+    let mut by_name = HashMap::new();
+    let Some(oh) = pe.header.optional_header else {
+        return (by_id, by_name);
+    };
+    let Some(res) = oh.data_directories.get_resource_table() else {
+        return (by_id, by_name);
+    };
+    if res.virtual_address == 0 {
+        return (by_id, by_name);
+    }
+    let rsrc_rva = res.virtual_address;
+
+    let rva_to_off = |rva: u32| -> Option<usize> {
+        pe.sections.iter().find_map(|section| {
+            let size = section.virtual_size.max(section.size_of_raw_data);
+            (rva >= section.virtual_address && rva < section.virtual_address + size).then_some(
+                (section.pointer_to_raw_data + rva - section.virtual_address) as usize,
+            )
+        })
+    };
+    let rd_u16 = |offset: usize| -> u16 {
+        bytes
+            .get(offset..offset + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .unwrap_or(0)
+    };
+    let rd_u32 = |offset: usize| -> u32 {
+        bytes
+            .get(offset..offset + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .unwrap_or(0)
+    };
+    let entries = |directory_rva: u32| -> Vec<(u32, u32, bool, bool)> {
+        // (id_or_name_offset, target, is_dir, is_name)
+        let Some(base) = rva_to_off(directory_rva) else {
+            return Vec::new();
+        };
+        let n_names = rd_u16(base + 12) as usize;
+        let n_ids = rd_u16(base + 14) as usize;
+        let mut out = Vec::with_capacity(n_names + n_ids);
+        for index in 0..(n_names + n_ids) {
+            let entry = base + 16 + index * 8;
+            let name_or_id = rd_u32(entry);
+            let target = rd_u32(entry + 4);
+            let is_name = name_or_id & 0x8000_0000 != 0;
+            let id = name_or_id & 0x7FFF_FFFF;
+            out.push((id, target & 0x7FFF_FFFF, target & 0x8000_0000 != 0, is_name));
+        }
+        out
+    };
+    let read_name = |name_off: u32| -> String {
+        let Some(base) = rva_to_off(rsrc_rva + name_off) else {
+            return String::new();
+        };
+        let len = rd_u16(base) as usize;
+        let units: Vec<u16> = (0..len).map(|i| rd_u16(base + 2 + i * 2)).collect();
+        String::from_utf16_lossy(&units)
+    };
+
+    // Type level: RT_DIALOG = 5
+    let Some((_, type_off, true, _)) = entries(rsrc_rva)
+        .into_iter()
+        .find(|(id, _, is_dir, is_name)| !*is_name && *is_dir && *id == 5)
+    else {
+        return (by_id, by_name);
+    };
+
+    for (res_id, name_lang_off, is_dir, is_name) in entries(rsrc_rva + type_off) {
+        if !is_dir {
+            continue;
+        }
+        let name_key = if is_name {
+            Some(read_name(res_id).to_ascii_lowercase())
+        } else {
+            None
+        };
+        let id_key = if is_name { None } else { Some(res_id) };
+
+        // Language level: take first data entry
+        let Some((_, data_off, false, _)) = entries(rsrc_rva + name_lang_off).into_iter().next()
+        else {
+            continue;
+        };
+        let Some(data_entry) = rva_to_off(rsrc_rva + data_off) else {
+            continue;
+        };
+        let data_rva = rd_u32(data_entry);
+        let data_size = rd_u32(data_entry + 4) as usize;
+        let Some(data_file_off) = rva_to_off(data_rva) else {
+            continue;
+        };
+        let blob = bytes
+            .get(data_file_off..data_file_off + data_size)
+            .unwrap_or(&[])
+            .to_vec();
+        if blob.is_empty() {
+            continue;
+        }
+        if let Some(id) = id_key {
+            by_id.insert(id, blob.clone());
+        }
+        if let Some(n) = name_key {
+            by_name.insert(n, blob);
+        }
+    }
+    (by_id, by_name)
+}
+
 /// Extract Win32 RT_STRING blocks. A block with resource id N contains sixteen
 /// length-prefixed UTF-16 strings with ids (N-1)*16 through (N-1)*16+15.
 pub fn extract_string_table(pe: &PE, bytes: &[u8]) -> HashMap<u32, String> {
@@ -517,6 +628,8 @@ pub fn load_pe(
         None,
     );
 
+    let (dialogs, dialogs_by_name) = extract_dialogs(&pe, bytes);
+
     Ok(GuestProcess {
         pid,
         path: path.to_string(),
@@ -554,6 +667,8 @@ pub fn load_pe(
         cmdline: cmdline.to_string(),
         messages: extract_message_table(&pe, bytes),
         strings: extract_string_table(&pe, bytes),
+        dialogs,
+        dialogs_by_name,
         managed: None,
         tls_slots: std::collections::HashMap::new(),
         next_tls: 1,

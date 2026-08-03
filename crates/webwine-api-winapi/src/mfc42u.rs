@@ -66,16 +66,7 @@ fn afx_win_main(c: &mut ApiContext) -> Handled {
     let title = if is_paint { "untitled - Paint".to_string() } else { app.to_string() };
     let hwnd = c.gui.next_hwnd;
     c.gui.next_hwnd += 4;
-    c.gui.windows.insert(hwnd, WindowEntry {
-        wndproc: 0,
-        needs_paint: false,
-        width: 800,
-        height: 600,
-        pen_color: 0,
-        brush_color: 0xFF_FFFF,
-        cur_x: 0,
-        cur_y: 0,
-    });
+    c.gui.windows.insert(hwnd, WindowEntry::new_toplevel(0, 800, 600, "mfc42u", &title));
     c.dll_state.insert(MAIN_WINDOW_KEY.to_string(), hwnd);
     c.ui_events.push(UiEvent::CreateWindow {
         hwnd,

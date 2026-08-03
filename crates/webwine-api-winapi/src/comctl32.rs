@@ -88,16 +88,7 @@ pub fn register(r: &mut WinApiRegistry) {
 fn create_status_window(c: &mut super::ApiContext) -> Handled {
     let hwnd = c.gui.next_hwnd;
     c.gui.next_hwnd += 4;
-    c.gui.windows.insert(hwnd, WindowEntry {
-        wndproc: 0,
-        needs_paint: false,
-        width: 400,
-        height: 24,
-        pen_color: 0,
-        brush_color: 0xF0_F0F0,
-        cur_x: 0,
-        cur_y: 0,
-    });
+    c.gui.windows.insert(hwnd, WindowEntry::new_toplevel(0, 400, 24, "msctls_statusbar32", ""));
     c.ret_stdcall(hwnd, 4);
     Handled::Ok
 }

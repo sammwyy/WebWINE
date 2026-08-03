@@ -33,6 +33,8 @@ interface GuestWindowRecord {
   queue: UiEvent[];
   menuItems: MenuItemData[];
   setMenuItems?: (items: MenuItemData[]) => void;
+  dialogControls: import("@/core/wasm/worker").DialogControlData[];
+  setDialogControls?: (items: import("@/core/wasm/worker").DialogControlData[]) => void;
 }
 
 /** Route one event to the window's 2D or WebGL backend, creating it lazily. */
@@ -96,6 +98,25 @@ export function handleUiEvents(
         if (g) {
           g.menuItems = ev.items;
           g.setMenuItems?.(ev.items);
+        }
+        break;
+      }
+      case "dialog_layout": {
+        const g = guestWindows.get(key(pid, ev.hwnd));
+        if (g) {
+          g.dialogControls = ev.controls;
+          g.setDialogControls?.([...ev.controls]);
+        }
+        break;
+      }
+      case "control_text": {
+        const g = guestWindows.get(key(pid, ev.hwnd));
+        if (g) {
+          const ctrl = g.dialogControls.find((c) => c.hwnd === ev.control_hwnd);
+          if (ctrl) {
+            ctrl.text = ev.text;
+            g.setDialogControls?.([...g.dialogControls]);
+          }
         }
         break;
       }
@@ -244,6 +265,7 @@ function createGuestWindow(
     destroyed: false,
     queue: [],
     menuItems: [],
+    dialogControls: [],
   });
 }
 
@@ -262,6 +284,9 @@ function GuestWindowApp({
   const [menu, setMenu] = useState<MenuItemData[]>(
     () => guestWindows.get(key(pid, hwnd))?.menuItems ?? [],
   );
+  const [controls, setControls] = useState<import("@/core/wasm/worker").DialogControlData[]>(
+    () => guestWindows.get(key(pid, hwnd))?.dialogControls ?? []
+  );
 
   useEffect(() => {
     const k = key(pid, hwnd);
@@ -270,7 +295,9 @@ function GuestWindowApp({
 
     rec.canvas = canvasRef.current;
     rec.setMenuItems = setMenu; // let live SetMenu events re-render the bar
+    rec.setDialogControls = setControls;
     setMenu(rec.menuItems);
+    setControls(rec.dialogControls);
     // Context (2D vs WebGL) is chosen lazily by the first queued/live event.
     for (const queuedEv of rec.queue) {
       paint(rec, queuedEv);
@@ -285,15 +312,63 @@ function GuestWindowApp({
     };
   }, [pid, hwnd, runtime]);
 
+  const bg = controls.length > 0 ? "#f0f0f0" : "var(--window-bg,#fff)";
+
   return (
-    <div className="flex flex-col w-full h-full bg-[var(--window-bg,#fff)]">
+    <div className="flex flex-col w-full h-full" style={{ backgroundColor: bg }}>
       <GuestMenuBar items={menu} onCommand={(id) => runtime.postWindowMessage(pid, hwnd, WM_COMMAND, id, 0)} />
-      <canvas
-        ref={canvasRef}
-        className="w-full flex-1 min-h-0 block bg-[var(--window-bg,#fff)]"
-        width={ev.width}
-        height={ev.height}
-      />
+      <div className="relative flex-1 overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full block"
+          width={ev.width}
+          height={ev.height}
+        />
+        {controls.map(c => {
+          const cls = c.class_name.toLowerCase();
+          const isBtn = cls === "button";
+          const type = c.style & 0x0F;
+          const isChk = isBtn && (type === 2 || type === 3);
+          const isRad = isBtn && (type === 4 || type === 9);
+          const isGrp = isBtn && type === 7;
+          const isPush = isBtn && !isChk && !isRad && !isGrp;
+          const isEdit = cls === "edit";
+          
+          return (
+          <div
+            key={c.hwnd}
+            onClick={() => {
+              if (isBtn) runtime.postWindowMessage(pid, hwnd, WM_COMMAND, c.id, c.hwnd);
+            }}
+            style={{
+              position: "absolute",
+              left: c.x,
+              top: c.y,
+              width: c.w,
+              height: c.h,
+              display: c.visible ? "flex" : "none",
+              alignItems: isGrp ? "flex-start" : "center",
+              justifyContent: isPush ? "center" : "flex-start",
+              border: isPush ? "2px outset #dfdfdf" : isEdit ? "2px inset #dfdfdf" : isGrp ? "1px solid #a0a0a0" : "none",
+              background: isPush ? "#e0e0e0" : isEdit ? "#fff" : "transparent",
+              cursor: isBtn ? "pointer" : "default",
+              userSelect: "none",
+              padding: "2px",
+              fontFamily: "'Segoe UI', system-ui, sans-serif",
+              fontSize: "13px",
+              color: "#000",
+              boxSizing: "border-box",
+              opacity: c.enabled ? 1 : 0.5,
+              pointerEvents: c.enabled ? "auto" : "none",
+            }}
+          >
+            {isChk && <input type="checkbox" checked={c.checked} readOnly className="mr-1" />}
+            {isRad && <input type="radio" checked={c.checked} readOnly className="mr-1" />}
+            {isGrp && <div style={{position:"absolute", top:-8, left:8, background:bg, padding:"0 4px"}}>{c.text.replace(/&/g, '')}</div>}
+            {!isGrp && <span className="truncate" style={{width:"100%", textAlign: isPush ? "center" : "left"}}>{c.text.replace(/&/g, '')}</span>}
+          </div>
+        )})}
+      </div>
     </div>
   );
 }

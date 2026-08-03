@@ -86,18 +86,82 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "wcschr", wcschr_fn),
         ("msvcrt.dll", "wcsrchr", wcsrchr_fn),
         ("msvcrt.dll", "wcsstr", wcsstr_fn),
-        ("msvcrt.dll", "wcsncmp", |c| { let n = c.arg(2); wcs_compare(c, n, false) }),
-        ("msvcrt.dll", "_wcsnicmp", |c| { let n = c.arg(2); wcs_compare(c, n, true) }),
-        ("msvcrt.dll", "towupper", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_uppercase() as u32).unwrap_or(v)); Handled::Ok }),
-        ("msvcrt.dll", "towlower", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_lowercase() as u32).unwrap_or(v)); Handled::Ok }),
-        ("msvcrt.dll", "iswalpha", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_alphabetic() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "iswdigit", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_numeric() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "iswspace", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_whitespace() as u32).unwrap_or(0)); Handled::Ok }),
+        ("msvcrt.dll", "wcsncmp", |c| {
+            let n = c.arg(2);
+            wcs_compare(c, n, false)
+        }),
+        ("msvcrt.dll", "_wcsnicmp", |c| {
+            let n = c.arg(2);
+            wcs_compare(c, n, true)
+        }),
+        ("msvcrt.dll", "towupper", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.to_ascii_uppercase() as u32)
+                    .unwrap_or(v),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "towlower", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.to_ascii_lowercase() as u32)
+                    .unwrap_or(v),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswalpha", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_alphabetic() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswdigit", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_numeric() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
+        ("msvcrt.dll", "iswspace", |c| {
+            let v = c.arg(0);
+            c.ret_cdecl(
+                char::from_u32(v)
+                    .map(|ch| ch.is_whitespace() as u32)
+                    .unwrap_or(0),
+            );
+            Handled::Ok
+        }),
         // time(t): seconds since the Unix epoch, from the shared virtual clock.
         // A frozen constant made srand(time(NULL)) reproduce one seed forever.
-        ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = crate::kernel32::unix_time_secs(); if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
+        ("msvcrt.dll", "time", |c| {
+            let t = c.arg(0);
+            let now = crate::kernel32::unix_time_secs();
+            if t != 0 {
+                let _ = c.memory.write_u32(t, now);
+            }
+            c.ret_cdecl(now);
+            Handled::Ok
+        }),
         // _time64(t): same value widened to 64 bits (returned in EDX:EAX).
-        ("msvcrt.dll", "_time64", |c| { let t = c.arg(0); let now = crate::kernel32::unix_time_secs(); if t != 0 { let _ = c.memory.write_u32(t, now); let _ = c.memory.write_u32(t + 4, 0); } c.cpu.edx = 0; c.ret_cdecl(now); Handled::Ok }),
+        ("msvcrt.dll", "_time64", |c| {
+            let t = c.arg(0);
+            let now = crate::kernel32::unix_time_secs();
+            if t != 0 {
+                let _ = c.memory.write_u32(t, now);
+                let _ = c.memory.write_u32(t + 4, 0);
+            }
+            c.cpu.edx = 0;
+            c.ret_cdecl(now);
+            Handled::Ok
+        }),
         ("msvcrt.dll", "srand", |c| {
             *c.rand_seed = c.arg(0);
             c.ret_cdecl(0);
@@ -355,9 +419,21 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "_set_app_type", set_app_type),
         ("msvcrt.dll", "_configure_narrow_argv", configure_argv),
         ("msvcrt.dll", "_configure_wide_argv", configure_argv),
-        ("msvcrt.dll", "_initialize_narrow_environment", initialize_environment),
-        ("msvcrt.dll", "_initialize_wide_environment", initialize_environment),
-        ("msvcrt.dll", "_get_initial_wide_environment", get_initial_wide_environment),
+        (
+            "msvcrt.dll",
+            "_initialize_narrow_environment",
+            initialize_environment,
+        ),
+        (
+            "msvcrt.dll",
+            "_initialize_wide_environment",
+            initialize_environment,
+        ),
+        (
+            "msvcrt.dll",
+            "_get_initial_wide_environment",
+            get_initial_wide_environment,
+        ),
         ("msvcrt.dll", "_set_fmode", set_fmode),
         ("msvcrt.dll", "_setmode", setmode_fn),
         ("msvcrt.dll", "_set_new_mode", set_new_mode),
@@ -378,7 +454,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "_controlfp", controlfp),
         ("msvcrt.dll", "_controlfp_s", controlfp_s),
         ("msvcrt.dll", "__current_exception", current_exception),
-        ("msvcrt.dll", "__current_exception_context", current_exception_context),
+        (
+            "msvcrt.dll",
+            "__current_exception_context",
+            current_exception_context,
+        ),
         ("msvcrt.dll", "_except_handler3", except_handler),
         ("msvcrt.dll", "_except_handler4_common", except_handler),
     ];
@@ -534,11 +614,11 @@ pub(crate) fn wcs_compare(ctx: &mut ApiContext, limit: u32, fold: bool) -> Handl
 pub(crate) fn fold_case(c: u16) -> u16 {
     match c {
         0x41..=0x5A => c + 0x20,                              // A-Z
-        0xC0..=0xD6 | 0xD8..=0xDE => c + 0x20,                 // Latin-1
-        0x100..=0x137 | 0x14A..=0x177 if c % 2 == 0 => c + 1,  // Latin Ext-A pairs
+        0xC0..=0xD6 | 0xD8..=0xDE => c + 0x20,                // Latin-1
+        0x100..=0x137 | 0x14A..=0x177 if c % 2 == 0 => c + 1, // Latin Ext-A pairs
         0x139..=0x148 | 0x179..=0x17E if c % 2 == 1 => c + 1,
-        0x391..=0x3A1 | 0x3A3..=0x3AB => c + 0x20,             // Greek
-        0x410..=0x42F => c + 0x20,                             // Cyrillic
+        0x391..=0x3A1 | 0x3A3..=0x3AB => c + 0x20, // Greek
+        0x410..=0x42F => c + 0x20,                 // Cyrillic
         0x400..=0x40F => c + 0x50,
         _ => c,
     }
@@ -896,8 +976,14 @@ fn scan_integer(bytes: &[u8], base: u32) -> (u64, bool, usize) {
         i += 1;
     }
     let negative = match bytes.get(i) {
-        Some(b'-') => { i += 1; true }
-        Some(b'+') => { i += 1; false }
+        Some(b'-') => {
+            i += 1;
+            true
+        }
+        Some(b'+') => {
+            i += 1;
+            false
+        }
         _ => false,
     };
     let mut base = base;
@@ -943,7 +1029,11 @@ fn strto_common(ctx: &mut ApiContext, signed: bool) -> Handled {
         }
     } else {
         let v = value.min(0xFFFF_FFFF) as u32;
-        if negative { v.wrapping_neg() } else { v }
+        if negative {
+            v.wrapping_neg()
+        } else {
+            v
+        }
     };
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -2009,7 +2099,7 @@ pub(crate) fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> S
     out
 }
 
-// ── CRT lifecycle / locale / SEH (named implementations) ────────────────────
+// CRT lifecycle / locale / SEH (named implementations)
 
 /// free(ptr): return the block to the process free list (coalescing).
 pub(crate) fn free_fn(c: &mut ApiContext) -> Handled {
@@ -2055,11 +2145,7 @@ fn mbsinc(c: &mut ApiContext) -> Handled {
 }
 
 fn getmbcp(c: &mut ApiContext) -> Handled {
-    let cp = c
-        .dll_state
-        .get("msvcrt.mbcp")
-        .copied()
-        .unwrap_or(1252);
+    let cp = c.dll_state.get("msvcrt.mbcp").copied().unwrap_or(1252);
     c.ret_cdecl(cp);
     Handled::Ok
 }
@@ -2067,11 +2153,7 @@ fn getmbcp(c: &mut ApiContext) -> Handled {
 fn setmbcp(c: &mut ApiContext) -> Handled {
     // _setmbcp(codepage) → previous codepage, or -1 on failure.
     let cp = c.arg(0);
-    let prev = c
-        .dll_state
-        .get("msvcrt.mbcp")
-        .copied()
-        .unwrap_or(1252);
+    let prev = c.dll_state.get("msvcrt.mbcp").copied().unwrap_or(1252);
     // Accept 1252 and -1 (restore); other IDs still stored for apps that probe.
     if cp == 0xFFFF_FFFF {
         c.dll_state.insert("msvcrt.mbcp".into(), 1252);
@@ -2175,11 +2257,7 @@ fn setmode_fn(c: &mut ApiContext) -> Handled {
 
 fn set_new_mode(c: &mut ApiContext) -> Handled {
     let mode = c.arg(0);
-    let prev = c
-        .dll_state
-        .get("msvcrt.new_mode")
-        .copied()
-        .unwrap_or(0);
+    let prev = c.dll_state.get("msvcrt.new_mode").copied().unwrap_or(0);
     c.dll_state.insert("msvcrt.new_mode".into(), mode);
     c.ret_cdecl(prev);
     Handled::Ok
@@ -2188,11 +2266,7 @@ fn set_new_mode(c: &mut ApiContext) -> Handled {
 fn configthreadlocale(c: &mut ApiContext) -> Handled {
     // _configthreadlocale(type) → previous setting.
     let t = c.arg(0);
-    let prev = c
-        .dll_state
-        .get("msvcrt.threadlocale")
-        .copied()
-        .unwrap_or(0);
+    let prev = c.dll_state.get("msvcrt.threadlocale").copied().unwrap_or(0);
     if t != 0xFFFF_FFFF {
         // -1 means query only
         c.dll_state.insert("msvcrt.threadlocale".into(), t);

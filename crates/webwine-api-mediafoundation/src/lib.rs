@@ -40,7 +40,7 @@ const SMP_BUF0: u32 = 32;
 const SMP_MAX_BUFS: u32 = 8;
 const SMP_OBJ_SIZE: u32 = SMP_BUF0 + SMP_MAX_BUFS * 4;
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+// helpers
 
 fn guid_key(ctx: &ApiContext, guid_ptr: u32) -> u32 {
     // Fold GUID bytes into a stable u32 key for dll_state.
@@ -49,7 +49,11 @@ fn guid_key(ctx: &ApiContext, guid_ptr: u32) -> u32 {
     }
     let mut h = 0u32;
     for i in 0..4 {
-        h ^= ctx.memory.read_u32(guid_ptr + i * 4).unwrap_or(0).rotate_left(i * 7);
+        h ^= ctx
+            .memory
+            .read_u32(guid_ptr + i * 4)
+            .unwrap_or(0)
+            .rotate_left(i * 7);
     }
     h
 }
@@ -128,7 +132,12 @@ fn store_out(ctx: &mut ApiContext, arg_index: u32, obj: u32) {
     }
 }
 
-fn com_object(ctx: &mut ApiContext, segments: &[&[(&str, HandlerFn)]], kind: u32, size: u32) -> u32 {
+fn com_object(
+    ctx: &mut ApiContext,
+    segments: &[&[(&str, HandlerFn)]],
+    kind: u32,
+    size: u32,
+) -> u32 {
     let count: u32 = segments.iter().map(|s| s.len() as u32).sum();
     let vtable_va = ctx.heap_alloc(count * 4);
     let mut i = 0u32;
@@ -145,7 +154,7 @@ fn com_object(ctx: &mut ApiContext, segments: &[&[(&str, HandlerFn)]], kind: u32
     obj_va
 }
 
-// ── IMFAttributes ───────────────────────────────────────────────────────────
+// IMFAttributes
 
 fn attr_get_item(c: &mut ApiContext) -> Handled {
     // GetItem(this, guid, pValue) — PROPVARIANT not fully filled; report not found.
@@ -283,11 +292,7 @@ fn attr_delete_all(c: &mut ApiContext) -> Handled {
 fn attr_get_count(c: &mut ApiContext) -> Handled {
     let this = c.arg(0);
     let out = c.arg(1);
-    let n = c
-        .dll_state
-        .get(&attr_count_key(this))
-        .copied()
-        .unwrap_or(0);
+    let n = c.dll_state.get(&attr_count_key(this)).copied().unwrap_or(0);
     if out != 0 {
         let _ = c.memory.write_u32(out, n);
     }
@@ -344,7 +349,7 @@ const IMFATTRIBUTES_OWN: &[(&str, HandlerFn)] = &[
     ("IMFAttributes::CopyAllItems", attr_copy_all),
 ];
 
-// ── IMFMediaType ────────────────────────────────────────────────────────────
+// IMFMediaType
 
 fn mt_get_major_type(c: &mut ApiContext) -> Handled {
     // GetMajorType(this, pguidMajorType) — zero GUID if unset.
@@ -383,7 +388,7 @@ const IMFMEDIATYPE_OWN: &[(&str, HandlerFn)] = &[
     ("IMFMediaType::FreeRepresentation", ok_6),
 ];
 
-// ── IMFSample ───────────────────────────────────────────────────────────────
+// IMFSample
 
 fn sample_get_flags(c: &mut ApiContext) -> Handled {
     let this = c.arg(0);
@@ -455,10 +460,9 @@ fn sample_get_buffer_count(c: &mut ApiContext) -> Handled {
     let this = c.arg(0);
     let out = c.arg(1);
     if out != 0 {
-        let _ = c.memory.write_u32(
-            out,
-            c.memory.read_u32(this + SMP_BUF_COUNT).unwrap_or(0),
-        );
+        let _ = c
+            .memory
+            .write_u32(out, c.memory.read_u32(this + SMP_BUF_COUNT).unwrap_or(0));
     }
     c.ret_stdcall(S_OK, 2);
     Handled::Ok
@@ -473,10 +477,7 @@ fn sample_get_buffer_by_index(c: &mut ApiContext) -> Handled {
         c.ret_stdcall(E_INVALIDARG, 3);
         return Handled::Ok;
     }
-    let buf = c
-        .memory
-        .read_u32(this + SMP_BUF0 + index * 4)
-        .unwrap_or(0);
+    let buf = c.memory.read_u32(this + SMP_BUF0 + index * 4).unwrap_or(0);
     if out != 0 {
         let _ = c.memory.write_u32(out, buf);
     }
@@ -514,7 +515,9 @@ fn sample_remove_buffer_by_index(c: &mut ApiContext) -> Handled {
             .unwrap_or(0);
         let _ = c.memory.write_u32(this + SMP_BUF0 + i * 4, next);
     }
-    let _ = c.memory.write_u32(this + SMP_BUF_COUNT, count.saturating_sub(1));
+    let _ = c
+        .memory
+        .write_u32(this + SMP_BUF_COUNT, count.saturating_sub(1));
     c.ret_stdcall(S_OK, 2);
     Handled::Ok
 }
@@ -532,10 +535,7 @@ fn sample_get_total_length(c: &mut ApiContext) -> Handled {
     let count = c.memory.read_u32(this + SMP_BUF_COUNT).unwrap_or(0);
     let mut total = 0u32;
     for i in 0..count {
-        let buf = c
-            .memory
-            .read_u32(this + SMP_BUF0 + i * 4)
-            .unwrap_or(0);
+        let buf = c.memory.read_u32(this + SMP_BUF0 + i * 4).unwrap_or(0);
         if buf != 0 {
             total = total.saturating_add(c.memory.read_u32(buf + BUF_CUR).unwrap_or(0));
         }
@@ -581,15 +581,21 @@ const IMFSAMPLE_OWN: &[(&str, HandlerFn)] = &[
     ("IMFSample::SetSampleDuration", sample_set_duration),
     ("IMFSample::GetBufferCount", sample_get_buffer_count),
     ("IMFSample::GetBufferByIndex", sample_get_buffer_by_index),
-    ("IMFSample::ConvertToContiguousBuffer", sample_convert_contiguous),
+    (
+        "IMFSample::ConvertToContiguousBuffer",
+        sample_convert_contiguous,
+    ),
     ("IMFSample::AddBuffer", sample_add_buffer),
-    ("IMFSample::RemoveBufferByIndex", sample_remove_buffer_by_index),
+    (
+        "IMFSample::RemoveBufferByIndex",
+        sample_remove_buffer_by_index,
+    ),
     ("IMFSample::RemoveAllBuffers", sample_remove_all_buffers),
     ("IMFSample::GetTotalLength", sample_get_total_length),
     ("IMFSample::CopyToBuffer", sample_copy_to_buffer),
 ];
 
-// ── IMFMediaBuffer ──────────────────────────────────────────────────────────
+// IMFMediaBuffer
 
 fn buffer_lock(c: &mut ApiContext) -> Handled {
     // Lock(this, ppbBuffer, pcbMaxLength, pcbCurrentLength)
@@ -662,12 +668,18 @@ fn buffer_get_max_length(c: &mut ApiContext) -> Handled {
 const IMFMEDIABUFFER_OWN: &[(&str, HandlerFn)] = &[
     ("IMFMediaBuffer::Lock", buffer_lock),
     ("IMFMediaBuffer::Unlock", buffer_unlock),
-    ("IMFMediaBuffer::GetCurrentLength", buffer_get_current_length),
-    ("IMFMediaBuffer::SetCurrentLength", buffer_set_current_length),
+    (
+        "IMFMediaBuffer::GetCurrentLength",
+        buffer_get_current_length,
+    ),
+    (
+        "IMFMediaBuffer::SetCurrentLength",
+        buffer_set_current_length,
+    ),
     ("IMFMediaBuffer::GetMaxLength", buffer_get_max_length),
 ];
 
-// ── flat exports ────────────────────────────────────────────────────────────
+// flat exports
 
 fn mf_startup(c: &mut ApiContext) -> Handled {
     c.dll_state.insert("mf.started".into(), 1);
@@ -721,7 +733,12 @@ fn mf_create_sample(c: &mut ApiContext) -> Handled {
 fn make_memory_buffer(c: &mut ApiContext, max_len: u32) -> u32 {
     let max = max_len.max(1);
     let data = c.heap_alloc(max);
-    let obj = com_object(c, &[IUNKNOWN, IMFMEDIABUFFER_OWN], KIND_BUFFER, BUF_OBJ_SIZE);
+    let obj = com_object(
+        c,
+        &[IUNKNOWN, IMFMEDIABUFFER_OWN],
+        KIND_BUFFER,
+        BUF_OBJ_SIZE,
+    );
     let _ = c.memory.write_u32(obj + BUF_MAX, max);
     let _ = c.memory.write_u32(obj + BUF_CUR, 0);
     let _ = c.memory.write_u32(obj + BUF_DATA, data);
@@ -801,7 +818,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("MFCreateMediaType", mf_create_media_type),
         ("MFCreateSample", mf_create_sample),
         ("MFCreateMemoryBuffer", mf_create_memory_buffer),
-        ("MFCreateAlignedMemoryBuffer", mf_create_aligned_memory_buffer),
+        (
+            "MFCreateAlignedMemoryBuffer",
+            mf_create_aligned_memory_buffer,
+        ),
         ("MFTEnumEx", mf_enum_ex),
         ("MFGetService", mf_get_service),
         ("MFCreateSourceResolver", ni_1),
@@ -810,7 +830,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("MFCreateCollection", mf_create_collection),
         ("MFCreateSystemTimeSource", ni_1),
         ("MFCreateDXGIDeviceManager", ni_2),
-        ("MFInitMediaTypeFromWaveFormatEx", mf_init_media_type_from_wave),
+        (
+            "MFInitMediaTypeFromWaveFormatEx",
+            mf_init_media_type_from_wave,
+        ),
         ("MFCreateWaveFormatExFromMFMediaType", ni_4),
         ("MFAllocateWorkQueue", mf_allocate_work_queue),
         ("MFPutWorkItem", ni_3),
@@ -874,7 +897,10 @@ fn mf_get_system_time(c: &mut ApiContext) -> Handled {
 // Silence unused helper warnings when only used in comments paths.
 #[allow(dead_code)]
 fn _helpers() {
-    let _ = (hr_ok_n as fn(&mut ApiContext, u32) -> Handled, hr_ni_n as fn(&mut ApiContext, u32) -> Handled);
+    let _ = (
+        hr_ok_n as fn(&mut ApiContext, u32) -> Handled,
+        hr_ni_n as fn(&mut ApiContext, u32) -> Handled,
+    );
     let _ = (E_POINTER, KIND_ATTRS);
 }
 

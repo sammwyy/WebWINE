@@ -181,6 +181,23 @@ pub enum UiEvent {
         items: Vec<MenuItemData>,
     },
 
+    /// Full layout of a dialog and its child controls (Wine dialog manager).
+    /// Frontend paints classic Win32 chrome and maps clicks → WM_COMMAND.
+    DialogLayout {
+        hwnd: u32,
+        title: String,
+        width: i32,
+        height: i32,
+        controls: Vec<DialogControlData>,
+    },
+
+    /// Update one control's text after SetDlgItemText / SetWindowText on a child.
+    ControlText {
+        hwnd: u32,
+        control_hwnd: u32,
+        text: String,
+    },
+
     // A modal file picker the guest is blocked on (GetOpenFileName/GetSaveFileName).
     // The host shows a picker and replies via `post_dialog_reply`. `filter` is the
     // raw Win32 double-null filter string flattened to "Label|pattern|..." pairs.
@@ -294,6 +311,9 @@ pub struct GuiState {
     pub menus: std::collections::HashMap<u32, Vec<MenuItem>>,
     pub next_menu: u32,
     pub hwnd_menu: std::collections::HashMap<u32, u32>,
+
+    /// Fast GetDlgItem: (dialog_hwnd, control_id) → child HWND.
+    pub dlg_ctrl: std::collections::HashMap<(u32, i32), u32>,
 }
 
 /// High byte tag marking an HMENU, distinct from HWNDs and GDI handles.
@@ -308,6 +328,23 @@ pub struct MenuItem {
     pub submenu: Option<u32>,
     pub separator: bool,
     pub disabled: bool,
+}
+
+/// One dialog child control for the frontend layout pass.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DialogControlData {
+    pub hwnd: u32,
+    pub id: i32,
+    pub class_name: String,
+    pub text: String,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub style: u32,
+    pub enabled: bool,
+    pub checked: bool,
+    pub visible: bool,
 }
 
 /// A resolved menu node for the frontend (submenus expanded into `children`).
@@ -354,6 +391,60 @@ pub struct WindowEntry {
     pub brush_color: u32,
     pub cur_x: i32,
     pub cur_y: i32,
+    /// Parent HWND for child controls (`None` = top-level).
+    pub parent: Option<u32>,
+    /// Control id (`GWLP_ID`); 0 for plain top-level windows.
+    pub id: i32,
+    pub class_name: String,
+    pub title: String,
+    pub style: u32,
+    pub ex_style: u32,
+    pub x: i32,
+    pub y: i32,
+    pub visible: bool,
+    pub enabled: bool,
+    pub children: Vec<u32>,
+    /// Dialog procedure (`DWLP_DLGPROC`); only for dialogs.
+    pub dlg_proc: Option<u32>,
+    pub x_base_unit: u32,
+    pub y_base_unit: u32,
+    pub is_dialog: bool,
+    /// BS_CHECKBOX / BS_RADIOBUTTON state.
+    pub checked: bool,
+    /// Result code from EndDialog (DialogBox* path).
+    pub dlg_result: i32,
+}
+
+impl WindowEntry {
+    pub fn new_toplevel(wndproc: u32, width: i32, height: i32, class_name: &str, title: &str) -> Self {
+        WindowEntry {
+            wndproc,
+            needs_paint: true,
+            width,
+            height,
+            pen_color: 0x00_0000,
+            brush_color: 0xFF_FFFF,
+            cur_x: 0,
+            cur_y: 0,
+            parent: None,
+            id: 0,
+            class_name: class_name.to_string(),
+            title: title.to_string(),
+            style: 0x00CF_0000, // WS_OVERLAPPEDWINDOW-ish
+            ex_style: 0,
+            x: 0,
+            y: 0,
+            visible: true,
+            enabled: true,
+            children: Vec::new(),
+            dlg_proc: None,
+            x_base_unit: 8,
+            y_base_unit: 16,
+            is_dialog: false,
+            checked: false,
+            dlg_result: 0,
+        }
+    }
 }
 
 impl GuiState {
@@ -376,6 +467,7 @@ impl GuiState {
             menus: std::collections::HashMap::new(),
             next_menu: MENU_TAG | 0x10,
             hwnd_menu: std::collections::HashMap::new(),
+            dlg_ctrl: std::collections::HashMap::new(),
         }
     }
 }
@@ -420,6 +512,10 @@ pub struct GuestProcess {
     pub messages: std::collections::HashMap<u32, String>,
     // RT_STRING resources used by LoadStringA/W.
     pub strings: std::collections::HashMap<u32, String>,
+    /// RT_DIALOG templates (resource id → raw template bytes).
+    pub dialogs: std::collections::HashMap<u32, Vec<u8>>,
+    /// RT_DIALOG by lowercase resource name (when named).
+    pub dialogs_by_name: std::collections::HashMap<String, Vec<u8>>,
     // Managed (.NET/CLI) image bytes, set when this is a managed process. Such a
     // process has no meaningful x86 CPU state; it runs via the CLR interpreter.
     pub managed: Option<Vec<u8>>,
@@ -501,6 +597,8 @@ impl GuestProcess {
             cmdline: format!("\"{path}\""),
             messages: std::collections::HashMap::new(),
             strings: std::collections::HashMap::new(),
+            dialogs: std::collections::HashMap::new(),
+            dialogs_by_name: std::collections::HashMap::new(),
             managed: Some(bytes),
             tls_slots: std::collections::HashMap::new(),
             next_tls: 1,
