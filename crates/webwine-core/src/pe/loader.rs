@@ -203,7 +203,9 @@ fn parse_message_data(bytes: &[u8], base: usize, out: &mut std::collections::Has
 
 // Fixed virtual address layout
 const HEAP_BASE: u32 = 0x1000_0000;
-const HEAP_SIZE: u32 = 0x0040_0000; // 4 MB
+// Initial reservation; ensure_mapped grows toward the DLL region (0x3000_0000).
+// 64 MB covers heavy CRT/game startups without hammering resize on every bump.
+const HEAP_SIZE: u32 = 0x0400_0000; // 64 MB
 const STACK_BASE: u32 = 0x6FF0_0000;
 const STACK_SIZE: u32 = 0x0010_0000; // 1 MB
 const STACK_TOP: u32 = STACK_BASE + STACK_SIZE;

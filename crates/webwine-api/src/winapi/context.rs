@@ -181,36 +181,73 @@ impl<'a> ApiContext<'a> {
     }
 
     /// Bump allocator on the process heap, tracking sizes so realloc can copy.
+    ///
+    /// - `size == 0` still returns a unique non-NULL block (Windows HeapAlloc /
+    ///   CRT `malloc(0)` behaviour) so callers never treat NULL as "success".
+    /// - Returns `0` only on real OOM (cannot back the range with guest memory).
     pub fn heap_alloc(&mut self, size: u32) -> u32 {
-        if size == 0 {
-            return 0;
-        }
+        // Minimum 16-byte granule keeps alignment and matches non-NULL malloc(0).
+        let size = size.max(1);
         let aligned = (size + 15) & !15;
         let ptr = *self.heap_next;
-        let new_next = self.heap_next.wrapping_add(aligned);
-        // Back the new range with real memory (grows the heap region on demand).
-        self.memory.ensure_mapped(ptr, new_next);
+        let new_next = match ptr.checked_add(aligned) {
+            Some(n) => n,
+            None => return 0,
+        };
+        // Must fully map before publishing the pointer / advancing the cursor.
+        if !self.memory.ensure_mapped(ptr, new_next) {
+            return 0;
+        }
+        if !self.memory.is_range_mapped(ptr, aligned) {
+            return 0;
+        }
         *self.heap_next = new_next;
         self.heap_sizes.insert(ptr, size);
         ptr
     }
 
+    /// Allocate and force-zero the block (HeapAlloc HEAP_ZERO_MEMORY / calloc).
+    pub fn heap_alloc_zeroed(&mut self, size: u32) -> u32 {
+        let ptr = self.heap_alloc(size);
+        if ptr != 0 {
+            let n = size.max(1) as usize;
+            let _ = self.memory.write_bytes(ptr, &vec![0u8; n]);
+        }
+        ptr
+    }
+
     /// Reallocate `old` to `new_size`, preserving contents. Grows the last
     /// block in place; otherwise allocates a fresh block and copies.
+    /// Returns 0 on failure (and leaves `old` intact when possible).
     pub fn heap_realloc(&mut self, old: u32, new_size: u32) -> u32 {
         if old == 0 {
             return self.heap_alloc(new_size);
         }
         if new_size == 0 {
-            return 0;
+            // HeapReAlloc(..., 0) frees on Windows with some flags; we keep a
+            // non-NULL empty block to match our malloc(0) policy.
+            return self.heap_alloc(0);
         }
         let old_size = self.heap_sizes.get(&old).copied().unwrap_or(0);
         let aligned_old = (old_size + 15) & !15;
+        let aligned_new = (new_size + 15) & !15;
 
-        // Most-recent allocation? Extend in place.
+        // Most-recent allocation? Extend (or shrink) in place.
         if old.wrapping_add(aligned_old) == *self.heap_next {
-            let new_next = old.wrapping_add((new_size + 15) & !15);
-            self.memory.ensure_mapped(old, new_next);
+            let new_next = match old.checked_add(aligned_new) {
+                Some(n) => n,
+                None => return 0,
+            };
+            if aligned_new > aligned_old {
+                if !self.memory.ensure_mapped(old, new_next) {
+                    return 0;
+                }
+                // Zero the extension so HEAP_ZERO_MEMORY-like consumers are safe.
+                let ext = (aligned_new - aligned_old) as usize;
+                let _ = self
+                    .memory
+                    .write_bytes(old.wrapping_add(aligned_old), &vec![0u8; ext]);
+            }
             *self.heap_next = new_next;
             self.heap_sizes.insert(old, new_size);
             return old;
@@ -218,12 +255,16 @@ impl<'a> ApiContext<'a> {
 
         // Otherwise allocate and copy the overlap.
         let new_ptr = self.heap_alloc(new_size);
+        if new_ptr == 0 {
+            return 0;
+        }
         let copy = old_size.min(new_size) as usize;
         if copy > 0 {
             if let Ok(bytes) = self.memory.read_bytes(old, copy) {
                 let _ = self.memory.write_bytes(new_ptr, &bytes);
             }
         }
+        // Caller may still free `old`; we don't reclaim (bump allocator).
         new_ptr
     }
 }

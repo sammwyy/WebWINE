@@ -48,34 +48,77 @@ impl GuestMemory {
         Ok(())
     }
 
-    /// Grow the region that owns `ptr` so it covers up to `end_va`, without
-    /// overlapping the next region above it. Used by the bump heap allocator so
-    /// large `malloc`s (e.g. a 16 MB game zone) are actually backed by memory
-    /// instead of faulting past a fixed initial heap size.
-    pub fn ensure_mapped(&mut self, ptr: u32, end_va: u32) {
+    /// Grow the region with the greatest `base <= ptr` so it covers
+    /// `[ptr, end_va)`, without overlapping the next region. Used by the bump
+    /// heap so large `malloc`s are actually backed by memory.
+    ///
+    /// Returns `true` iff `[ptr, end_va)` is fully mapped afterwards. Callers
+    /// **must** treat `false` as OOM and must not hand the pointer to the guest
+    /// (a prior bug advanced the heap cursor even when growth was clamped,
+    /// producing unmapped pointers and later control-flow corruption such as
+    /// `CALL [NULL+0x18]` → EIP=0x18 / STATUS_ACCESS_VIOLATION).
+    pub fn ensure_mapped(&mut self, ptr: u32, end_va: u32) -> bool {
+        if end_va <= ptr {
+            return true;
+        }
+        // Overflow of the requested span.
+        if end_va < ptr {
+            return false;
+        }
+
         let base = match self.regions.range(..=ptr).next_back() {
             Some((&b, _)) => b,
-            None => return,
+            None => return false,
         };
-        let cap = self.regions
+
+        let cap = self
+            .regions
             .range((std::ops::Bound::Excluded(base), std::ops::Bound::Unbounded))
             .next()
             .map(|(&b, _)| b)
             .unwrap_or(u32::MAX);
-        let want_end = end_va.min(cap);
-        let Some(r) = self.regions.get_mut(&base) else { return };
-        if want_end <= r.base {
-            return;
+
+        // Would collide with / cross the next mapped region.
+        if end_va > cap {
+            return false;
         }
-        let needed = (want_end - r.base) as usize;
+
+        let Some(r) = self.regions.get_mut(&base) else {
+            return false;
+        };
+        // ptr must belong to this region's address span (base..cap).
+        if ptr < r.base {
+            return false;
+        }
+
+        let needed = (end_va - r.base) as usize;
         if needed > r.bytes.len() {
             // Round up to 1 MB to avoid reallocating on every small bump.
             let rounded = (needed + 0xF_FFFF) & !0xF_FFFF;
-            let new_size = rounded.min((cap.wrapping_sub(r.base)) as usize);
-            if new_size > r.bytes.len() {
-                r.bytes.resize(new_size, 0);
-                r.size = new_size as u32;
+            let max_size = (cap - r.base) as usize;
+            let new_size = rounded.min(max_size);
+            if new_size < needed {
+                return false;
             }
+            r.bytes.resize(new_size, 0);
+            r.size = new_size as u32;
+        }
+
+        end_va <= r.base.wrapping_add(r.size) && ptr >= r.base
+    }
+
+    /// True if `[va, va+len)` is currently mapped.
+    pub fn is_range_mapped(&self, va: u32, len: u32) -> bool {
+        if len == 0 {
+            return true;
+        }
+        let end = va.wrapping_add(len);
+        if end < va {
+            return false;
+        }
+        match self.region(va) {
+            Some((r, off)) => (off as u32).saturating_add(len) <= r.size,
+            None => false,
         }
     }
 

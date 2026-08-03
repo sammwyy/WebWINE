@@ -2238,23 +2238,53 @@ fn get_process_heap(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+const HEAP_ZERO_MEMORY: u32 = 0x0000_0008;
+
 fn heap_alloc(ctx: &mut ApiContext) -> Handled {
+    // HeapAlloc(hHeap, dwFlags, dwBytes) — 3 args stdcall.
+    let flags = ctx.arg(1);
     let size = ctx.arg(2);
-    let ptr = ctx.heap_alloc(size);
+    let ptr = if flags & HEAP_ZERO_MEMORY != 0 {
+        ctx.heap_alloc_zeroed(size)
+    } else {
+        ctx.heap_alloc(size)
+    };
+    if ptr == 0 {
+        ctx.cpu.last_error = 8; // ERROR_NOT_ENOUGH_MEMORY
+    }
     ctx.ret_stdcall(ptr, 3);
     Handled::Ok
 }
 
 fn heap_free(ctx: &mut ApiContext) -> Handled {
+    // HeapFree(hHeap, dwFlags, lpMem) — bump heap does not reclaim VA, but drop
+    // size tracking so HeapSize/realloc treat it as gone.
+    let p = ctx.arg(2);
+    if p != 0 {
+        ctx.heap_sizes.remove(&p);
+    }
     ctx.ret_stdcall(1, 3);
     Handled::Ok
 }
 
 fn heap_realloc(ctx: &mut ApiContext) -> Handled {
     // HeapReAlloc(hHeap, dwFlags, lpMem, dwBytes)
+    let flags = ctx.arg(1);
     let old = ctx.arg(2);
     let size = ctx.arg(3);
+    let prev_size = ctx.heap_sizes.get(&old).copied().unwrap_or(0);
     let ptr = ctx.heap_realloc(old, size);
+    if ptr == 0 {
+        ctx.cpu.last_error = 8; // ERROR_NOT_ENOUGH_MEMORY
+    } else if flags & HEAP_ZERO_MEMORY != 0 && size > prev_size {
+        // Zero the grown tail. In-place growth is already zeroed by heap_realloc;
+        // a moved block's fresh pages are zero from ensure_mapped — still write
+        // explicitly so the documented flag is never a silent no-op.
+        let _ = ctx.memory.write_bytes(
+            ptr.wrapping_add(prev_size),
+            &vec![0u8; (size - prev_size) as usize],
+        );
+    }
     ctx.ret_stdcall(ptr, 4);
     Handled::Ok
 }

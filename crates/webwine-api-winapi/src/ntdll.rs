@@ -96,8 +96,15 @@ pub fn register(r: &mut WinApiRegistry) {
 }
 
 fn rtl_alloc(ctx: &mut ApiContext) -> Handled {
+    // RtlAllocateHeap(HeapHandle, Flags, Size)
+    const HEAP_ZERO_MEMORY: u32 = 0x0000_0008;
+    let flags = ctx.arg(1);
     let size = ctx.arg(2);
-    let ptr = ctx.heap_alloc(size);
+    let ptr = if flags & HEAP_ZERO_MEMORY != 0 {
+        ctx.heap_alloc_zeroed(size)
+    } else {
+        ctx.heap_alloc(size)
+    };
     ctx.ret_stdcall(ptr, 3);
     Handled::Ok
 }
