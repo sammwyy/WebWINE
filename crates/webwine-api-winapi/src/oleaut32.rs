@@ -19,7 +19,21 @@ const ENTRIES: &[Entry] = &[
     ("oleaut32.dll", "#2", sys_alloc_string),
     ("oleaut32.dll", "#6", ret_0_1),
     ("oleaut32.dll", "#7", sys_string_len),
+    ("oleaut32.dll", "#184", system_time_to_variant_time),
+    ("oleaut32.dll", "#185", variant_time_to_system_time),
 ];
+
+fn system_time_to_variant_time(c: &mut ApiContext) -> Handled {
+    if c.arg(1) != 0 { c.write_bytes(c.arg(1), &[0; 8]); }
+    c.return_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn variant_time_to_system_time(c: &mut ApiContext) -> Handled {
+    if c.arg(1) != 0 { c.write_bytes(c.arg(1), &[0; 16]); }
+    c.return_stdcall(1, 2);
+    Handled::Ok
+}
 
 fn sys_alloc_string(c: &mut ApiContext) -> Handled {
     let psz = c.arg(0);

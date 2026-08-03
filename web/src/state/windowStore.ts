@@ -11,10 +11,10 @@ import type React from "react";
 export type WindowVariant = "window" | "dialog";
 
 export interface WindowRect {
-  left: string;
-  top: string;
-  width: string;
-  height: string;
+  left: string | number;
+  top: string | number;
+  width: string | number;
+  height: string | number;
   transform: string;
 }
 
@@ -24,6 +24,7 @@ export interface WindowRecord {
   icon?: string;
   variant: WindowVariant;
   resizable: boolean;
+  hideTitlebar?: boolean;
 
   minimized: boolean;
   maximized: boolean;
@@ -43,6 +44,7 @@ export interface OpenWindowOptions {
   width?: number;
   height?: number;
   resizable?: boolean;
+  hideTitlebar?: boolean;
   content: React.ReactNode;
   /** Fired when the window is closed by any means (X button or `closeWindow`).
    * Used by modal dialogs to treat an X-close as a cancel. */
@@ -125,6 +127,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       icon: opts.icon,
       variant,
       resizable,
+      hideTitlebar: opts.hideTitlebar,
       minimized: false,
       maximized: false,
       zIndex: nextZIndex - 1,
@@ -156,7 +159,12 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       windows: state.windows.map((w) => {
         if (w.id === id) {
           const z = nextZIndex++;
-          return { ...w, zIndex: z, style: { ...w.style, zIndex: z }, minimized: false };
+          return {
+            ...w,
+            zIndex: z,
+            style: { ...w.style, zIndex: z },
+            minimized: false,
+          };
         }
         return w;
       }),
@@ -184,10 +192,10 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
       windows: state.windows.map((w) => {
         if (w.id !== id || w.maximized) return w;
         const restoreRect: WindowRect = {
-          left: String(w.style.left ?? ""),
-          top: String(w.style.top ?? ""),
-          width: String(w.style.width ?? ""),
-          height: String(w.style.height ?? ""),
+          left: w.style.left ?? "",
+          top: w.style.top ?? "",
+          width: w.style.width ?? "",
+          height: w.style.height ?? "",
           transform: String(w.style.transform ?? ""),
         };
         const z = nextZIndex++;
@@ -254,7 +262,9 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
 
   updateStyle: (id, style) => {
     set((state) => ({
-      windows: state.windows.map((w) => (w.id === id ? { ...w, style: { ...w.style, ...style } } : w)),
+      windows: state.windows.map((w) =>
+        w.id === id ? { ...w, style: { ...w.style, ...style } } : w,
+      ),
     }));
     window.dispatchEvent(new Event("webwine:windows-changed"));
   },

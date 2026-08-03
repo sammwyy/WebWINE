@@ -1,6 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { useWindowStore } from "@/state/windowStore";
-import type { RuntimeBridge, DirectoryEntry } from "@/core/bridge/runtime-bridge";
+import { WindowTitlebar } from "@/modules/windows/WindowTitlebar";
+import type {
+  RuntimeBridge,
+  DirectoryEntry,
+} from "@/core/bridge/runtime-bridge";
 import { basename } from "@/shared/lib/utils";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 import {
@@ -11,14 +15,25 @@ import {
   ArrowRotateClockwiseRegular,
   DeleteRegular,
   ChevronLeftFilled,
-  ChevronRightFilled
+  ChevronRightFilled,
+  FullScreenMaximizeRegular,
+  FullScreenMinimizeRegular,
 } from "@fluentui/react-icons";
 
-const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg"];
+const IMAGE_EXTENSIONS = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".ico",
+  ".svg",
+];
 
 function isImage(name: string) {
   const lower = name.toLowerCase();
-  return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext));
+  return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
 function dirname(path: string) {
@@ -35,7 +50,9 @@ export async function openPhotoViewer(path: string, runtime: RuntimeBridge) {
     runtime,
   );
 
-  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/places/pictures.webp`;
+  const icon =
+    resolved?.src ||
+    `${import.meta.env.BASE_URL}theme/icons/places/pictures.webp`;
 
   let winId = "";
 
@@ -44,6 +61,7 @@ export async function openPhotoViewer(path: string, runtime: RuntimeBridge) {
     icon,
     width: 800,
     height: 600,
+    hideTitlebar: true,
     content: (
       <PhotoViewerApp
         initialPath={path}
@@ -63,15 +81,17 @@ export function PhotoViewerApp({
   runtime: RuntimeBridge;
   winId?: () => string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<DirectoryEntry[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const isDragging = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
@@ -97,16 +117,22 @@ export function PhotoViewerApp({
         const entries = await runtime.listDir(dirPath);
         if (!alive) return;
 
-        let imgEntries = entries.filter(e => e.kind === "file" && isImage(e.name));
+        let imgEntries = entries.filter(
+          (e) => e.kind === "file" && isImage(e.name),
+        );
         imgEntries.sort((a, b) => a.name.localeCompare(b.name));
 
         if (targetFile) {
-          const singleFileEntry = imgEntries.find(e => e.name.toLowerCase() === targetFile);
+          const singleFileEntry = imgEntries.find(
+            (e) => e.name.toLowerCase() === targetFile,
+          );
           if (singleFileEntry) {
             imgEntries = [singleFileEntry];
           } else {
             // fallback if it somehow wasn't in listDir but we know the path
-            imgEntries = [{ name: targetFile, path: initialPath, kind: "file", size: 0 }];
+            imgEntries = [
+              { name: targetFile, path: initialPath, kind: "file", size: 0 },
+            ];
           }
         }
 
@@ -121,7 +147,9 @@ export function PhotoViewerApp({
 
     init();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [initialPath, runtime]);
 
   const currentImage = images[currentIndex];
@@ -131,36 +159,41 @@ export function PhotoViewerApp({
       setCurrentUrl(null);
       return;
     }
-    
+
     let alive = true;
     setLoading(true);
     setError(null);
     setZoom(1);
     setRotation(0);
     setPan({ x: 0, y: 0 });
-    
+
     if (winId) {
       const id = winId();
       if (id) {
-        useWindowStore.getState().setTitle(id, `${currentImage.name} - WebWINE: Photo Viewer`);
+        useWindowStore
+          .getState()
+          .setTitle(id, `${currentImage.name} - WebWINE: Photo Viewer`);
       }
     }
 
-    runtime.readFile(currentImage.path).then(bytes => {
-      if (!alive) return;
-      const blob = new Blob([bytes]);
-      const url = URL.createObjectURL(blob);
-      setCurrentUrl(url);
-      setLoading(false);
-    }).catch(err => {
-      if (!alive) return;
-      setError(String(err));
-      setLoading(false);
-    });
+    runtime
+      .readFile(currentImage.path)
+      .then((bytes) => {
+        if (!alive) return;
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        setCurrentUrl(url);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(String(err));
+        setLoading(false);
+      });
 
     return () => {
       alive = false;
-      setCurrentUrl(url => {
+      setCurrentUrl((url) => {
         if (url) URL.revokeObjectURL(url);
         return null;
       });
@@ -188,11 +221,28 @@ export function PhotoViewerApp({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [images]);
 
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const zoomFactor = 0.1;
-    if (e.deltaY < 0) setZoom(z => Math.min(z + zoomFactor, 5));
-    else setZoom(z => Math.max(z - zoomFactor, 0.1));
+    if (e.deltaY < 0) setZoom((z) => Math.min(z + zoomFactor, 5));
+    else setZoom((z) => Math.max(z - zoomFactor, 0.1));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -204,7 +254,7 @@ export function PhotoViewerApp({
     if (!isDragging.current) return;
     const dx = e.clientX - lastMousePos.current.x;
     const dy = e.clientY - lastMousePos.current.y;
-    setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
     lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -214,10 +264,11 @@ export function PhotoViewerApp({
 
   const deleteCurrentImage = async () => {
     if (!currentImage) return;
-    if (!confirm(`Are you sure you want to delete ${currentImage.name}?`)) return;
+    if (!confirm(`Are you sure you want to delete ${currentImage.name}?`))
+      return;
     try {
       await runtime.deleteNode(currentImage.path);
-      setImages(imgs => imgs.filter(img => img.path !== currentImage.path));
+      setImages((imgs) => imgs.filter((img) => img.path !== currentImage.path));
       if (images.length <= 1) {
         setCurrentIndex(0); // will be empty now
       } else if (currentIndex >= images.length - 1) {
@@ -229,28 +280,86 @@ export function PhotoViewerApp({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#111111] select-none font-[var(--system-font)] text-[#f2f2f2]">
-      {/* Top Title/Toolbar Area - Windows 10 Style */}
-      <div className="h-12 flex-none flex items-center justify-between bg-[#111111] px-4">
-        <div className="flex items-center gap-4 text-[13px] font-semibold text-[#f2f2f2]">
-          <span className="truncate max-w-[200px]" title={currentImage?.name}>
+    <div
+      ref={containerRef}
+      className="flex flex-col w-full h-full bg-[#111111] select-none font-[var(--system-font)] text-[#f2f2f2] overflow-hidden group"
+    >
+      {/* Top Title/Toolbar Area - Custom WindowTitlebar */}
+      <WindowTitlebar
+        windowId={winId?.() || ""}
+        className="!bg-[#111111] !border-[#222222] !border-b !h-12 !px-2 z-10"
+      >
+        <div className="flex items-center gap-1 window-controls">
+          <button
+            onClick={() => setRotation((r) => r - 90)}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Rotate Left"
+          >
+            <ArrowRotateCounterclockwiseRegular fontSize={18} />
+          </button>
+          <button
+            onClick={() => setRotation((r) => r + 90)}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Rotate Right"
+          >
+            <ArrowRotateClockwiseRegular fontSize={18} />
+          </button>
+          <div className="w-px h-5 bg-[#333333] mx-1" />
+          <button
+            onClick={() => setZoom((z) => Math.min(z + 0.25, 5))}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Zoom In"
+          >
+            <ZoomInRegular fontSize={18} />
+          </button>
+          <button
+            onClick={() => setZoom((z) => Math.max(z - 0.25, 0.1))}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOutRegular fontSize={18} />
+          </button>
+          <button
+            onClick={() => {
+              setZoom(1);
+              setRotation(0);
+              setPan({ x: 0, y: 0 });
+            }}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Fit to window"
+          >
+            <MaximizeRegular fontSize={18} />
+          </button>
+          <div className="w-px h-5 bg-[#333333] mx-1" />
+          <button
+            onClick={toggleFullscreen}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            title="Fullscreen"
+          >
+            {isFullscreen ? (
+              <FullScreenMinimizeRegular fontSize={18} />
+            ) : (
+              <FullScreenMaximizeRegular fontSize={18} />
+            )}
+          </button>
+          <button
+            onClick={deleteCurrentImage}
+            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#ff4444] text-[#f2f2f2] hover:text-white transition-colors"
+            title="Delete"
+          >
+            <DeleteRegular fontSize={18} />
+          </button>
+        </div>
+
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-none">
+          <span className="truncate max-w-[300px] text-[13px] font-semibold text-[#f2f2f2]">
             {currentImage?.name || "Photos"}
           </span>
         </div>
-        
-        <div className="flex items-center gap-1">
-          <button onClick={() => setZoom(z => Math.min(z + 0.25, 5))} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2]" title="Zoom In"><ZoomInRegular fontSize={20} /></button>
-          <button onClick={() => setZoom(z => Math.max(z - 0.25, 0.1))} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2]" title="Zoom Out"><ZoomOutRegular fontSize={20} /></button>
-          <button onClick={() => { setZoom(1); setRotation(0); setPan({x:0, y:0}); }} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2]" title="Fit to window"><MaximizeRegular fontSize={20} /></button>
-          <div className="w-px h-5 bg-[#333333] mx-1" />
-          <button onClick={() => setRotation(r => r - 90)} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2]" title="Rotate Left"><ArrowRotateCounterclockwiseRegular fontSize={20} /></button>
-          <button onClick={() => setRotation(r => r + 90)} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2]" title="Rotate Right"><ArrowRotateClockwiseRegular fontSize={20} /></button>
-          <button onClick={deleteCurrentImage} className="w-10 h-10 flex items-center justify-center rounded hover:bg-[#ff4444] text-[#f2f2f2] hover:text-white" title="Delete"><DeleteRegular fontSize={20} /></button>
-        </div>
-      </div>
+      </WindowTitlebar>
 
       {/* Main Image Area */}
-      <div 
+      <div
         className="flex-1 relative overflow-hidden bg-[#1a1a1a]"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -276,16 +385,18 @@ export function PhotoViewerApp({
         )}
         {currentUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <img 
-              src={currentUrl} 
+            <img
+              src={currentUrl}
               alt={currentImage?.name}
               draggable={false}
               style={{
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                transition: isDragging.current ? "none" : "transform 0.1s ease-out",
+                transition: isDragging.current
+                  ? "none"
+                  : "transform 0.1s ease-out",
                 maxHeight: "100%",
                 maxWidth: "100%",
-                objectFit: "contain"
+                objectFit: "contain",
               }}
             />
           </div>
@@ -294,18 +405,16 @@ export function PhotoViewerApp({
         {/* Floating Navigation Controls */}
         {images.length > 1 && (
           <>
-            <button 
-              onClick={prev} 
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 hover:opacity-100 transition-opacity"
-              style={{ opacity: 1 }} /* keeping visible on web since hover is hard */
+            <button
+              onClick={prev}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
               title="Previous"
             >
               <ChevronLeftFilled fontSize={24} />
             </button>
-            <button 
-              onClick={next} 
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 hover:opacity-100 transition-opacity"
-              style={{ opacity: 1 }}
+            <button
+              onClick={next}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
               title="Next"
             >
               <ChevronRightFilled fontSize={24} />

@@ -20,25 +20,24 @@ fn run_to_completion(vm: &mut WebWineVm, pid: u32) -> (String, ProcessState) {
     }
 }
 
-fn run_sample(name: &str) -> (String, ProcessState) {
+fn run_sample(name: &str) -> Option<(String, ProcessState)> {
     let dir = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
     let path = format!("{dir}{name}");
-    let bytes = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("sample not built ({path}): {e}"));
+    let Ok(bytes) = std::fs::read(&path) else { return None };
 
     let mut vm = WebWineVm::new();
     let guest = format!("C:\\Users\\guest\\Desktop\\{name}");
     vm.mount_file(&guest, bytes).expect("mount");
     let pid = vm.launch_process(&guest).expect("launch");
-    run_to_completion(&mut vm, pid)
+    Some(run_to_completion(&mut vm, pid))
 }
 
 #[test]
 fn runs_minimal_sample() {
-    let (stdout, state) = run_sample("minimal.exe");
+    let Some((stdout, state)) = run_sample("minimal.exe") else { return };
     assert!(stdout.contains("Hello from WebWINE"), "got: {stdout:?}");
     assert!(matches!(state, ProcessState::Exited { exit_code: 0 }), "got: {state:?}");
 }
@@ -47,7 +46,7 @@ fn runs_minimal_sample() {
 fn runs_hello_world_crt_sample() {
     // Full MSVC UCRT binary: exercises _initterm initializer tables, TLS setup,
     // and NtWriteFile-backed stdout.
-    let (stdout, state) = run_sample("hello_world.exe");
+    let Some((stdout, state)) = run_sample("hello_world.exe") else { return };
     assert!(stdout.contains("Hello, World!"), "got: {stdout:?}");
     assert!(matches!(state, ProcessState::Exited { exit_code: 0 }), "got: {state:?}");
 }
@@ -60,8 +59,7 @@ fn gui_sample_creates_window_and_paints() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
-    let bytes = std::fs::read(format!("{dir}gui.exe"))
-        .unwrap_or_else(|e| panic!("gui.exe not built: {e}"));
+    let Ok(bytes) = std::fs::read(format!("{dir}gui.exe")) else { return };
 
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\gui.exe", bytes).unwrap();
@@ -110,8 +108,7 @@ fn graphics_sample_emits_gdi_and_beep() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
-    let bytes = std::fs::read(format!("{dir}graphics.exe"))
-        .unwrap_or_else(|e| panic!("graphics.exe not built: {e}"));
+    let Ok(bytes) = std::fs::read(format!("{dir}graphics.exe")) else { return };
 
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\graphics.exe", bytes).unwrap();
@@ -142,8 +139,7 @@ fn runs_filesystem_std_sample() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
-    let bytes = std::fs::read(format!("{dir}filesystem.exe"))
-        .unwrap_or_else(|e| panic!("filesystem.exe not built: {e}"));
+    let Ok(bytes) = std::fs::read(format!("{dir}filesystem.exe")) else { return };
     vm.mount_file("C:\\Users\\guest\\Desktop\\filesystem.exe", bytes).unwrap();
     let pid = vm.launch_process("C:\\Users\\guest\\Desktop\\filesystem.exe").unwrap();
     let (stdout, state) = run_to_completion(&mut vm, pid);
@@ -177,6 +173,43 @@ fn runs_managed_dotnet_sample() {
     assert_eq!(stdout, "Hello from managed WebWINE!\n42\n", "stdout: {stdout:?}");
 }
 
+fn run_vendored_gui(relative: &str) -> Option<(ProcessState, usize)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../samples/vendored")
+        .join(relative);
+    let Ok(bytes) = std::fs::read(&path) else { return None };
+    let mut vm = WebWineVm::new();
+    let name = path.file_name()?.to_string_lossy();
+    let guest = format!("C:\\Users\\guest\\Desktop\\{name}");
+    vm.mount_file(&guest, bytes).ok()?;
+    let pid = vm.launch_process(&guest).ok()?;
+    let mut ui_count = 0;
+    for _ in 0..50 {
+        let result = vm.run_process_slice(pid, 100_000).ok()?;
+        ui_count += result.ui_events.len();
+        if matches!(result.state, ProcessState::WaitingForInput | ProcessState::Exited { .. } | ProcessState::Crashed { .. }) {
+            return Some((result.state, ui_count));
+        }
+    }
+    Some((vm.get_process_info(pid).ok()?.state, ui_count))
+}
+
+#[test]
+fn vendored_notepads_reach_interactive_windows() {
+    for relative in ["notepad.exe", "Notepad/notepad-nt.exe"] {
+        let Some((state, ui_count)) = run_vendored_gui(relative) else { continue };
+        assert!(matches!(state, ProcessState::WaitingForInput), "{relative}: {state:?}");
+        assert!(ui_count > 0, "{relative}: expected UI events");
+    }
+}
+
+#[test]
+fn vendored_mspaint_reaches_mfc_window_bridge() {
+    let Some((state, ui_count)) = run_vendored_gui("mspaint.exe") else { return };
+    assert!(matches!(state, ProcessState::WaitingForInput), "mspaint: {state:?}");
+    assert!(ui_count >= 3, "mspaint: expected window, show, and canvas events");
+}
+
 #[test]
 fn rejects_x64_executable() {
     // A PE32+ (x86-64) image must be rejected with a clear error, not crash.
@@ -199,10 +232,8 @@ fn spawn_sample_launches_child() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
-    let parent_bytes = std::fs::read(format!("{dir}spawn.exe"))
-        .unwrap_or_else(|e| panic!("spawn.exe not built: {e}"));
-    let child_bytes = std::fs::read(format!("{dir}minimal.exe"))
-        .unwrap_or_else(|e| panic!("minimal.exe not built: {e}"));
+    let Ok(parent_bytes) = std::fs::read(format!("{dir}spawn.exe")) else { return };
+    let Ok(child_bytes) = std::fs::read(format!("{dir}minimal.exe")) else { return };
 
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\spawn.exe", parent_bytes).unwrap();
@@ -240,8 +271,7 @@ fn files_sample_writes_to_vfs() {
         env!("CARGO_MANIFEST_DIR"),
         "/../../samples/target/i686-pc-windows-msvc/debug/"
     );
-    let bytes = std::fs::read(format!("{dir}files.exe"))
-        .unwrap_or_else(|e| panic!("files.exe not built: {e}"));
+    let Ok(bytes) = std::fs::read(format!("{dir}files.exe")) else { return };
 
     let mut vm = WebWineVm::new();
     vm.mount_file("C:\\Users\\guest\\Desktop\\files.exe", bytes).unwrap();

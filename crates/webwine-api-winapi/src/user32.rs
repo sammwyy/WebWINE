@@ -18,6 +18,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "MessageBoxW", msgbox_w),
         ("user32.dll", "MessageBoxExA", msgbox_a),
         ("user32.dll", "MessageBoxExW", msgbox_w),
+        ("user32.dll", "MessageBoxIndirectA", msgbox_indirect_a),
+        ("user32.dll", "MessageBoxIndirectW", msgbox_indirect_w),
         ("user32.dll", "MessageBeep", |c| {
             c.ui_events.push(UiEvent::Beep {
                 freq: 800,
@@ -107,6 +109,19 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("user32.dll", "GetClientRect", get_client_rect),
+        ("user32.dll", "SetRect", set_rect),
+        ("user32.dll", "SetRectEmpty", set_rect_empty),
+        ("user32.dll", "GetSysColor", |c| {
+            // COLOR_WINDOW / COLOR_BTNFACE / COLOR_WINDOWTEXT defaults.
+            let color = match c.arg(0) {
+                5 => 0x00FF_FFFF,
+                15 => 0x00F0_F0F0,
+                8 => 0x0000_0000,
+                _ => 0x00C0_C0C0,
+            };
+            c.ret_stdcall(color, 1);
+            Handled::Ok
+        }),
         ("user32.dll", "InvalidateRect", invalidate_rect),
         ("user32.dll", "PostMessageA", |c| {
             c.ret_stdcall(1, 4);
@@ -120,6 +135,32 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 4);
             Handled::Ok
         }),
+        ("user32.dll", "SendMessageW", |c| {
+            c.ret_stdcall(0, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "IsWindow", |c| {
+            let exists = c.gui.windows.contains_key(&c.arg(0));
+            c.ret_stdcall(exists as u32, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "CharNextA", char_next_a),
+        ("user32.dll", "CharNextW", char_next_w),
+        ("user32.dll", "CharPrevA", char_prev_a),
+        ("user32.dll", "CharPrevW", char_prev_w),
+        ("user32.dll", "CharUpperA", char_upper_a),
+        ("user32.dll", "CharUpperW", char_upper_w),
+        ("user32.dll", "CharLowerA", char_lower_a),
+        ("user32.dll", "CharLowerW", char_lower_w),
+        ("user32.dll", "DdeInitializeA", dde_initialize),
+        ("user32.dll", "DdeInitializeW", dde_initialize),
+        ("user32.dll", "DdeUninitialize", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("user32.dll", "DdeCreateStringHandleA", dde_create_string_handle),
+        ("user32.dll", "DdeCreateStringHandleW", dde_create_string_handle),
+        ("user32.dll", "DdeFreeStringHandle", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "DdeKeepStringHandle", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "DdeNameService", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("user32.dll", "DdeGetLastError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
         // common resource / paint stubs
         ("user32.dll", "LoadCursorA", |c| {
             c.ret_stdcall(1, 2);
@@ -137,24 +178,26 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
-        ("user32.dll", "LoadStringA", |c| {
-            let out = c.arg(2);
-            let max = c.arg(3);
-            if out != 0 && max > 0 {
-                let _ = c.memory.write_u8(out, 0);
-            }
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
-        ("user32.dll", "LoadStringW", |c| {
-            let out = c.arg(2);
-            let max = c.arg(3);
-            if out != 0 && max > 0 {
-                let _ = c.memory.write_u16(out, 0);
-            }
-            c.ret_stdcall(0, 4);
-            Handled::Ok
-        }),
+        ("user32.dll", "LoadAcceleratorsA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "LoadAcceleratorsW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "TranslateAcceleratorA", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "TranslateAcceleratorW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "LoadMenuA", load_menu),
+        ("user32.dll", "LoadMenuW", load_menu),
+        ("user32.dll", "GetSystemMenu", get_system_menu),
+        ("user32.dll", "SetCursor", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("user32.dll", "SetWindowLongA", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "SetWindowLongW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "GetWindowLongA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "GetWindowLongW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "GetClassLongA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "GetClassLongW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
+        ("user32.dll", "LoadBitmapA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "LoadBitmapW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
+        ("user32.dll", "LoadImageA", |c| { c.ret_stdcall(1, 6); Handled::Ok }),
+        ("user32.dll", "LoadImageW", |c| { c.ret_stdcall(1, 6); Handled::Ok }),
+        ("user32.dll", "LoadStringA", load_string_a),
+        ("user32.dll", "LoadStringW", load_string_w),
         ("user32.dll", "GetSystemMetrics", |c| {
             // SM_CXSCREEN=0, SM_CYSCREEN=1, SM_CXFULLSCREEN=16, SM_CYFULLSCREEN=17.
             let v = match c.arg(0) {
@@ -175,7 +218,31 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("user32.dll", "GetDC", |c| {
             let h = c.arg(0);
-            c.ret_stdcall(h, 1);
+            c.ret_stdcall(if h == 0 { 1 } else { h }, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetDesktopWindow", |c| {
+            c.ret_stdcall(0x0001_0000, 0);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetKeyboardLayout", |c| {
+            c.ret_stdcall(0x0409_0409, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetWinEventHook", |c| {
+            c.ret_stdcall(1, 7);
+            Handled::Ok
+        }),
+        ("user32.dll", "UnhookWinEvent", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetActiveWindow", |c| {
+            c.ret_stdcall(c.arg(0), 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetProcessDPIAware", |c| {
+            c.ret_stdcall(1, 0);
             Handled::Ok
         }),
         ("user32.dll", "GetShellWindow", |c| {
@@ -251,6 +318,162 @@ pub fn register(r: &mut WinApiRegistry) {
     }
 }
 
+fn char_next_a(c: &mut ApiContext) -> Handled {
+    let ptr = c.arg(0);
+    let next = if ptr != 0 && c.memory.read_u8(ptr).unwrap_or(0) != 0 { ptr + 1 } else { ptr };
+    c.ret_stdcall(next, 1);
+    Handled::Ok
+}
+
+fn char_next_w(c: &mut ApiContext) -> Handled {
+    let ptr = c.arg(0);
+    let next = if ptr != 0 && c.memory.read_u16(ptr).unwrap_or(0) != 0 { ptr + 2 } else { ptr };
+    c.ret_stdcall(next, 1);
+    Handled::Ok
+}
+
+fn char_prev_a(c: &mut ApiContext) -> Handled {
+    let start = c.arg(0);
+    let current = c.arg(1);
+    c.ret_stdcall(if current > start { current - 1 } else { start }, 2);
+    Handled::Ok
+}
+
+fn char_prev_w(c: &mut ApiContext) -> Handled {
+    let start = c.arg(0);
+    let current = c.arg(1);
+    c.ret_stdcall(if current >= start + 2 { current - 2 } else { start }, 2);
+    Handled::Ok
+}
+
+fn char_upper_a(c: &mut ApiContext) -> Handled { change_case_a(c, true) }
+fn char_lower_a(c: &mut ApiContext) -> Handled { change_case_a(c, false) }
+fn char_upper_w(c: &mut ApiContext) -> Handled { change_case_w(c, true) }
+fn char_lower_w(c: &mut ApiContext) -> Handled { change_case_w(c, false) }
+
+fn change_case_a(c: &mut ApiContext, upper: bool) -> Handled {
+    let value = c.arg(0);
+    if value <= 0xFFFF {
+        let byte = value as u8;
+        let changed = if upper { byte.to_ascii_uppercase() } else { byte.to_ascii_lowercase() };
+        c.ret_stdcall(changed as u32, 1);
+    } else {
+        let original = c.cstr(value);
+        let changed = if upper { original.to_ascii_uppercase() } else { original.to_ascii_lowercase() };
+        let mut bytes = changed.into_bytes();
+        bytes.push(0);
+        let _ = c.memory.write_bytes(value, &bytes);
+        c.ret_stdcall(value, 1);
+    }
+    Handled::Ok
+}
+
+fn change_case_w(c: &mut ApiContext, upper: bool) -> Handled {
+    let value = c.arg(0);
+    if value <= 0xFFFF {
+        let character = char::from_u32(value).unwrap_or('\0');
+        let changed = if upper { character.to_uppercase().next() } else { character.to_lowercase().next() }
+            .unwrap_or(character) as u32;
+        c.ret_stdcall(changed, 1);
+    } else {
+        let original = c.wstr(value);
+        let changed = if upper { original.to_uppercase() } else { original.to_lowercase() };
+        for (index, unit) in changed.encode_utf16().chain(std::iter::once(0)).enumerate() {
+            let _ = c.memory.write_u16(value + index as u32 * 2, unit);
+        }
+        c.ret_stdcall(value, 1);
+    }
+    Handled::Ok
+}
+
+fn dde_initialize(c: &mut ApiContext) -> Handled {
+    let instance = c.arg(0);
+    if instance != 0 { let _ = c.memory.write_u32(instance, 1); }
+    c.ret_stdcall(0, 4);
+    Handled::Ok
+}
+
+fn dde_create_string_handle(c: &mut ApiContext) -> Handled {
+    let handle = c.arg(1);
+    c.ret_stdcall(if handle == 0 { 1 } else { handle }, 3);
+    Handled::Ok
+}
+
+fn load_string_a(c: &mut ApiContext) -> Handled {
+    let id = c.arg(1);
+    let value = c.strings.get(&id).cloned().unwrap_or_default();
+    c.logs.log(webwine_api::logs::LogLevel::Trace, "api", &format!("LoadStringA id={id} -> {value:?}"), Some(c.pid));
+    let out = c.arg(2);
+    let max = c.arg(3) as usize;
+    let count = value.len().min(max.saturating_sub(1));
+    if out != 0 && max > 0 {
+        let _ = c.memory.write_bytes(out, &value.as_bytes()[..count]);
+        let _ = c.memory.write_u8(out + count as u32, 0);
+    }
+    c.ret_stdcall(count as u32, 4);
+    Handled::Ok
+}
+
+fn load_string_w(c: &mut ApiContext) -> Handled {
+    let id = c.arg(1);
+    let value = c.strings.get(&id).cloned().unwrap_or_default();
+    c.logs.log(webwine_api::logs::LogLevel::Trace, "api", &format!("LoadStringW id={id} -> {value:?}"), Some(c.pid));
+    let out = c.arg(2);
+    let max = c.arg(3) as usize;
+    let units: Vec<u16> = value.encode_utf16().take(max.saturating_sub(1)).collect();
+    if out != 0 && max > 0 {
+        for (index, unit) in units.iter().enumerate() {
+            let _ = c.memory.write_u16(out + index as u32 * 2, *unit);
+        }
+        let _ = c.memory.write_u16(out + units.len() as u32 * 2, 0);
+    }
+    c.ret_stdcall(units.len() as u32, 4);
+    Handled::Ok
+}
+
+fn load_menu(c: &mut ApiContext) -> Handled {
+    let handle = c.gui.next_menu;
+    c.gui.next_menu += 1;
+    c.gui.menus.insert(handle, Vec::new());
+    c.ret_stdcall(handle, 2);
+    Handled::Ok
+}
+
+fn get_system_menu(c: &mut ApiContext) -> Handled {
+    if c.arg(1) != 0 {
+        c.ret_stdcall(0, 2);
+        return Handled::Ok;
+    }
+    let handle = c.gui.next_menu;
+    c.gui.next_menu += 1;
+    c.gui.menus.entry(handle).or_default();
+    c.ret_stdcall(handle, 2);
+    Handled::Ok
+}
+
+fn set_rect(ctx: &mut ApiContext) -> Handled {
+    let rect = ctx.arg(0);
+    if rect != 0 {
+        let _ = ctx.memory.write_u32(rect, ctx.arg(1));
+        let _ = ctx.memory.write_u32(rect + 4, ctx.arg(2));
+        let _ = ctx.memory.write_u32(rect + 8, ctx.arg(3));
+        let _ = ctx.memory.write_u32(rect + 12, ctx.arg(4));
+    }
+    ctx.ret_stdcall((rect != 0) as u32, 5);
+    Handled::Ok
+}
+
+fn set_rect_empty(ctx: &mut ApiContext) -> Handled {
+    let rect = ctx.arg(0);
+    if rect != 0 {
+        for offset in [0, 4, 8, 12] {
+            let _ = ctx.memory.write_u32(rect + offset, 0);
+        }
+    }
+    ctx.ret_stdcall((rect != 0) as u32, 1);
+    Handled::Ok
+}
+
 fn msgbox_a(ctx: &mut ApiContext) -> Handled {
     let text = ctx.cstr(ctx.arg(1));
     let title = ctx.cstr(ctx.arg(2));
@@ -263,13 +486,31 @@ fn msgbox_w(ctx: &mut ApiContext) -> Handled {
     msgbox_common(ctx, title, text, ctx.arg(3))
 }
 
+fn msgbox_indirect_a(ctx: &mut ApiContext) -> Handled {
+    let params = ctx.arg(0);
+    let text = ctx.cstr(ctx.memory.read_u32(params + 12).unwrap_or(0));
+    let title = ctx.cstr(ctx.memory.read_u32(params + 16).unwrap_or(0));
+    msgbox_common_n(ctx, title, text, ctx.memory.read_u32(params + 20).unwrap_or(0), 1)
+}
+
+fn msgbox_indirect_w(ctx: &mut ApiContext) -> Handled {
+    let params = ctx.arg(0);
+    let text = ctx.wstr(ctx.memory.read_u32(params + 12).unwrap_or(0));
+    let title = ctx.wstr(ctx.memory.read_u32(params + 16).unwrap_or(0));
+    msgbox_common_n(ctx, title, text, ctx.memory.read_u32(params + 20).unwrap_or(0), 1)
+}
+
 /// MessageBox blocks the guest until the user clicks a button (modal). On the
 /// first call it shows the box and suspends; the host posts the clicked button
 /// via `post_dialog_reply`, which resumes the call to return that ID.
 fn msgbox_common(ctx: &mut ApiContext, title: String, text: String, style: u32) -> Handled {
+    msgbox_common_n(ctx, title, text, style, 4)
+}
+
+fn msgbox_common_n(ctx: &mut ApiContext, title: String, text: String, style: u32, nargs: u32) -> Handled {
     if let Some(reply) = ctx.gui.dialog_reply.take() {
         ctx.gui.dialog_pending = false;
-        ctx.ret_stdcall(reply.button, 4);
+        ctx.ret_stdcall(reply.button, nargs);
         return Handled::Ok;
     }
     if ctx.gui.dialog_pending {

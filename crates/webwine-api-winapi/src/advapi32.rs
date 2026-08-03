@@ -13,21 +13,45 @@ pub fn register(r: &mut WinApiRegistry) {
         ("advapi32.dll", "RegOpenKeyExW", |c| reg_open_ex(c, true)),
         ("advapi32.dll", "RegOpenKeyA", |c| reg_open(c, false)),
         ("advapi32.dll", "RegOpenKeyW", |c| reg_open(c, true)),
-        ("advapi32.dll", "RegCreateKeyExA", |c| reg_create_ex(c, false)),
-        ("advapi32.dll", "RegCreateKeyExW", |c| reg_create_ex(c, true)),
+        ("advapi32.dll", "RegCreateKeyExA", |c| {
+            reg_create_ex(c, false)
+        }),
+        ("advapi32.dll", "RegCreateKeyExW", |c| {
+            reg_create_ex(c, true)
+        }),
         ("advapi32.dll", "RegCreateKeyA", |c| reg_create(c, false)),
         ("advapi32.dll", "RegCreateKeyW", |c| reg_create(c, true)),
-        ("advapi32.dll", "RegQueryValueExA", |c| reg_query_value_ex(c, false)),
-        ("advapi32.dll", "RegQueryValueExW", |c| reg_query_value_ex(c, true)),
-        ("advapi32.dll", "RegSetValueExA", |c| reg_set_value_ex(c, false)),
-        ("advapi32.dll", "RegSetValueExW", |c| reg_set_value_ex(c, true)),
-        ("advapi32.dll", "RegDeleteValueA", |c| reg_delete_value(c, false)),
-        ("advapi32.dll", "RegDeleteValueW", |c| reg_delete_value(c, true)),
-        ("advapi32.dll", "RegDeleteKeyA", |c| reg_delete_key(c, false)),
+        ("advapi32.dll", "RegQueryValueExA", |c| {
+            reg_query_value_ex(c, false)
+        }),
+        ("advapi32.dll", "RegQueryValueExW", |c| {
+            reg_query_value_ex(c, true)
+        }),
+        ("advapi32.dll", "RegSetValueExA", |c| {
+            reg_set_value_ex(c, false)
+        }),
+        ("advapi32.dll", "RegSetValueExW", |c| {
+            reg_set_value_ex(c, true)
+        }),
+        ("advapi32.dll", "RegDeleteValueA", |c| {
+            reg_delete_value(c, false)
+        }),
+        ("advapi32.dll", "RegDeleteValueW", |c| {
+            reg_delete_value(c, true)
+        }),
+        ("advapi32.dll", "RegDeleteKeyA", |c| {
+            reg_delete_key(c, false)
+        }),
         ("advapi32.dll", "RegDeleteKeyW", |c| reg_delete_key(c, true)),
-        ("advapi32.dll", "RegEnumKeyExA", |c| reg_enum_key_ex(c, false)),
-        ("advapi32.dll", "RegEnumKeyExW", |c| reg_enum_key_ex(c, true)),
-        ("advapi32.dll", "RegEnumValueA", |c| reg_enum_value(c, false)),
+        ("advapi32.dll", "RegEnumKeyExA", |c| {
+            reg_enum_key_ex(c, false)
+        }),
+        ("advapi32.dll", "RegEnumKeyExW", |c| {
+            reg_enum_key_ex(c, true)
+        }),
+        ("advapi32.dll", "RegEnumValueA", |c| {
+            reg_enum_value(c, false)
+        }),
         ("advapi32.dll", "RegEnumValueW", |c| reg_enum_value(c, true)),
         ("advapi32.dll", "RegQueryInfoKeyA", reg_query_info_key),
         ("advapi32.dll", "RegQueryInfoKeyW", reg_query_info_key),
@@ -45,8 +69,55 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(ERROR_SUCCESS, 1);
             Handled::Ok
         }),
-        ("advapi32.dll", "GetUserNameA", crate::kernel32::get_user_name_a),
-        ("advapi32.dll", "GetUserNameW", crate::kernel32::get_user_name_w),
+        (
+            "advapi32.dll",
+            "GetUserNameA",
+            crate::kernel32::get_user_name_a,
+        ),
+        (
+            "advapi32.dll",
+            "GetUserNameW",
+            crate::kernel32::get_user_name_w,
+        ),
+        ("advapi32.dll", "EventRegister", |c| {
+            if c.arg(3) != 0 { let _ = c.memory.write_u32(c.arg(3), 1); }
+            c.ret_stdcall(ERROR_SUCCESS, 4);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "EventUnregister", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 1);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "EventWrite", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "EventEnabled", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "StartTraceW", |c| {
+            if c.arg(0) != 0 { let _ = c.memory.write_u32(c.arg(0), 1); }
+            c.ret_stdcall(ERROR_SUCCESS, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "StartTraceA", |c| {
+            if c.arg(0) != 0 { let _ = c.memory.write_u32(c.arg(0), 1); }
+            c.ret_stdcall(ERROR_SUCCESS, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "StopTraceW", |c| { c.ret_stdcall(ERROR_SUCCESS, 3); Handled::Ok }),
+        ("advapi32.dll", "StopTraceA", |c| { c.ret_stdcall(ERROR_SUCCESS, 3); Handled::Ok }),
+        ("advapi32.dll", "EnableTraceEx", |c| { c.ret_stdcall(ERROR_SUCCESS, 8); Handled::Ok }),
+        ("advapi32.dll", "EnableTraceEx2", |c| { c.ret_stdcall(ERROR_SUCCESS, 8); Handled::Ok }),
+        ("advapi32.dll", "RegDeleteKeyExW", |c| {
+            c.ret_stdcall(ERROR_FILE_NOT_FOUND, 4);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "RegDeleteKeyExA", |c| {
+            c.ret_stdcall(ERROR_FILE_NOT_FOUND, 4);
+            Handled::Ok
+        }),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -131,7 +202,21 @@ fn reg_open_ex(c: &mut ApiContext, wide: bool) -> Handled {
     let hkey = c.arg(0);
     let sub = read_str(c, c.arg(1), wide);
     let phk = c.arg(4);
-    match c.registry.open(hkey, &sub) {
+    let base = c
+        .registry
+        .path_of_handle(hkey)
+        .unwrap_or_else(|| format!("0x{hkey:08X}"));
+    let opened = c.registry.open(hkey, &sub);
+    c.logs.log(
+        webwine_api::logs::LogLevel::Trace,
+        "api",
+        &format!(
+            "RegOpenKeyEx {base}\\{sub} -> {}",
+            if opened.is_some() { "OK" } else { "MISS" }
+        ),
+        Some(c.pid),
+    );
+    match opened {
         Some(h) => {
             if phk != 0 {
                 let _ = c.memory.write_u32(phk, h);
@@ -174,7 +259,11 @@ fn reg_create_ex(c: &mut ApiContext, wide: bool) -> Handled {
     let hkey = c.arg(0);
     let sub = read_str(c, c.arg(1), wide);
     let existed = c.registry.path_of_handle(hkey).map(|base| {
-        let full = if sub.is_empty() { base } else { format!("{base}\\{sub}") };
+        let full = if sub.is_empty() {
+            base
+        } else {
+            format!("{base}\\{sub}")
+        };
         c.registry.key_exists(&full)
     });
     let phk = c.arg(7);
@@ -225,7 +314,23 @@ fn reg_query_value_ex(c: &mut ApiContext, wide: bool) -> Handled {
     let data_ptr = c.arg(4);
     let cb_ptr = c.arg(5);
 
-    let found = c.registry.query(hkey, &name).map(|v| (v.type_id(), value_out_bytes(v, wide)));
+    let found = c
+        .registry
+        .query(hkey, &name)
+        .map(|v| (v.type_id(), value_out_bytes(v, wide)));
+    let base = c
+        .registry
+        .path_of_handle(hkey)
+        .unwrap_or_else(|| format!("0x{hkey:08X}"));
+    c.logs.log(
+        webwine_api::logs::LogLevel::Trace,
+        "api",
+        &format!(
+            "RegQueryValueEx {base}\\\\{name} -> {}",
+            if found.is_some() { "OK" } else { "MISS" }
+        ),
+        Some(c.pid),
+    );
     let Some((tid, bytes)) = found else {
         c.ret_stdcall(ERROR_FILE_NOT_FOUND, 6);
         return Handled::Ok;
@@ -234,7 +339,11 @@ fn reg_query_value_ex(c: &mut ApiContext, wide: bool) -> Handled {
     if type_ptr != 0 {
         let _ = c.memory.write_u32(type_ptr, tid);
     }
-    let avail = if cb_ptr != 0 { c.memory.read_u32(cb_ptr).unwrap_or(0) } else { 0 };
+    let avail = if cb_ptr != 0 {
+        c.memory.read_u32(cb_ptr).unwrap_or(0)
+    } else {
+        0
+    };
     let need = bytes.len() as u32;
     let code = if data_ptr == 0 {
         // Size query only.
@@ -259,7 +368,9 @@ fn reg_set_value_ex(c: &mut ApiContext, wide: bool) -> Handled {
     let data_ptr = c.arg(4);
     let cb = c.arg(5);
     let raw = if data_ptr != 0 && cb > 0 {
-        c.memory.read_bytes(data_ptr, cb as usize).unwrap_or_default()
+        c.memory
+            .read_bytes(data_ptr, cb as usize)
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -279,11 +390,17 @@ fn reg_set_value_ex(c: &mut ApiContext, wide: bool) -> Handled {
             RegValue::Qword(u64::from_le_bytes(b))
         }
         REG_SZ | REG_EXPAND_SZ => {
-            let s = if wide { decode_wide(&raw) } else {
+            let s = if wide {
+                decode_wide(&raw)
+            } else {
                 let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
                 String::from_utf8_lossy(&raw[..end]).into_owned()
             };
-            if dtype == REG_EXPAND_SZ { RegValue::ExpandSz(s) } else { RegValue::Sz(s) }
+            if dtype == REG_EXPAND_SZ {
+                RegValue::ExpandSz(s)
+            } else {
+                RegValue::Sz(s)
+            }
         }
         REG_MULTI_SZ => {
             let parts: Vec<String> = if wide {
@@ -305,7 +422,10 @@ fn reg_set_value_ex(c: &mut ApiContext, wide: bool) -> Handled {
 }
 
 fn decode_multi_wide(b: &[u8]) -> Vec<String> {
-    let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let units: Vec<u16> = b
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
     let mut out = Vec::new();
     let mut cur = Vec::new();
     for u in units {
@@ -325,7 +445,11 @@ fn decode_multi_wide(b: &[u8]) -> Vec<String> {
 fn reg_delete_value(c: &mut ApiContext, wide: bool) -> Handled {
     let hkey = c.arg(0);
     let name = read_str(c, c.arg(1), wide);
-    let code = if c.registry.delete_value(hkey, &name) { ERROR_SUCCESS } else { ERROR_FILE_NOT_FOUND };
+    let code = if c.registry.delete_value(hkey, &name) {
+        ERROR_SUCCESS
+    } else {
+        ERROR_FILE_NOT_FOUND
+    };
     c.ret_stdcall(code, 2);
     Handled::Ok
 }
@@ -333,7 +457,11 @@ fn reg_delete_value(c: &mut ApiContext, wide: bool) -> Handled {
 fn reg_delete_key(c: &mut ApiContext, wide: bool) -> Handled {
     let hkey = c.arg(0);
     let sub = read_str(c, c.arg(1), wide);
-    let code = if c.registry.delete_subkey(hkey, &sub) { ERROR_SUCCESS } else { ERROR_FILE_NOT_FOUND };
+    let code = if c.registry.delete_subkey(hkey, &sub) {
+        ERROR_SUCCESS
+    } else {
+        ERROR_FILE_NOT_FOUND
+    };
     c.ret_stdcall(code, 2);
     Handled::Ok
 }
@@ -346,7 +474,11 @@ fn reg_enum_key_ex(c: &mut ApiContext, wide: bool) -> Handled {
     let cch_ptr = c.arg(3);
     match c.registry.enum_key(hkey, index) {
         Some(name) => {
-            let cap = if cch_ptr != 0 { c.memory.read_u32(cch_ptr).unwrap_or(0) as usize } else { 0 };
+            let cap = if cch_ptr != 0 {
+                c.memory.read_u32(cch_ptr).unwrap_or(0) as usize
+            } else {
+                0
+            };
             let written = write_str_capped(c, name_ptr, &name, wide, cap);
             if cch_ptr != 0 {
                 let _ = c.memory.write_u32(cch_ptr, written as u32);
@@ -375,7 +507,11 @@ fn reg_enum_value(c: &mut ApiContext, wide: bool) -> Handled {
     let tid = value.type_id();
     let bytes = value_out_bytes(&value, wide);
 
-    let cap = if cch_ptr != 0 { c.memory.read_u32(cch_ptr).unwrap_or(0) as usize } else { 0 };
+    let cap = if cch_ptr != 0 {
+        c.memory.read_u32(cch_ptr).unwrap_or(0) as usize
+    } else {
+        0
+    };
     let written = write_str_capped(c, name_ptr, &name, wide, cap);
     if cch_ptr != 0 {
         let _ = c.memory.write_u32(cch_ptr, written as u32);
@@ -385,7 +521,11 @@ fn reg_enum_value(c: &mut ApiContext, wide: bool) -> Handled {
     }
     let need = bytes.len() as u32;
     if data_ptr != 0 {
-        let avail = if cb_ptr != 0 { c.memory.read_u32(cb_ptr).unwrap_or(0) } else { 0 };
+        let avail = if cb_ptr != 0 {
+            c.memory.read_u32(cb_ptr).unwrap_or(0)
+        } else {
+            0
+        };
         if cb_ptr != 0 && avail < need {
             if cb_ptr != 0 {
                 let _ = c.memory.write_u32(cb_ptr, need);
@@ -410,7 +550,12 @@ fn reg_query_info_key(c: &mut ApiContext) -> Handled {
     let (subkeys, values) = c
         .registry
         .path_of_handle(hkey)
-        .map(|p| (c.registry.subkeys(&p).len() as u32, c.registry.values_of(&p).map(|v| v.len()).unwrap_or(0) as u32))
+        .map(|p| {
+            (
+                c.registry.subkeys(&p).len() as u32,
+                c.registry.values_of(&p).map(|v| v.len()).unwrap_or(0) as u32,
+            )
+        })
         .unwrap_or((0, 0));
     let sub_ptr = c.arg(4);
     let val_ptr = c.arg(7);

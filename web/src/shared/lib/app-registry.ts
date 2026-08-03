@@ -112,7 +112,7 @@ AppRegistry.registerApp(
   {
     name: "Photo Viewer",
     exePath: "C:\\Windows\\System32\\WWPhotoViewer.exe",
-    icon: "places/pictures.webp",
+    icon: "apps/photoviewer.webp",
     action: "photo-viewer",
     extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"],
   },
@@ -123,7 +123,7 @@ AppRegistry.registerApp(
   {
     name: "Media Player",
     exePath: "C:\\Windows\\System32\\WWMediaPlayer.exe",
-    icon: "places/video.webp",
+    icon: "apps/mediaplayer.webp",
     action: "media-player",
     extensions: ["mp3", "mp4", "webm", "ogg", "wav"],
   },

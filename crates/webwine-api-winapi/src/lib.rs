@@ -6,6 +6,7 @@ pub mod dbghelp;
 pub mod extra_dlls;
 pub mod gdi32;
 pub mod gdiplus;
+pub mod imm32;
 pub mod kernel32;
 pub mod mfc42u;
 pub mod msvcrt;
@@ -23,6 +24,7 @@ pub mod version;
 pub mod vcruntime140;
 pub mod wininet;
 pub mod winmm;
+pub mod winspool;
 pub mod ws2_32;
 
 pub use webwine_api::winapi::{ApiContext, Handled, HandlerFn, WinApiRegistry};
@@ -37,6 +39,7 @@ pub fn register(r: &mut WinApiRegistry) {
     gdi32::register(r);
     shdocvw::register(r);
     ole32::register(r);
+    imm32::register(r);
     mfc42u::register(r);
     kernel32::register(r);
     msvcrt::register(r);
@@ -46,5 +49,6 @@ pub fn register(r: &mut WinApiRegistry) {
     ntdll::register(r);
     user32::register(r);
     winmm::register(r);
+    winspool::register(r);
     extra_dlls::register(r);
 }

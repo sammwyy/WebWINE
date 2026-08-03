@@ -1,50 +1,23 @@
 import { useEffect, useState, useRef } from "react";
+import * as jsmediatags from "jsmediatags";
 import { useWindowStore } from "@/state/windowStore";
-import type { RuntimeBridge, DirectoryEntry } from "@/core/bridge/runtime-bridge";
+import { WindowTitlebar } from "@/modules/windows/WindowTitlebar";
+import type {
+  RuntimeBridge,
+  DirectoryEntry,
+} from "@/core/bridge/runtime-bridge";
+import { NavigationRegular, MoviesAndTvRegular } from "@fluentui/react-icons";
 import { basename } from "@/shared/lib/utils";
-import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
-import { 
-  NavigationRegular,
-  MoviesAndTvRegular,
-  MusicNote1Regular,
-  VideoRegular,
-  PlayRegular
-} from "@fluentui/react-icons";
 
-function dirname(path: string) {
-  const parts = path.split("\\");
-  parts.pop();
-  return parts.join("\\") || path;
-}
-
-const VIDEO_EXTS = [".mp4", ".webm", ".mkv", ".avi", ".mov"];
-const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".flac", ".m4a"];
-const MEDIA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS];
-
-function isMedia(name: string) {
-  const lower = name.toLowerCase();
-  return MEDIA_EXTS.some(ext => lower.endsWith(ext));
-}
-
-function isVideoFile(name: string) {
-  const lower = name.toLowerCase();
-  return VIDEO_EXTS.some(ext => lower.endsWith(ext));
-}
+// Refactored sub-components & utils
+import { dirname, isMedia, isVideoFile } from "./lib/utils";
+import { MediaSidebar } from "./components/MediaSidebar";
+import { AudioOverlay } from "./components/AudioOverlay";
+import { MediaControls } from "./components/MediaControls";
 
 export async function openMediaPlayer(path: string, runtime: RuntimeBridge) {
   const name = path ? basename(path) : "Media Player";
-
-  const isVideo = isVideoFile(name);
-  const defaultIcon = isVideo 
-    ? `${import.meta.env.BASE_URL}theme/icons/places/video.webp`
-    : `${import.meta.env.BASE_URL}theme/icons/places/music.webp`;
-
-  const resolved = await resolveIcon(
-    { name, path, kind: "file", size: 0 },
-    runtime,
-  );
-
-  const icon = resolved?.src || defaultIcon;
+  const icon = `${import.meta.env.BASE_URL}theme/icons/apps/mediaplayer.webp`;
 
   let winId = "";
 
@@ -53,6 +26,7 @@ export async function openMediaPlayer(path: string, runtime: RuntimeBridge) {
     icon,
     width: 850,
     height: 550,
+    hideTitlebar: true,
     content: (
       <MediaPlayerApp
         initialPath={path}
@@ -79,6 +53,24 @@ export function MediaPlayerApp({
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Media Controls State
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [metadata, setMetadata] = useState<{
+    title?: string;
+    artist?: string;
+    album?: string;
+    pictureUrl?: string;
+  } | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const currentMedia = playlist[currentIndex];
   const isVideo = currentMedia ? isVideoFile(currentMedia.name) : false;
 
@@ -104,29 +96,44 @@ export function MediaPlayerApp({
           }
         } else {
           // No path provided, grab user's Music and Videos libraries
-          const musicEntries = await runtime.listDir("C:\\Users\\guest\\Music").catch(() => []);
-          const videoEntries = await runtime.listDir("C:\\Users\\guest\\Videos").catch(() => []);
+          const musicEntries = await runtime
+            .listDir("C:\\Users\\guest\\Music")
+            .catch(() => []);
+          const videoEntries = await runtime
+            .listDir("C:\\Users\\guest\\Videos")
+            .catch(() => []);
           entries = [...musicEntries, ...videoEntries];
         }
 
         if (!alive) return;
 
-        let mediaEntries = entries.filter(e => e.kind === "file" && isMedia(e.name));
+        let mediaEntries = entries.filter(
+          (e) => e.kind === "file" && isMedia(e.name),
+        );
         mediaEntries.sort((a, b) => a.name.localeCompare(b.name));
 
         if (targetFile) {
           // Ensure target is in the list
-          const targetEntry = mediaEntries.find(e => e.name.toLowerCase() === targetFile);
+          const targetEntry = mediaEntries.find(
+            (e) => e.name.toLowerCase() === targetFile,
+          );
           if (!targetEntry) {
-            mediaEntries.unshift({ name: basename(initialPath), path: initialPath, kind: "file", size: 0 });
+            mediaEntries.unshift({
+              name: basename(initialPath),
+              path: initialPath,
+              kind: "file",
+              size: 0,
+            });
           }
         }
 
         setPlaylist(mediaEntries);
-        
+
         if (mediaEntries.length > 0) {
           if (targetFile) {
-            const idx = mediaEntries.findIndex(e => e.name.toLowerCase() === targetFile);
+            const idx = mediaEntries.findIndex(
+              (e) => e.name.toLowerCase() === targetFile,
+            );
             setCurrentIndex(Math.max(0, idx));
           } else {
             setCurrentIndex(0);
@@ -136,7 +143,6 @@ export function MediaPlayerApp({
         if (mediaEntries.length <= 1 && initialPath) {
           setSidebarOpen(false); // Hide sidebar if only one item and explicitly launched
         }
-
       } catch (err) {
         if (alive) setError(String(err));
       } finally {
@@ -146,42 +152,132 @@ export function MediaPlayerApp({
 
     init();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [initialPath, runtime]);
+
+  // Handle Fullscreen changes
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const handleMouseMove = () => {
+    setControlsVisible(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (isPlaying) setControlsVisible(false);
+    }, 2500);
+  };
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) videoRef.current.play();
+      else videoRef.current.pause();
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleVolumeChange = (val: number) => {
+    setVolume(val);
+    if (videoRef.current) {
+      videoRef.current.volume = val;
+      if (val > 0 && isMuted) {
+        videoRef.current.muted = false;
+        setIsMuted(false);
+      }
+    }
+  };
+
+  const handleSeek = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     if (!currentMedia) {
       setCurrentUrl(null);
       return;
     }
-    
+
     let alive = true;
     setLoading(true);
     setError(null);
-    
+
     if (winId) {
       const id = winId();
       if (id) {
-        useWindowStore.getState().setTitle(id, `${currentMedia.name} - WebWINE: Media Player`);
+        useWindowStore
+          .getState()
+          .setTitle(id, `${currentMedia.name} - WebWINE: Media Player`);
       }
     }
 
-    runtime.readFile(currentMedia.path).then(bytes => {
-      if (!alive) return;
-      const blob = new Blob([bytes]);
-      const url = URL.createObjectURL(blob);
-      setCurrentUrl(url);
-      setLoading(false);
-    }).catch(err => {
-      if (!alive) return;
-      setError(String(err));
-      setLoading(false);
-    });
+    runtime
+      .readFile(currentMedia.path)
+      .then((bytes) => {
+        if (!alive) return;
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        setCurrentUrl(url);
+
+        if (!isVideoFile(currentMedia.name)) {
+          jsmediatags.read(blob as any, {
+            onSuccess: (tag) => {
+              if (!alive) return;
+              const { title, artist, album, picture } = tag.tags;
+              let pictureUrl = undefined;
+              if (picture) {
+                const picBlob = new Blob([new Uint8Array(picture.data)], {
+                  type: picture.format,
+                });
+                pictureUrl = URL.createObjectURL(picBlob);
+              }
+              setMetadata({ title, artist, album, pictureUrl });
+            },
+            onError: (error) => {
+              console.warn("Error reading tags:", error);
+            },
+          });
+        }
+
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(String(err));
+        setLoading(false);
+      });
 
     return () => {
       alive = false;
-      setCurrentUrl(url => {
+      setCurrentUrl((url) => {
         if (url) URL.revokeObjectURL(url);
+        return null;
+      });
+      setMetadata((prev) => {
+        if (prev?.pictureUrl) URL.revokeObjectURL(prev.pictureUrl);
         return null;
       });
     };
@@ -189,60 +285,36 @@ export function MediaPlayerApp({
 
   return (
     <div className="flex w-full h-full bg-[#111111] select-none font-[var(--system-font)] text-[#f2f2f2] overflow-hidden">
-      
       {/* Sidebar Playlist */}
-      <div 
-        className={`flex-none flex flex-col bg-[#1a1a1a] border-r border-[#333333] transition-all duration-300 ease-in-out ${sidebarOpen ? "w-64" : "w-0 opacity-0 overflow-hidden"}`}
-      >
-        <div className="h-12 px-4 flex items-center border-b border-[#333333] font-semibold text-[13px] whitespace-nowrap">
-          {initialPath ? "Folder Playlist" : "Media Library"}
-        </div>
-        <div className="flex-1 overflow-y-auto py-2 px-1 custom-scrollbar">
-          {playlist.length === 0 && !loading && (
-            <div className="text-center text-[#888] text-[12px] mt-4">
-              No media found.
-            </div>
-          )}
-          {playlist.map((item, idx) => {
-            const active = idx === currentIndex;
-            return (
-              <div 
-                key={item.path}
-                onClick={() => setCurrentIndex(idx)}
-                className={`flex items-center gap-3 px-3 py-2 mx-1 rounded cursor-pointer transition-colors text-[13px] ${
-                  active 
-                    ? "bg-[#333333] text-white" 
-                    : "text-[#cccccc] hover:bg-[#2b2b2b]"
-                }`}
-              >
-                <div className="flex-none flex items-center justify-center w-4 text-[#888888]">
-                  {active ? <PlayRegular fontSize={14} className="text-white" /> : (isVideoFile(item.name) ? <VideoRegular fontSize={14} /> : <MusicNote1Regular fontSize={14} />)}
-                </div>
-                <div className="flex-1 truncate" title={item.name}>
-                  {item.name}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <MediaSidebar
+        sidebarOpen={sidebarOpen}
+        initialPath={initialPath}
+        playlist={playlist}
+        currentIndex={currentIndex}
+        loading={loading}
+        onSelect={(idx) => setCurrentIndex(idx)}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#000000] relative">
-        
         {/* Top Bar overlays over video slightly or sits on top */}
-        <div className="h-12 flex-none flex items-center bg-[#111111] px-4 gap-4 z-10 border-b border-[#222222]">
-          <button 
+        <WindowTitlebar
+          windowId={winId?.() || ""}
+          className="!bg-[#111111] !border-[#222222] !border-b !h-12 !px-4"
+        >
+          <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors window-controls"
             title="Toggle Sidebar"
           >
             <NavigationRegular fontSize={20} />
           </button>
-          <div className="flex-1 truncate font-semibold text-[13px]">
-            {currentMedia?.name || "Media Player"}
+          <div className="flex-1 truncate font-semibold text-[13px] ml-2">
+            {metadata?.title
+              ? `${metadata.title}${metadata.artist ? ` - ${metadata.artist}` : ""}`
+              : currentMedia?.name || "Media Player"}
           </div>
-        </div>
+        </WindowTitlebar>
 
         {/* Video / Audio Area */}
         <div className="flex-1 relative flex items-center justify-center">
@@ -263,28 +335,64 @@ export function MediaPlayerApp({
             </div>
           )}
           {currentUrl && (
-            <video
-              src={currentUrl}
-              controls
-              autoPlay
-              onEnded={() => {
-                // Auto play next
-                if (currentIndex < playlist.length - 1) {
-                  setCurrentIndex(currentIndex + 1);
+            <div
+              ref={containerRef}
+              className="absolute inset-0 flex flex-col items-center justify-center bg-black overflow-hidden group"
+              onMouseMove={handleMouseMove}
+              onMouseLeave={() => setControlsVisible(false)}
+            >
+              <video
+                ref={videoRef}
+                src={currentUrl}
+                autoPlay
+                onClick={togglePlay}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={() =>
+                  setCurrentTime(videoRef.current?.currentTime || 0)
                 }
-              }}
-              className="max-w-full max-h-full w-full h-full outline-none"
-              style={{
-                 objectFit: isVideo ? "contain" : "contain",
-              }}
-            />
+                onLoadedMetadata={() => {
+                  setDuration(videoRef.current?.duration || 0);
+                  if (videoRef.current) {
+                    videoRef.current.volume = volume;
+                    videoRef.current.muted = isMuted;
+                  }
+                }}
+                onEnded={() => {
+                  if (currentIndex < playlist.length - 1) {
+                    setCurrentIndex(currentIndex + 1);
+                  }
+                }}
+                className="max-w-full max-h-full w-full h-full outline-none object-contain"
+              />
+
+              {/* Audio Center Info Overlay */}
+              {!isVideo && (
+                <AudioOverlay
+                  metadata={metadata}
+                  fallbackName={currentMedia?.name || ""}
+                />
+              )}
+
+              {/* Custom Fluent UI Controls */}
+              <MediaControls
+                controlsVisible={controlsVisible}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                duration={duration}
+                volume={volume}
+                isMuted={isMuted}
+                isFullscreen={isFullscreen}
+                onPlayToggle={togglePlay}
+                onMuteToggle={toggleMute}
+                onFullscreenToggle={toggleFullscreen}
+                onSeek={handleSeek}
+                onVolumeChange={handleVolumeChange}
+              />
+            </div>
           )}
         </div>
       </div>
-
     </div>
   );
 }
-
-// Add simple custom scrollbar styles to the global context or use generic classes
-// custom-scrollbar is a class we might need to define or rely on standard webwine scrollbars.

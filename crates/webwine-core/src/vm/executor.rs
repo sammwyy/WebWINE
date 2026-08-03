@@ -2,8 +2,8 @@ use iced_x86::{Decoder, DecoderOptions, Instruction, Mnemonic, OpKind, Register}
 
 use crate::error::Result;
 use crate::fs::vfs::VirtualFileSystem;
-use crate::registry::Registry;
 use crate::logs::{LogBuffer, LogLevel};
+use crate::registry::Registry;
 use crate::vm::cpu::*;
 
 use crate::vm::memory::GuestMemory;
@@ -132,10 +132,14 @@ pub fn run_slice(
                     logs.log(
                         LogLevel::Warn,
                         "cpu",
-                        &format!("[cpu] halted: control flow corrupted (EIP=0x{fault_eip:08X}) — {r}"),
+                        &format!(
+                            "[cpu] halted: control flow corrupted (EIP=0x{fault_eip:08X}) — {r}"
+                        ),
                         Some(proc.pid),
                     );
-                    proc.state = ProcessState::Exited { exit_code: 0xC000_0005 };
+                    proc.state = ProcessState::Exited {
+                        exit_code: 0xC000_0005,
+                    };
                 } else {
                     proc.state = ProcessState::Crashed { reason: r };
                 }
@@ -200,11 +204,13 @@ fn handle_trampoline(
             cwd: &mut proc.cwd,
             cmdline: proc.cmdline.as_str(),
             messages: &proc.messages,
+            strings: &proc.strings,
             proc_addr: api.proc_addr_map(),
             api_dispatcher: Some(api),
             tls_slots: &mut proc.tls_slots,
             next_tls: &mut proc.next_tls,
             rand_seed: &mut proc.rand_seed,
+            dll_state: &mut proc.dll_state,
         };
         api.dispatch(va, &mut ctx)
     };
@@ -248,7 +254,17 @@ fn handle_trampoline(
             ret_args,
         }) => {
             // Call the guest function (stdcall: callee cleans its own args).
-            match call_guest_fn_args(proc, api, fs, registry, logs, func, &args, depth + 1, executed) {
+            match call_guest_fn_args(
+                proc,
+                api,
+                fs,
+                registry,
+                logs,
+                func,
+                &args,
+                depth + 1,
+                executed,
+            ) {
                 Flow::Continue => {}
                 other => return other,
             }
@@ -266,15 +282,16 @@ fn handle_trampoline(
                 .lookup_name(va)
                 .map(|(d, n)| format!("{d}!{n}"))
                 .unwrap_or_else(|| format!("0x{va:08X}"));
+            let caller = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
             logs.log(
                 LogLevel::Warn,
                 "api",
-                &format!("[api] unimplemented: {name} — returning 0 (cleaned {nargs} args)"),
+                &format!("[api] unimplemented: {name} — returning 0 (cleaned {nargs} args, caller=0x{caller:08X})"),
                 Some(proc.pid),
             );
             // Clean the stack as the real (stdcall) function would, so a later
             // `ret` doesn't pop a leaked argument.
-            let ret = proc.memory.read_u32(proc.cpu.esp).unwrap_or(0);
+            let ret = caller;
             proc.cpu.esp = proc.cpu.esp.wrapping_add(4 + 4 * nargs);
             proc.cpu.eax = 0;
             proc.cpu.eip = ret;
@@ -312,6 +329,7 @@ fn call_guest_fn_args(
     depth: u32,
     executed: &mut u32,
 ) -> Flow {
+    let caller_esp = proc.cpu.esp;
     for &arg in args.iter().rev() {
         proc.cpu.esp = proc.cpu.esp.wrapping_sub(4);
         if proc.memory.write_u32(proc.cpu.esp, arg).is_err() {
@@ -327,6 +345,10 @@ fn call_guest_fn_args(
     let mut internal = 0u32;
     loop {
         if proc.cpu.eip == CALL_SENTINEL {
+            // Guest callbacks found in the wild are not uniformly decorated:
+            // some return with `ret`, others with `ret N`. Normalize either ABI
+            // before the enclosing API trampoline reads its own return frame.
+            proc.cpu.esp = caller_esp;
             return Flow::Continue;
         }
         if internal >= 20_000_000 {
@@ -434,8 +456,6 @@ fn try_seh(
                 let _ebp = proc.memory.read_u32(node + 16).unwrap_or(0);
 
                 let mut level = trylevel as i32;
-                let mut absorbed = false;
-
                 while level != -1 {
                     let entry = scopetable + (level as u32) * 12;
                     let enclosing = proc.memory.read_u32(entry).unwrap_or(0xFFFF_FFFF) as i32;
@@ -683,8 +703,14 @@ fn execute(instr: &Instruction, cpu: &mut X86Cpu, mem: &mut GuestMemory) -> Step
         // Direction flag. Without these, the CRT's strrchr/memchr backward
         // `std; repne scasb` scans forward and never finds the char — which broke
         // Touhou 6's archive lookup (it strips "data/..." via strrchr('/')).
-        Cld => { cpu.eflags &= !crate::vm::cpu::DF; StepResult::Continue }
-        Std => { cpu.eflags |= crate::vm::cpu::DF; StepResult::Continue }
+        Cld => {
+            cpu.eflags &= !crate::vm::cpu::DF;
+            StepResult::Continue
+        }
+        Std => {
+            cpu.eflags |= crate::vm::cpu::DF;
+            StepResult::Continue
+        }
 
         Mov => exec_mov(instr, cpu, mem),
         Movzx => exec_movzx(instr, cpu, mem),
@@ -1644,28 +1670,32 @@ fn exec_shift(
     }
     let result = match op {
         ShiftOp::Shl => {
+            let carry = if cnt <= bits { (dst >> (bits - cnt)) & 1 } else { 0 };
             cpu.eflags = if cnt == 1 {
                 let overflow = ((dst >> (bits - 1)) ^ (dst >> (bits - 2))) & 1;
-                (cpu.eflags & !(CF | OF)) | ((dst >> (bits - cnt)) & 1) | (overflow << 11)
+                (cpu.eflags & !(CF | OF)) | carry | (overflow << 11)
             } else {
-                (cpu.eflags & !CF) | ((dst >> (bits - cnt)) & 1)
+                (cpu.eflags & !CF) | carry
             };
-            (dst << cnt) & mask
+            if cnt >= bits { 0 } else { (dst << cnt) & mask }
         }
         ShiftOp::Shr => {
-            cpu.eflags = (cpu.eflags & !CF) | ((dst >> (cnt - 1)) & 1);
-            match w {
-                1 => ((dst as u8) >> cnt) as u32,
-                2 => ((dst as u16) >> cnt) as u32,
-                _ => dst >> cnt,
-            }
+            let carry = if cnt <= bits { (dst >> (cnt - 1)) & 1 } else { 0 };
+            cpu.eflags = (cpu.eflags & !CF) | carry;
+            if cnt >= bits { 0 } else { dst >> cnt }
         }
         ShiftOp::Sar => {
-            cpu.eflags = (cpu.eflags & !CF) | ((dst >> (cnt - 1)) & 1);
-            match w {
-                1 => ((dst as i8) >> cnt) as u32 & mask,
-                2 => ((dst as i16) >> cnt) as u32 & mask,
-                _ => ((dst as i32) >> cnt) as u32,
+            let sign = (dst >> (bits - 1)) & 1;
+            let carry = if cnt <= bits { (dst >> (cnt - 1)) & 1 } else { sign };
+            cpu.eflags = (cpu.eflags & !CF) | carry;
+            if cnt >= bits {
+                if sign != 0 { mask } else { 0 }
+            } else {
+                match w {
+                    1 => ((dst as i8) >> cnt) as u32 & mask,
+                    2 => ((dst as i16) >> cnt) as u32 & mask,
+                    _ => ((dst as i32) >> cnt) as u32,
+                }
             }
         }
         ShiftOp::Rol => match w {

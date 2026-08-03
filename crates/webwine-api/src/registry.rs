@@ -13,8 +13,8 @@
 //! the small hives we keep. Value names are case-insensitive; `""` is the key's
 //! default value.
 
-use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // Predefined root HKEYs (winreg.h).
 pub const HKEY_CLASSES_ROOT: u32 = 0x8000_0000;
@@ -130,8 +130,18 @@ fn key_of(path: &str) -> String {
 
 impl Registry {
     pub fn new() -> Self {
-        let mut r = Registry { keys: BTreeMap::new(), handles: BTreeMap::new(), next_handle: HANDLE_BASE };
-        for hk in [HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, HKEY_USERS, HKEY_CURRENT_CONFIG] {
+        let mut r = Registry {
+            keys: BTreeMap::new(),
+            handles: BTreeMap::new(),
+            next_handle: HANDLE_BASE,
+        };
+        for hk in [
+            HKEY_CLASSES_ROOT,
+            HKEY_CURRENT_USER,
+            HKEY_LOCAL_MACHINE,
+            HKEY_USERS,
+            HKEY_CURRENT_CONFIG,
+        ] {
             let name = root_name(hk).unwrap();
             r.ensure_key(name);
         }
@@ -151,6 +161,49 @@ impl Registry {
         self.ensure_key("HKEY_CURRENT_USER\\SOFTWARE");
         self.ensure_key("HKEY_LOCAL_MACHINE\\SOFTWARE");
         self.ensure_key("HKEY_LOCAL_MACHINE\\SYSTEM");
+
+        // Windows Media Player: present it as already installed/first-run-complete
+        // so wmplayer.exe proceeds past its setup gate instead of bailing out.
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\MediaPlayer\\Setup",
+            "InstallResult",
+            RegValue::Dword(0),
+        );
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\MediaPlayer\\Setup",
+            "Installation Directory",
+            RegValue::Sz("C:\\Program Files\\Windows Media Player".into()),
+        );
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\wmplayer.exe",
+            "",
+            RegValue::Sz("C:\\Program Files\\Windows Media Player\\wmplayer.exe".into()),
+        );
+        // wmplayer.exe reads "Path" here, expands it and SetCurrentDirectory()s to
+        // it so it can load wmp.dll from its install dir. Missing => it bails early.
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\wmplayer.exe",
+            "Path",
+            RegValue::Sz("C:\\Program Files\\Windows Media Player".into()),
+        );
+        self.set_value_path(
+            "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\MediaPlayer\\Preferences",
+            "AcceptedPrivacyStatement",
+            RegValue::Dword(1),
+        );
+        self.set_value_path(
+            "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\MediaPlayer\\Preferences",
+            "FirstRun",
+            RegValue::Dword(0),
+        );
+        // Gate that wmplayer.exe checks to decide whether per-user first-logon
+        // setup (unregmp2.exe /AsyncFirstLogon) still needs to run. Mark it done.
+        self.set_value_path(
+            "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\MediaPlayer\\Preferences",
+            "PlaylistImportComplete",
+            RegValue::Dword(1),
+        );
+        self.ensure_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\WindowsMediaPlayer");
     }
 
     // ---- path-based access (used by the regedit host bridge and seeding) ----
@@ -172,7 +225,10 @@ impl Registry {
                 acc = format!("{acc}\\{seg}");
             }
             let lk = acc.to_lowercase();
-            self.keys.entry(lk).or_insert_with(|| RegistryKey { path: acc.clone(), values: BTreeMap::new() });
+            self.keys.entry(lk).or_insert_with(|| RegistryKey {
+                path: acc.clone(),
+                values: BTreeMap::new(),
+            });
         }
     }
 
@@ -199,7 +255,11 @@ impl Registry {
     /// Immediate child key names (display case) of `path`.
     pub fn subkeys(&self, path: &str) -> Vec<String> {
         let lk = key_of(path);
-        let prefix = if lk.is_empty() { String::new() } else { format!("{lk}\\") };
+        let prefix = if lk.is_empty() {
+            String::new()
+        } else {
+            format!("{lk}\\")
+        };
         let mut out = Vec::new();
         for (k, v) in &self.keys {
             if !k.starts_with(&prefix) || k == &lk {
@@ -223,7 +283,10 @@ impl Registry {
     pub fn get_value_path(&self, path: &str, name: &str) -> Option<&RegValue> {
         let k = self.keys.get(&key_of(path))?;
         let nl = name.to_lowercase();
-        k.values.iter().find(|(n, _)| n.to_lowercase() == nl).map(|(_, v)| v)
+        k.values
+            .iter()
+            .find(|(n, _)| n.to_lowercase() == nl)
+            .map(|(_, v)| v)
     }
 
     pub fn set_value_path(&mut self, path: &str, name: &str, value: RegValue) {
@@ -257,14 +320,21 @@ impl Registry {
             return Some(n.to_string());
         }
         self.handles.get(&hkey).map(|lk| {
-            self.keys.get(lk).map(|k| k.path.clone()).unwrap_or_else(|| lk.clone())
+            self.keys
+                .get(lk)
+                .map(|k| k.path.clone())
+                .unwrap_or_else(|| lk.clone())
         })
     }
 
     fn full_path(&self, hkey: u32, subkey: &str) -> Option<String> {
         let base = self.path_of_handle(hkey)?;
         let sub = norm(subkey);
-        Some(if sub.is_empty() { base } else { format!("{base}\\{sub}") })
+        Some(if sub.is_empty() {
+            base
+        } else {
+            format!("{base}\\{sub}")
+        })
     }
 
     fn alloc_handle(&mut self, path: &str) -> u32 {
@@ -301,18 +371,24 @@ impl Registry {
     }
 
     pub fn set(&mut self, hkey: u32, name: &str, value: RegValue) -> bool {
-        let Some(path) = self.path_of_handle(hkey) else { return false };
+        let Some(path) = self.path_of_handle(hkey) else {
+            return false;
+        };
         self.set_value_path(&path, name, value);
         true
     }
 
     pub fn delete_value(&mut self, hkey: u32, name: &str) -> bool {
-        let Some(path) = self.path_of_handle(hkey) else { return false };
+        let Some(path) = self.path_of_handle(hkey) else {
+            return false;
+        };
         self.delete_value_path(&path, name)
     }
 
     pub fn delete_subkey(&mut self, hkey: u32, subkey: &str) -> bool {
-        let Some(path) = self.full_path(hkey, subkey) else { return false };
+        let Some(path) = self.full_path(hkey, subkey) else {
+            return false;
+        };
         self.delete_key_path(&path)
     }
 
@@ -326,7 +402,10 @@ impl Registry {
     pub fn enum_value(&self, hkey: u32, index: u32) -> Option<(String, RegValue)> {
         let path = self.path_of_handle(hkey)?;
         let k = self.keys.get(&key_of(&path))?;
-        k.values.iter().nth(index as usize).map(|(n, v)| (n.clone(), v.clone()))
+        k.values
+            .iter()
+            .nth(index as usize)
+            .map(|(n, v)| (n.clone(), v.clone()))
     }
 
     // ---- persistence ----
@@ -341,7 +420,13 @@ impl Registry {
         self.handles.clear();
         self.next_handle = HANDLE_BASE;
         // Guarantee the roots always exist after a load.
-        for hk in [HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, HKEY_USERS, HKEY_CURRENT_CONFIG] {
+        for hk in [
+            HKEY_CLASSES_ROOT,
+            HKEY_CURRENT_USER,
+            HKEY_LOCAL_MACHINE,
+            HKEY_USERS,
+            HKEY_CURRENT_CONFIG,
+        ] {
             self.ensure_key(root_name(hk).unwrap());
         }
     }
@@ -377,9 +462,7 @@ mod tests {
         r.create(HKEY_LOCAL_MACHINE, "Software\\T\\A");
         r.create(HKEY_LOCAL_MACHINE, "Software\\T\\B");
         let h = r.open(HKEY_LOCAL_MACHINE, "Software\\T").unwrap();
-        let mut names: Vec<String> = (0..)
-            .map_while(|i| r.enum_key(h, i))
-            .collect();
+        let mut names: Vec<String> = (0..).map_while(|i| r.enum_key(h, i)).collect();
         names.sort();
         assert_eq!(names, vec!["A".to_string(), "B".to_string()]);
         assert!(r.delete_subkey(HKEY_LOCAL_MACHINE, "Software\\T\\A"));
@@ -390,7 +473,11 @@ mod tests {
     #[test]
     fn snapshot_roundtrip() {
         let mut r = Registry::new();
-        r.set_value_path("HKEY_CURRENT_USER\\Software\\X", "Name", RegValue::Sz("hi".into()));
+        r.set_value_path(
+            "HKEY_CURRENT_USER\\Software\\X",
+            "Name",
+            RegValue::Sz("hi".into()),
+        );
         let snap = r.export();
         let mut r2 = Registry::new();
         r2.import(snap);

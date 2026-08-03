@@ -15,6 +15,16 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("gdi32.dll", "GetStockObject", crate::user32::get_stock_object),
+        ("gdi32.dll", "GetObjectA", |c| get_object(c, false)),
+        ("gdi32.dll", "GetObjectW", |c| get_object(c, true)),
+        ("gdi32.dll", "CreateFontIndirectA", |c| { c.ret_stdcall(0x0D10_0001, 1); Handled::Ok }),
+        ("gdi32.dll", "CreateFontIndirectW", |c| { c.ret_stdcall(0x0D10_0001, 1); Handled::Ok }),
+        ("gdi32.dll", "EnumFontsA", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("gdi32.dll", "EnumFontsW", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("gdi32.dll", "EnumFontFamiliesA", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("gdi32.dll", "EnumFontFamiliesW", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
+        ("gdi32.dll", "GetTextFaceA", |c| get_text_face(c, false)),
+        ("gdi32.dll", "GetTextFaceW", |c| get_text_face(c, true)),
         ("gdi32.dll", "CreateSolidBrush", crate::user32::create_solid_brush),
         ("gdi32.dll", "CreatePen", crate::user32::create_pen),
         ("gdi32.dll", "SelectObject", crate::user32::select_object),
@@ -58,4 +68,45 @@ pub fn register(r: &mut WinApiRegistry) {
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
+}
+
+fn get_object(c: &mut super::ApiContext, wide: bool) -> Handled {
+    let requested = c.arg(1) as usize;
+    let out = c.arg(2);
+    let structure_size = if wide { 92usize } else { 60usize };
+    let count = requested.min(structure_size);
+    if out != 0 && count != 0 {
+        let _ = c.memory.write_bytes(out, &vec![0; count]);
+        if count >= 28 {
+            let _ = c.memory.write_u32(out, (-12i32) as u32); // lfHeight
+            let _ = c.memory.write_u32(out + 16, 400); // lfWeight
+            let _ = c.memory.write_u8(out + 23, 1); // DEFAULT_CHARSET
+        }
+    }
+    c.ret_stdcall(count as u32, 3);
+    Handled::Ok
+}
+
+fn get_text_face(c: &mut super::ApiContext, wide: bool) -> Handled {
+    let face = "Courier New";
+    let max = c.arg(1) as usize;
+    let out = c.arg(2);
+    if wide {
+        let units: Vec<u16> = face.encode_utf16().take(max.saturating_sub(1)).collect();
+        if out != 0 && max > 0 {
+            for (index, unit) in units.iter().enumerate() {
+                let _ = c.memory.write_u16(out + index as u32 * 2, *unit);
+            }
+            let _ = c.memory.write_u16(out + units.len() as u32 * 2, 0);
+        }
+        c.ret_stdcall(units.len() as u32, 3);
+    } else {
+        let count = face.len().min(max.saturating_sub(1));
+        if out != 0 && max > 0 {
+            let _ = c.memory.write_bytes(out, &face.as_bytes()[..count]);
+            let _ = c.memory.write_u8(out + count as u32, 0);
+        }
+        c.ret_stdcall(count as u32, 3);
+    }
+    Handled::Ok
 }
