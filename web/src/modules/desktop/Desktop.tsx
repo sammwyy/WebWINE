@@ -26,9 +26,20 @@ import {
   performPaste,
   parentPath,
 } from "@/shared/lib/clipboard";
-import { DesktopIcon } from "./DesktopIcon";
+import { DesktopIcon, isDesktopIconDragActive } from "./DesktopIcon";
 import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu";
 import { WindowLayer } from "../windows/WindowManager";
+
+function isInternalDesktopDrag(dt: DataTransfer): boolean {
+  if (isDesktopIconDragActive()) return true;
+  const types = Array.from(dt.types ?? []);
+  // Firefox may only expose "text/plain" during dragover.
+  return (
+    types.includes("application/x-webwine-desktop-drag") ||
+    types.includes("application/x-webwine-paths") ||
+    types.some((t) => t.toLowerCase() === "application/x-webwine-desktop-drag")
+  );
+}
 
 const DESKTOP_PATH = "C:\\Users\\guest\\Desktop";
 
@@ -367,19 +378,35 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       }}
       onDragOver={(e) => {
         e.preventDefault();
-        if (e.dataTransfer.types.includes("application/x-webwine-desktop-drag")) {
+        e.stopPropagation();
+        if (isInternalDesktopDrag(e.dataTransfer)) {
+          // Icon rearrange — never show the "upload files" outline.
           e.dataTransfer.dropEffect = e.ctrlKey ? "copy" : "move";
+          setDragOver(false);
         } else {
+          e.dataTransfer.dropEffect = "copy";
           setDragOver(true);
         }
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={(e) => {
+        // Ignore leave events that bubble from child icons during rearrange.
+        if (isDesktopIconDragActive()) return;
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDragOver(false);
+      }}
       onDrop={async (e) => {
         e.preventDefault();
+        e.stopPropagation();
         setDragOver(false);
-        const payload = decodeDragPayload(
-          e.dataTransfer.getData("application/x-webwine-paths"),
-        );
+        let pathData = e.dataTransfer.getData("application/x-webwine-paths");
+        if (!pathData) {
+          // Firefox fallback written as text/plain.
+          const plain = e.dataTransfer.getData("text/plain");
+          if (plain.startsWith("webwine-desktop:")) {
+            pathData = plain.slice("webwine-desktop:".length);
+          }
+        }
+        const payload = decodeDragPayload(pathData);
         const offsetRaw = e.dataTransfer.getData(
           "application/x-webwine-drag-offset",
         );

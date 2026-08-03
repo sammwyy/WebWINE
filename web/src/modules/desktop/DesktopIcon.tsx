@@ -33,6 +33,17 @@ import {
 
 const ICON_PAD = 12;
 
+/**
+ * Firefox does not reliably expose custom dataTransfer MIME types during
+ * dragover, so the desktop uses this counter to tell "icon rearrange" from
+ * "external file upload".
+ */
+let desktopIconDragDepth = 0;
+
+export function isDesktopIconDragActive(): boolean {
+  return desktopIconDragDepth > 0;
+}
+
 interface DesktopIconProps {
   entry: DirectoryEntry;
   position: { col: number; row: number };
@@ -266,56 +277,80 @@ export function DesktopIcon({
         draggable
         onClick={handleClick}
         onDragStart={(e) => {
+          desktopIconDragDepth += 1;
           let payload = selectedEntries().map(toPayloadEntry);
-          if (!payload.find(p => p.path === entry.path)) {
+          if (!payload.find((p) => p.path === entry.path)) {
             selectIcon(path);
             payload = [toPayloadEntry(entry)];
           }
-          e.dataTransfer.setData("application/x-webwine-paths", encodeDragPayload(payload));
-          
+          const encoded = encodeDragPayload(payload);
+          // Custom types + text/plain fallback (Firefox dragover often hides customs).
+          e.dataTransfer.setData("application/x-webwine-paths", encoded);
+          e.dataTransfer.setData("text/plain", `webwine-desktop:${encoded}`);
+          e.dataTransfer.setData("application/x-webwine-desktop-drag", "1");
+
           const rect = e.currentTarget.getBoundingClientRect();
           const offsetX = e.clientX - rect.left;
           const offsetY = e.clientY - rect.top;
-          
+
           const offset = {
-             x: offsetX,
-             y: offsetY,
-             path: entry.path
+            x: offsetX,
+            y: offsetY,
+            path: entry.path,
           };
-          e.dataTransfer.setData("application/x-webwine-drag-offset", JSON.stringify(offset));
-          e.dataTransfer.setData("application/x-webwine-desktop-drag", "1");
+          e.dataTransfer.setData(
+            "application/x-webwine-drag-offset",
+            JSON.stringify(offset),
+          );
           e.dataTransfer.effectAllowed = "copyMove";
 
-          // Hide default ghost image to do manual smooth repositioning
-          const img = new Image();
-          img.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-          e.dataTransfer.setDragImage(img, 0, 0);
+          // Transparent drag image so we can move the real icon under the cursor.
+          try {
+            const img = new Image();
+            img.src =
+              "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+            e.dataTransfer.setDragImage(img, 0, 0);
+          } catch {
+            // Firefox can throw if the image isn't ready; default ghost is fine.
+          }
 
           setDragging(true);
-          
-          // Store start info for onDrag
           e.currentTarget.dataset.dragStartX = offsetX.toString();
           e.currentTarget.dataset.dragStartY = offsetY.toString();
         }}
         onDrag={(e) => {
+          // Firefox often ends a drag with (0,0) — ignore that sample.
           if (e.clientX === 0 && e.clientY === 0) return;
           const el = e.currentTarget;
           if (!gridEl) return;
-          
+
           const offsetX = parseFloat(el.dataset.dragStartX || "0");
           const offsetY = parseFloat(el.dataset.dragStartY || "0");
           const gridRect = gridEl.getBoundingClientRect();
-          
+
           const newLeft = e.clientX - gridRect.left - offsetX;
           const newTop = e.clientY - gridRect.top - offsetY;
-          
+
           el.style.left = `${clampV(newLeft, ICON_PAD, Math.max(ICON_PAD, gridEl.clientWidth - layout.cellWidth))}px`;
           el.style.top = `${clampV(newTop, ICON_PAD, Math.max(ICON_PAD, gridEl.clientHeight - layout.cellHeight))}px`;
         }}
         onDragEnd={(e) => {
-          // Clear drag-time pixel offsets so React grid `style` owns placement again.
-          e.currentTarget.style.left = "";
-          e.currentTarget.style.top = "";
+          desktopIconDragDepth = Math.max(0, desktopIconDragDepth - 1);
+          const el = e.currentTarget;
+          // Drop may have already committed a new cell via the store — prefer that
+          // so we don't snap back to the pre-drag cell for one frame.
+          const latest =
+            useDesktopStore.getState().positions[entry.path] ?? position;
+          const restoredLeft = Math.min(
+            ICON_PAD + latest.col * layout.cellWidth,
+            maxLeft,
+          );
+          const restoredTop = Math.min(
+            ICON_PAD + latest.row * layout.cellHeight,
+            maxTop,
+          );
+          el.style.left = `${restoredLeft}px`;
+          el.style.top = `${restoredTop}px`;
           setDragging(false);
         }}
         onDragOver={(e) => {

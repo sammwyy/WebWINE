@@ -54,8 +54,18 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       }
     };
 
-    const onScroll = () => {
-      onClose();
+    // Only close on page-level scroll. Nested scroll containers (console,
+    // explorer, etc.) fire capture-phase scroll on `window` and must not
+    // dismiss the menu while their content updates.
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (
+        t === document ||
+        t === document.documentElement ||
+        t === document.body
+      ) {
+        onClose();
+      }
     };
 
     document.addEventListener("mousedown", onDown);

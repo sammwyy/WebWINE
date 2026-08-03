@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useWindowStore } from "@/state/windowStore";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { LogEvent, UiEvent } from "@/core/wasm/worker";
@@ -21,7 +27,6 @@ export async function openProcessConsole(
 ) {
   const name = basename(path);
 
-  // Try to extract icon from PE, fallback to default_executable
   const resolved = await resolveIcon(
     { name, path, kind: "file", size: 0 },
     runtime,
@@ -41,7 +46,7 @@ export async function openProcessConsole(
         path={path}
         runtime={runtime}
         opts={opts}
-        winId={() => winId} // lazy eval because winId is assigned after openWindow returns
+        winId={() => winId}
       />
     ),
   });
@@ -73,8 +78,6 @@ export async function launchProcessHidden(
   runtime.runProcess(launched.pid);
 }
 
-// Split text into lines, marking which ended with a newline — so the debug
-// "[stdout]" prefix is only emitted once per actual line.
 function splitKeepLast(text: string): { content: string; nl: boolean }[] {
   const parts = text.split("\n");
   const out: { content: string; nl: boolean }[] = [];
@@ -86,7 +89,6 @@ function splitKeepLast(text: string): { content: string; nl: boolean }[] {
   return out;
 }
 
-/** Count complete newline-terminated lines in a chunk of console text. */
 function countNewLines(text: string): number {
   let n = 0;
   for (let i = 0; i < text.length; i++) {
@@ -95,8 +97,7 @@ function countNewLines(text: string): number {
   return n;
 }
 
-/** True when the scroll viewport is at (or very near) the bottom. */
-function isAtBottom(el: HTMLElement, thresholdPx = 24): boolean {
+function isAtBottom(el: HTMLElement, thresholdPx = 40): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= thresholdPx;
 }
 
@@ -120,44 +121,67 @@ function ProcessConsoleApp({
   const debug = opts.debug ?? false;
 
   const [spans, setSpans] = useState<TermSpan[]>([]);
-  const [inputLine, setInputLine] = useState("");
   const [stateText, setStateText] = useState("starting");
   const [pid, setPid] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [exited, setExited] = useState(false);
-  /** Pending lines received while the user scrolled away from the bottom. */
   const [pendingLines, setPendingLines] = useState(0);
+  /** Forces a re-render of the banner without thrashing on every line. */
+  const [bannerTick, setBannerTick] = useState(0);
 
   const termRef = useRef<HTMLDivElement>(null);
-  /** Stick to bottom until the user scrolls up. */
+  /** Stick to bottom until the user scrolls away. Starts true so launch output follows. */
   const stickToBottomRef = useRef(true);
+  /** Ignore scroll events caused by our own scrollTop writes. */
+  const ignoreScrollRef = useRef(false);
+  const pendingLinesRef = useRef(0);
+  const bannerRafRef = useRef(0);
 
-  const scrollToBottom = useCallback(() => {
+  const applyScrollBottom = useCallback(() => {
     const el = termRef.current;
     if (!el) return;
+    ignoreScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
-    stickToBottomRef.current = true;
-    setPendingLines(0);
+    // Second pass after layout (rapid text can grow after the first write).
+    requestAnimationFrame(() => {
+      const node = termRef.current;
+      if (node && stickToBottomRef.current) {
+        node.scrollTop = node.scrollHeight;
+      }
+      // Keep ignoring until after the browser has delivered any scroll events.
+      requestAnimationFrame(() => {
+        ignoreScrollRef.current = false;
+      });
+    });
   }, []);
 
-  // After new output / input, autoscroll only when still stuck to the bottom.
-  useEffect(() => {
-    const el = termRef.current;
-    if (!el) return;
-    if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [spans, inputLine]);
+  const pinToBottom = useCallback(() => {
+    stickToBottomRef.current = true;
+    pendingLinesRef.current = 0;
+    setPendingLines(0);
+    applyScrollBottom();
+  }, [applyScrollBottom]);
 
-  // Track user scroll: leaving the bottom freezes autoscroll; returning re-arms it.
+  // After paint with new text, stick to bottom if enabled.
+  useLayoutEffect(() => {
+    if (stickToBottomRef.current) {
+      applyScrollBottom();
+    }
+  }, [spans, applyScrollBottom]);
+
+  // User scroll tracking — never treat programmatic scrolls as "user left bottom".
   useEffect(() => {
     const el = termRef.current;
     if (!el) return;
 
     const onScroll = () => {
+      if (ignoreScrollRef.current) return;
       if (isAtBottom(el)) {
         stickToBottomRef.current = true;
-        setPendingLines(0);
+        if (pendingLinesRef.current !== 0) {
+          pendingLinesRef.current = 0;
+          setPendingLines(0);
+        }
       } else {
         stickToBottomRef.current = false;
       }
@@ -167,7 +191,7 @@ function ProcessConsoleApp({
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Title sync
+  // Title sync (only when pid/state change — not every byte of output).
   useEffect(() => {
     const id = winId();
     if (id) {
@@ -181,13 +205,28 @@ function ProcessConsoleApp({
     }
   }, [pid, stateText, debug, fileName, winId]);
 
-  /** Append spans; if not stuck to bottom, accumulate "new lines" for the banner. */
-  const appendSpans = useCallback((newSpans: TermSpan[], lineDelta: number) => {
-    setSpans((s) => [...s, ...newSpans]);
-    if (!stickToBottomRef.current && lineDelta > 0) {
-      setPendingLines((n) => n + lineDelta);
+  const bumpPending = useCallback((lineDelta: number) => {
+    if (lineDelta <= 0) return;
+    pendingLinesRef.current += lineDelta;
+    // Coalesce banner updates to one per frame so rapid stdout doesn't thrash React.
+    if (bannerRafRef.current === 0) {
+      bannerRafRef.current = requestAnimationFrame(() => {
+        bannerRafRef.current = 0;
+        setPendingLines(pendingLinesRef.current);
+        setBannerTick((t) => t + 1);
+      });
     }
   }, []);
+
+  const appendSpans = useCallback(
+    (newSpans: TermSpan[], lineDelta: number) => {
+      setSpans((s) => [...s, ...newSpans]);
+      if (!stickToBottomRef.current) {
+        bumpPending(lineDelta);
+      }
+    },
+    [bumpPending],
+  );
 
   const write = useCallback(
     (text: string, cls?: string) => {
@@ -215,9 +254,10 @@ function ProcessConsoleApp({
     [appendSpans],
   );
 
-  // Launch process
   useEffect(() => {
     let active = true;
+    // Ensure stick is on at launch so the first flood of CRT output follows.
+    stickToBottomRef.current = true;
 
     const ready =
       opts.attachPid !== undefined
@@ -241,6 +281,7 @@ function ProcessConsoleApp({
         setPid(newPid);
         setRunning(true);
         setStateText("running");
+        stickToBottomRef.current = true;
 
         if (debug) {
           launchLogs.forEach(writeLog);
@@ -309,6 +350,10 @@ function ProcessConsoleApp({
 
     return () => {
       active = false;
+      if (bannerRafRef.current) {
+        cancelAnimationFrame(bannerRafRef.current);
+        bannerRafRef.current = 0;
+      }
     };
   }, [
     path,
@@ -327,6 +372,7 @@ function ProcessConsoleApp({
 
       if (e.key === "Enter") {
         e.preventDefault();
+        // Typing should follow output if we were stuck to bottom.
         write("\n", debug ? "text-[#a6e3a1]" : undefined);
         runtime.writeStdin(pid, "\r\n");
       } else if (e.key === "Backspace") {
@@ -373,10 +419,11 @@ function ProcessConsoleApp({
     [running, pid, write, debug, runtime],
   );
 
+  const shownPending = pendingLines;
   const pendingLabel =
-    pendingLines === 1
+    shownPending === 1
       ? "Go to bottom (1 new line)"
-      : `Go to bottom (${pendingLines} new lines)`;
+      : `Go to bottom (${shownPending} new lines)`;
 
   return (
     <div className="relative bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] flex flex-col h-full min-h-0">
@@ -399,10 +446,21 @@ function ProcessConsoleApp({
         </span>
       </div>
 
-      {pendingLines > 0 && (
+      {shownPending > 0 && (
         <button
           type="button"
-          onClick={scrollToBottom}
+          key={bannerTick}
+          onMouseDown={(e) => {
+            // Prevent focus steal / scroll races before click.
+            e.preventDefault();
+            e.stopPropagation();
+            pinToBottom();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            pinToBottom();
+          }}
           className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 text-[12px] font-sans font-medium text-white bg-[#0078d7] border border-[#0078d7] rounded-sm shadow-[0_4px_16px_rgba(0,0,0,0.45)] hover:bg-[#006cc1] hover:border-[#006cc1] cursor-pointer whitespace-nowrap"
         >
           {pendingLabel}
