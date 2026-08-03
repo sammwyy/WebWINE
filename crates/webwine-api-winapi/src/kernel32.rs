@@ -2088,26 +2088,33 @@ fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
 }
 
 // GetProcAddress(hModule, lpProcName) — return a real trampoline for a function
-// we implement (so the guest can call it), else 0 (caller uses its fallback).
+// we implement. On miss, prefer the soft-import stub over NULL: VC++ delay-load
+// thunks do `jmp eax`, so EAX=0 becomes an immediate EIP=0 crash.
 fn get_proc_address(ctx: &mut ApiContext) -> Handled {
     let name_arg = ctx.arg(1);
     let va = if name_arg < 0x1_0000 {
         0 // imported by ordinal — not supported
     } else {
         let name = ctx.cstr(name_arg);
-        let v = ctx.proc_address("", &name);
-        ctx.logs.log(
-            webwine_api::logs::LogLevel::Trace,
-            "api",
-            &format!("GetProcAddress {name:?} -> 0x{v:08X}"),
-            Some(ctx.pid),
-        );
+        let mut v = ctx.proc_address("", &name);
         if v == 0 {
-            // Surface misses at warn — delay-load helpers raise 0xC06D007F next.
+            // Soft stub keeps delay-load from jumping to NULL. Log the real
+            // miss so we can implement the export properly later.
+            let soft = ctx.proc_address("", "__soft_import");
             ctx.logs.log(
                 webwine_api::logs::LogLevel::Warn,
                 "api",
-                &format!("GetProcAddress miss: {name}"),
+                &format!(
+                    "GetProcAddress miss: {name} — returning soft-import stub 0x{soft:08X}"
+                ),
+                Some(ctx.pid),
+            );
+            v = soft;
+        } else {
+            ctx.logs.log(
+                webwine_api::logs::LogLevel::Trace,
+                "api",
+                &format!("GetProcAddress {name:?} -> 0x{v:08X}"),
                 Some(ctx.pid),
             );
         }

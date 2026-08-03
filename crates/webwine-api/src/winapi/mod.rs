@@ -50,6 +50,11 @@ impl WinApiRegistry {
     /// Allocate a trampoline for every registered function name so GetProcAddress
     /// can hand back a real, callable address. Call once after all `add`s.
     pub fn finalize(&mut self) {
+        // Soft stub for GetProcAddress misses: delay-load thunks `jmp eax` on the
+        // resolved address, so returning NULL hard-crashes at EIP=0. Prefer a
+        // no-op stdcall trampoline (best-effort 1-arg cleanup) over NULL.
+        self.add("PROC", "__soft_import", soft_import_stub);
+
         let names: Vec<String> = self.by_func.keys().cloned().collect();
         for name in names {
             let va = self.resolve_trampoline("PROC", &name);
@@ -61,6 +66,11 @@ impl WinApiRegistry {
     /// if we have no implementation, in which case the caller uses its fallback.
     pub fn proc_address(&self, name: &str) -> u32 {
         self.proc_addr.get(name).copied().unwrap_or(0)
+    }
+
+    /// Soft-import trampoline used when GetProcAddress cannot resolve a name.
+    pub fn soft_import_va(&self) -> u32 {
+        self.proc_addr.get("__soft_import").copied().unwrap_or(0)
     }
 
     pub fn proc_addr_map(&self) -> &HashMap<String, u32> {
@@ -193,6 +203,21 @@ impl Default for WinApiRegistry {
     }
 }
 
+/// Best-effort no-op for unknown delay-loaded imports. Cleans one stdcall arg
+/// (the common case for theming/DWM helpers); wrong arity may still corrupt the
+/// stack, so prefer real handlers. Returning a non-NULL trampoline from
+/// GetProcAddress is still safer than `jmp eax` with EAX=0.
+fn soft_import_stub(ctx: &mut ApiContext) -> Handled {
+    ctx.logs.log(
+        crate::logs::LogLevel::Warn,
+        "api",
+        "soft-import stub called (unknown delay-loaded export) — returning 0",
+        Some(ctx.pid),
+    );
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
 /// Arg count for common Win32 stdcall functions, used to clean the stack when a
 /// function is imported but not implemented. Keeps the guest stack balanced so
 /// execution survives to the next real issue instead of derailing on a `ret`.
@@ -213,7 +238,13 @@ fn default_stdcall_args(name: &str) -> u32 {
         | "ReleaseCapture"
         | "GetDesktopWindow"
         | "GetActiveWindow"
-        | "GetForegroundWindow" => 0,
+        | "GetForegroundWindow"
+        | "GetThemeAppProperties"
+        | "IsThemeActive"
+        | "IsAppThemed"
+        | "IsCompositionActive"
+        | "BufferedPaintInit"
+        | "BufferedPaintUnInit" => 0,
         // 1 arg
         "CloseHandle"
         | "SetLastError"
@@ -256,7 +287,13 @@ fn default_stdcall_args(name: &str) -> u32 {
         | "CreatePalette"
         | "UpdateWindow"
         | "GetWindowDC"
-        | "SwapBuffers" => 1,
+        | "SwapBuffers"
+        | "SetThemeAppProperties"
+        | "CloseThemeData"
+        | "GetWindowTheme"
+        | "GlobalDeleteAtom"
+        | "DeleteAtom"
+        | "__soft_import" => 1,
         // 2 args
         "GetProcAddress"
         | "SetEvent"

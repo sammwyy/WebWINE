@@ -20,6 +20,7 @@ pub mod shlwapi;
 pub mod util;
 pub mod user32;
 pub mod ucrtbase;
+pub mod uxtheme;
 pub mod version;
 pub mod vcruntime140;
 pub mod wininet;
@@ -50,5 +51,6 @@ pub fn register(r: &mut WinApiRegistry) {
     user32::register(r);
     winmm::register(r);
     winspool::register(r);
+    uxtheme::register(r);
     extra_dlls::register(r);
 }
