@@ -7,8 +7,11 @@ use webwine_api::vm::handles::{
 
 // Win32 error codes used by the file APIs.
 const ERROR_FILE_NOT_FOUND: u32 = 2;
+const ERROR_INVALID_HANDLE: u32 = 6;
 const ERROR_FILE_EXISTS: u32 = 80;
 const ERROR_PROC_NOT_FOUND: u32 = 127;
+const ERROR_ALREADY_EXISTS: u32 = 183;
+const INVALID_FILE_SIZE: u32 = 0xFFFF_FFFF;
 
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
@@ -148,7 +151,18 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "QueryDepthSList", r0_1),
         ("kernel32.dll", "InterlockedPushEntrySList", r0_2),
         ("kernel32.dll", "InterlockedFlushSList", r0_1),
-        ("kernel32.dll", "GetProcessAffinityMask", r1_3),
+        // GetProcessAffinityMask(hProc, *procMask, *sysMask): both masks must be
+        // written; leaving them untouched made callers read stack garbage (or 0,
+        // i.e. "no CPUs") when sizing thread pools.
+        ("kernel32.dll", "GetProcessAffinityMask", |c| {
+            for a in [1u32, 2] {
+                if c.arg(a) != 0 {
+                    let _ = c.memory.write_u32(c.arg(a), 1);
+                }
+            }
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
         ("kernel32.dll", "GetNativeSystemInfo", get_system_info),
         (
             "kernel32.dll",
@@ -206,9 +220,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ),
         ("kernel32.dll", "QueryPerformanceFrequency", query_perf_freq),
         ("kernel32.dll", "GetTickCount", get_tick_count),
-        ("kernel32.dll", "GetTickCount64", get_tick_count),
+        ("kernel32.dll", "GetTickCount64", get_tick_count64),
         ("kernel32.dll", "FlushFileBuffers", r1_1),
-        ("kernel32.dll", "SetFilePointer", r0_4),
         ("kernel32.dll", "SetUnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "UnhandledExceptionFilter", r0_1),
         ("kernel32.dll", "GetEnvironmentVariableW", get_env_var_w),
@@ -355,8 +368,6 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 4);
             Handled::Ok
         }),
-        ("kernel32.dll", "GetStdHandle", get_std_handle),
-        ("kernel32.dll", "WriteConsoleW", write_console_w),
         ("kernel32.dll", "GetEnvironmentStringsW", |c| {
             let p = env_block(c, true);
             c.ret_stdcall(p, 0);
@@ -449,7 +460,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "CreateFileA", create_file_a),
         ("kernel32.dll", "CreateFileW", create_file_w),
         ("kernel32.dll", "GetFileSize", get_file_size),
-        ("kernel32.dll", "GetFileSizeEx", get_file_size),
+        ("kernel32.dll", "GetFileSizeEx", get_file_size_ex),
         ("kernel32.dll", "SetFilePointer", set_file_pointer),
         ("kernel32.dll", "CreateDirectoryA", create_directory_a),
         ("kernel32.dll", "CreateDirectoryW", create_directory_w),
@@ -544,10 +555,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(r, 3);
             Handled::Ok
         }),
-        ("kernel32.dll", "LocalSize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
+        ("kernel32.dll", "LocalSize", local_global_size),
         ("kernel32.dll", "SetPriorityClass", |c| {
             c.ret_stdcall(1, 2);
             Handled::Ok
@@ -726,10 +734,7 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(p, 1);
             Handled::Ok
         }),
-        ("kernel32.dll", "GlobalSize", |c| {
-            c.ret_stdcall(0, 1);
-            Handled::Ok
-        }),
+        ("kernel32.dll", "GlobalSize", local_global_size),
         (
             "api-ms-win-core-heap-l2-1-0.dll",
             "GlobalAlloc",
@@ -764,42 +769,48 @@ pub fn register(r: &mut WinApiRegistry) {
     }
 }
 
+// PathFindFileName(path): pointer to the last component.
+//
+// Matching Wine (dlls/kernelbase/path.c, PathFindFileNameW): ':' counts as a
+// separator, and a separator only advances the result when it is followed by a
+// character that is not itself a separator. So "C:\dir\" returns the whole
+// string rather than a pointer to the empty tail, and "C:file" returns "file".
 pub(crate) fn path_find_file_name_a(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
-    let mut last_slash = 0;
+    let mut last_slash = p;
     let mut curr = p;
-    while let Ok(b) = ctx.memory.read_u8(curr) {
+    loop {
+        let b = ctx.memory.read_u8(curr).unwrap_or(0);
         if b == 0 {
             break;
         }
-        if b == b'\\' || b == b'/' {
+        let next = ctx.memory.read_u8(curr + 1).unwrap_or(0);
+        if matches!(b, b'\\' | b'/' | b':') && next != 0 && next != b'\\' && next != b'/' {
             last_slash = curr + 1;
         }
         curr += 1;
     }
-    let res = if last_slash == 0 { p } else { last_slash };
-    ctx.ret_stdcall(res, 1);
+    ctx.ret_stdcall(last_slash, 1);
     Handled::Ok
 }
 
 pub(crate) fn path_find_file_name_w(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
-    let mut last_slash = 0;
+    let mut last_slash = p;
     let mut curr = p;
     loop {
-        let low = ctx.memory.read_u8(curr).unwrap_or(0);
-        let high = ctx.memory.read_u8(curr + 1).unwrap_or(0);
-        let w = u16::from_le_bytes([low, high]);
+        let w = ctx.memory.read_u16(curr).unwrap_or(0);
         if w == 0 {
             break;
         }
-        if w == '\\' as u16 || w == '/' as u16 {
+        let next = ctx.memory.read_u16(curr + 2).unwrap_or(0);
+        let sep = |c: u16| c == '\\' as u16 || c == '/' as u16;
+        if (sep(w) || w == ':' as u16) && next != 0 && !sep(next) {
             last_slash = curr + 2;
         }
         curr += 2;
     }
-    let res = if last_slash == 0 { p } else { last_slash };
-    ctx.ret_stdcall(res, 1);
+    ctx.ret_stdcall(last_slash, 1);
     Handled::Ok
 }
 
@@ -927,6 +938,16 @@ fn format_message_w_fwd(ctx: &mut ApiContext) -> Handled {
 fn format_message_a_fwd(ctx: &mut ApiContext) -> Handled {
     let r = format_message_core(ctx, false);
     ctx.ret_stdcall(r, 7);
+    Handled::Ok
+}
+
+// GlobalSize / LocalSize(hMem) -> block size, 0 if the handle is unknown.
+// GlobalAlloc/LocalAlloc hand out plain heap pointers here, so the recorded
+// allocation size is the answer.
+fn local_global_size(ctx: &mut ApiContext) -> Handled {
+    let p = ctx.arg(0);
+    let n = ctx.heap_sizes.get(&p).copied().unwrap_or(0);
+    ctx.ret_stdcall(n, 1);
     Handled::Ok
 }
 
@@ -1164,6 +1185,7 @@ fn read_console_a(ctx: &mut ApiContext) -> Handled {
 const CREATE_NEW: u32 = 1;
 const CREATE_ALWAYS: u32 = 2;
 const OPEN_EXISTING: u32 = 3;
+const OPEN_ALWAYS: u32 = 4;
 const TRUNCATE_EXISTING: u32 = 5;
 
 fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
@@ -1199,7 +1221,16 @@ fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
         cursor: 0,
         writable,
     });
-    ctx.cpu.last_error = 0;
+    // Wine (dlls/kernelbase/file.c, CreateFileW): a *successful* CREATE_ALWAYS
+    // that overwrote a file, or OPEN_ALWAYS that opened one, still reports
+    // ERROR_ALREADY_EXISTS; every other success clears the error. Callers use
+    // this to tell "created" from "reused" without a second stat.
+    ctx.cpu.last_error =
+        if exists && (disposition == CREATE_ALWAYS || disposition == OPEN_ALWAYS) {
+            ERROR_ALREADY_EXISTS
+        } else {
+            0
+        };
     ctx.ret_stdcall(h, nargs);
     Handled::Ok
 }
@@ -1214,19 +1245,49 @@ fn create_file_w(ctx: &mut ApiContext) -> Handled {
     create_file(ctx, name, 7)
 }
 
+/// Byte length of the VFS file behind `handle`, if it is a file handle.
+fn handle_file_size(ctx: &ApiContext, handle: u32) -> Option<u64> {
+    match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { path, .. }) => {
+            Some(ctx.fs.read_file(path).map(|b| b.len()).unwrap_or(0) as u64)
+        }
+        _ => None,
+    }
+}
+
+// GetFileSize(hFile, lpFileSizeHigh) -> low dword, INVALID_FILE_SIZE on error.
 fn get_file_size(ctx: &mut ApiContext) -> Handled {
     let handle = ctx.arg(0);
     let high = ctx.arg(1);
-    let size = match ctx.handles.get(handle) {
-        Some(KernelObject::VfsFile { path, .. }) => {
-            ctx.fs.read_file(path).map(|b| b.len()).unwrap_or(0) as u32
-        }
-        _ => 0,
+    let Some(size) = handle_file_size(ctx, handle) else {
+        ctx.cpu.last_error = ERROR_INVALID_HANDLE;
+        ctx.ret_stdcall(INVALID_FILE_SIZE, 2);
+        return Handled::Ok;
     };
     if high != 0 {
-        let _ = ctx.memory.write_u32(high, 0);
+        let _ = ctx.memory.write_u32(high, (size >> 32) as u32);
     }
-    ctx.ret_stdcall(size, 2);
+    ctx.ret_stdcall(size as u32, 2);
+    Handled::Ok
+}
+
+// GetFileSizeEx(hFile, PLARGE_INTEGER) -> BOOL. A different shape from
+// GetFileSize: the 64-bit size goes to the out parameter and the return value
+// is a success flag (dlls/kernelbase/file.c). Aliasing it onto GetFileSize made
+// every caller read the size as a boolean and leave *lpFileSize untouched.
+fn get_file_size_ex(ctx: &mut ApiContext) -> Handled {
+    let handle = ctx.arg(0);
+    let out = ctx.arg(1);
+    let Some(size) = handle_file_size(ctx, handle) else {
+        ctx.cpu.last_error = ERROR_INVALID_HANDLE;
+        ctx.ret_stdcall(0, 2);
+        return Handled::Ok;
+    };
+    if out != 0 {
+        let _ = ctx.memory.write_u32(out, size as u32);
+        let _ = ctx.memory.write_u32(out + 4, (size >> 32) as u32);
+    }
+    ctx.ret_stdcall(1, 2);
     Handled::Ok
 }
 
@@ -1586,11 +1647,39 @@ fn file_time_to_local_file_time(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// SystemTimeToFileTime(lpSystemTime, lpFileTime): approximate (fixed epoch ok
-// for display). We just emit a constant recent FILETIME.
+// Days since 1970-01-01 for a civil date (Howard Hinnant's days_from_civil,
+// the exact inverse of the civil_from_days used by `filetime_to_civil`).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = y - if m <= 2 { 1 } else { 0 };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+// SystemTimeToFileTime(lpSystemTime, lpFileTime): actually convert the caller's
+// SYSTEMTIME. Emitting a constant made every date the app supplied (file times,
+// timestamps it had just built with GetSystemTime) collapse onto one value, so
+// date arithmetic and sorting silently produced garbage.
 fn system_time_to_file_time(ctx: &mut ApiContext) -> Handled {
+    let st = ctx.arg(0);
     let out = ctx.arg(1);
-    let ft: u64 = 133_000_000_000_000_000; // ~2022
+    let rd = |ctx: &ApiContext, off: u32| ctx.memory.read_u16(st + off).unwrap_or(0) as i64;
+    let (year, month, day) = (rd(ctx, 0), rd(ctx, 2), rd(ctx, 6));
+    let (hour, min, sec, ms) = (rd(ctx, 8), rd(ctx, 10), rd(ctx, 12), rd(ctx, 14));
+
+    if st == 0 || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, 2);
+        return Handled::Ok;
+    }
+
+    // 1601-01-01 -> 1970-01-01 is 134774 days; FILETIME ticks are 100 ns.
+    let days = days_from_civil(year, month, day) + 134_774;
+    let secs = days * 86400 + hour * 3600 + min * 60 + sec;
+    let ft = (secs.max(0) as u64) * 10_000_000 + (ms.max(0) as u64) * 10_000;
+
     if out != 0 {
         let _ = ctx.memory.write_u32(out, ft as u32);
         let _ = ctx.memory.write_u32(out + 4, (ft >> 32) as u32);
@@ -1910,8 +1999,13 @@ fn heap_realloc(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// HeapSize(hHeap, dwFlags, lpMem) -> allocated size, (SIZE_T)-1 on failure.
+// The bump allocator records every block size, so answer from it instead of
+// reporting 0 (which reads as a valid zero-byte block, not as an error).
 fn heap_size(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(0, 3);
+    let p = ctx.arg(2);
+    let n = ctx.heap_sizes.get(&p).copied().unwrap_or(0xFFFF_FFFF);
+    ctx.ret_stdcall(n, 3);
     Handled::Ok
 }
 
@@ -2505,6 +2599,17 @@ fn get_tick_count(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// GetTickCount64 returns a ULONGLONG, which x86 stdcall passes back in EDX:EAX.
+// Sharing the 32-bit GetTickCount handler left EDX holding whatever the guest
+// last put there, so the high dword was random and callers saw times millions
+// of years apart.
+fn get_tick_count64(ctx: &mut ApiContext) -> Handled {
+    let ms = crate::winmm::tick_ms() as u64;
+    ctx.cpu.edx = (ms >> 32) as u32;
+    ctx.ret_stdcall(ms as u32, 0);
+    Handled::Ok
+}
+
 fn query_perf_freq(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
@@ -2516,9 +2621,18 @@ fn query_perf_freq(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// GetFileType(hFile): FILE_TYPE_DISK (1) for a real file, FILE_TYPE_CHAR (2)
+// for the console handles. Answering CHAR for everything told the CRT that
+// every opened file was a tty, so it line-buffered and refused to seek.
 fn get_file_type(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(2, 1);
-    Handled::Ok // FILE_TYPE_CHAR
+    let handle = ctx.arg(0);
+    let ty = match ctx.handles.get(handle) {
+        Some(KernelObject::VfsFile { .. }) => 1, // FILE_TYPE_DISK
+        Some(_) => 2,                            // FILE_TYPE_CHAR (console)
+        None => 2,
+    };
+    ctx.ret_stdcall(ty, 1);
+    Handled::Ok
 }
 
 // GetConsoleScreenBufferInfo(hConsole, lpInfo): fill a CONSOLE_SCREEN_BUFFER_INFO
@@ -2637,56 +2751,137 @@ fn tls_get(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+const ERROR_INVALID_PARAMETER: u32 = 87;
+const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+
+/// Read exactly `count` bytes of source text. A negative (0xFFFFFFFF) length
+/// means "NUL-terminated", and Wine turns that into `strlen(src) + 1` so the
+/// terminator is part of the conversion and of the returned count
+/// (dlls/kernelbase/locale.c, MultiByteToWideChar).
+fn mb_source(ctx: &ApiContext, src: u32, srclen: u32) -> Vec<u8> {
+    if srclen == 0xFFFF_FFFF {
+        let mut out = Vec::new();
+        let mut addr = src;
+        while let Ok(b) = ctx.memory.read_u8(addr) {
+            out.push(b);
+            addr = addr.wrapping_add(1);
+            if b == 0 {
+                break;
+            }
+        }
+        if out.last() != Some(&0) {
+            out.push(0);
+        }
+        out
+    } else {
+        ctx.memory.read_bytes(src, srclen as usize).unwrap_or_default()
+    }
+}
+
+/// Same for a WCHAR source: `lstrlenW(src) + 1` when the length is negative.
+fn wc_source(ctx: &ApiContext, src: u32, srclen: u32) -> Vec<u16> {
+    if srclen == 0xFFFF_FFFF {
+        let mut out = Vec::new();
+        let mut addr = src;
+        while let Ok(w) = ctx.memory.read_u16(addr) {
+            out.push(w);
+            addr = addr.wrapping_add(2);
+            if w == 0 {
+                break;
+            }
+        }
+        if out.last() != Some(&0) {
+            out.push(0);
+        }
+        out
+    } else {
+        (0..srclen)
+            .map(|i| ctx.memory.read_u16(src + i * 2).unwrap_or(0))
+            .collect()
+    }
+}
+
+// MultiByteToWideChar(codepage, flags, src, srclen, dst, dstlen).
+//
+// Wine semantics (dlls/kernelbase/locale.c):
+//   * srclen < 0  -> strlen(src)+1, so the NUL is converted and counted;
+//     an explicit srclen converts exactly that many bytes and appends nothing.
+//   * dstlen == 0 -> return the required length in WCHARs, write nothing.
+//   * dstlen < required -> fill dst up to dstlen, SetLastError(
+//     ERROR_INSUFFICIENT_BUFFER) and return 0 (`mbstowcs_sbcs`).
 fn multibyte_to_widechar(ctx: &mut ApiContext) -> Handled {
+    let codepage = ctx.arg(0);
     let src = ctx.arg(2);
     let srcl = ctx.arg(3);
     let dst = ctx.arg(4);
     let dstl = ctx.arg(5);
-    let s = if srcl == 0xFFFF_FFFF {
-        ctx.cstr(src)
+
+    if src == 0 || srcl == 0 || (dst == 0 && dstl != 0) {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, 6);
+        return Handled::Ok;
+    }
+
+    let wide = crate::codepage::decode(codepage, &mb_source(ctx, src, srcl));
+    let needed = wide.len() as u32;
+    if dstl == 0 {
+        ctx.ret_stdcall(needed, 6);
+        return Handled::Ok;
+    }
+
+    let n = needed.min(dstl);
+    for (i, &c) in wide.iter().take(n as usize).enumerate() {
+        let _ = ctx.memory.write_u16(dst + (i as u32) * 2, c);
+    }
+    if dstl < needed {
+        ctx.cpu.last_error = ERROR_INSUFFICIENT_BUFFER;
+        ctx.ret_stdcall(0, 6);
     } else {
-        String::from_utf8_lossy(
-            &ctx.memory
-                .read_bytes(src, srcl as usize)
-                .unwrap_or_default(),
-        )
-        .into_owned()
-    };
-    let wide: Vec<u16> = s.encode_utf16().collect();
-    let out_len = if dstl == 0 {
-        wide.len() + 1
-    } else {
-        if dst != 0 {
-            for (i, &c) in wide.iter().take(dstl as usize).enumerate() {
-                let _ = ctx.memory.write_u16(dst + (i as u32) * 2, c);
-            }
-            if (wide.len() as u32) < dstl {
-                let _ = ctx.memory.write_u16(dst + wide.len() as u32 * 2, 0);
-            }
-        }
-        wide.len().min(dstl as usize) + 1
-    };
-    ctx.ret_stdcall(out_len as u32, 6);
+        ctx.ret_stdcall(needed, 6);
+    }
     Handled::Ok
 }
 
+// WideCharToMultiByte(codepage, flags, src, srclen, dst, dstlen, defchar, used).
+// Mirror image of the above; `defchar`/`used` are handled by the codepage
+// tables ('?' substitution) rather than honoured literally.
 fn widechar_to_multibyte(ctx: &mut ApiContext) -> Handled {
+    let codepage = ctx.arg(0);
     let src = ctx.arg(2);
     let srcl = ctx.arg(3);
     let dst = ctx.arg(4);
     let dstl = ctx.arg(5);
-    let nchars = if srcl == 0xFFFF_FFFF {
-        ctx.memory.read_wstr(src).len() + 1
-    } else {
-        srcl as usize
-    };
-    let s = ctx.memory.read_wstr(src);
-    let bytes = s.as_bytes();
-    let n = bytes.len().min(if dstl == 0 { 0 } else { dstl as usize });
-    if n > 0 && dst != 0 {
-        let _ = ctx.memory.write_bytes(dst, &bytes[..n]);
+    let used = ctx.arg(7);
+
+    if src == 0 || srcl == 0 || (dst == 0 && dstl != 0) {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, 8);
+        return Handled::Ok;
     }
-    ctx.ret_stdcall(if dstl == 0 { nchars as u32 } else { n as u32 }, 8);
+
+    let units = wc_source(ctx, src, srcl);
+    let bytes = crate::codepage::encode(codepage, &units);
+    if used != 0 {
+        let any_default = units
+            .iter()
+            .any(|&w| w >= 0x80 && crate::codepage::wchar_to_byte(codepage, w) == b'?' && w != '?' as u16);
+        let _ = ctx.memory.write_u32(used, any_default as u32);
+    }
+
+    let needed = bytes.len() as u32;
+    if dstl == 0 {
+        ctx.ret_stdcall(needed, 8);
+        return Handled::Ok;
+    }
+
+    let n = needed.min(dstl) as usize;
+    let _ = ctx.memory.write_bytes(dst, &bytes[..n]);
+    if dstl < needed {
+        ctx.cpu.last_error = ERROR_INSUFFICIENT_BUFFER;
+        ctx.ret_stdcall(0, 8);
+    } else {
+        ctx.ret_stdcall(needed, 8);
+    }
     Handled::Ok
 }
 

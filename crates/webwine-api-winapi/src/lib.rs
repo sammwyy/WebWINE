@@ -1,4 +1,5 @@
 pub mod advapi32;
+pub mod codepage;
 pub mod comctl32;
 pub mod comdlg32;
 pub mod dbghelp;

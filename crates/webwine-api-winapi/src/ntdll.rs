@@ -53,8 +53,13 @@ fn rtl_realloc(ctx: &mut ApiContext) -> Handled {
     ctx.ret_stdcall(ptr, 4); Handled::Ok
 }
 
+/// RtlSizeHeap(heap, flags, ptr) -> block size, (SIZE_T)-1 when unknown.
+/// The bump allocator records every block size; reporting 0 read back as a
+/// valid zero-byte block, which breaks msvcrt `_msize`/`realloc` paths.
 fn rtl_size(ctx: &mut ApiContext) -> Handled {
-    ctx.ret_stdcall(0, 3); Handled::Ok
+    let p = ctx.arg(2);
+    let n = ctx.heap_sizes.get(&p).copied().unwrap_or(0xFFFF_FFFF);
+    ctx.ret_stdcall(n, 3); Handled::Ok
 }
 
 fn rtl_zero(ctx: &mut ApiContext) -> Handled {

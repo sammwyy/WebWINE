@@ -410,17 +410,29 @@ pub(crate) fn memcmp(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// strlen: count raw bytes up to the NUL. Going through `cstr` first decodes
+// with from_utf8_lossy, which turns every byte >= 0x80 into a 3-byte U+FFFD and
+// inflates the answer for any non-ASCII (CP1252) string.
 pub(crate) fn strlen(ctx: &mut ApiContext) -> Handled {
+    let mut n = 0u32;
     let p = ctx.arg(0);
-    let s = ctx.cstr(p);
-    ctx.ret_cdecl(s.len() as u32);
+    while ctx.memory.read_u8(p.wrapping_add(n)).unwrap_or(0) != 0 {
+        n += 1;
+    }
+    ctx.ret_cdecl(n);
     Handled::Ok
 }
 
+// wcslen: count UTF-16 code units, not the UTF-8 length of the decoded string.
+// The old version returned 3 for a single WCHAR like U+20AC, so callers sized
+// buffers from it and overran them.
 pub(crate) fn wcslen(ctx: &mut ApiContext) -> Handled {
+    let mut n = 0u32;
     let p = ctx.arg(0);
-    let s = ctx.wstr(p);
-    ctx.ret_cdecl(s.len() as u32);
+    while ctx.memory.read_u16(p.wrapping_add(n * 2)).unwrap_or(0) != 0 {
+        n += 1;
+    }
+    ctx.ret_cdecl(n);
     Handled::Ok
 }
 
@@ -432,11 +444,24 @@ pub(crate) fn strcmp(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// strncmp: compare raw bytes. Slicing the decoded Strings at `n` panicked
+// whenever `n` landed inside a multi-byte UTF-8 sequence (any CP1252 input),
+// and compared replacement characters rather than the actual bytes.
 pub(crate) fn strncmp(ctx: &mut ApiContext) -> Handled {
-    let a = ctx.cstr(ctx.arg(0));
-    let b = ctx.cstr(ctx.arg(1));
-    let n = ctx.arg(2) as usize;
-    let r = a[..a.len().min(n)].cmp(&b[..b.len().min(n)]) as i32;
+    let (pa, pb) = (ctx.arg(0), ctx.arg(1));
+    let n = ctx.arg(2);
+    let mut r = 0i32;
+    for i in 0..n {
+        let a = ctx.memory.read_u8(pa.wrapping_add(i)).unwrap_or(0);
+        let b = ctx.memory.read_u8(pb.wrapping_add(i)).unwrap_or(0);
+        if a != b {
+            r = a as i32 - b as i32;
+            break;
+        }
+        if a == 0 {
+            break;
+        }
+    }
     ctx.ret_cdecl(r as u32);
     Handled::Ok
 }
