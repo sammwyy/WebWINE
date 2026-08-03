@@ -204,6 +204,49 @@ impl Registry {
             RegValue::Dword(1),
         );
         self.ensure_key("HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\WindowsMediaPlayer");
+
+        // Shell folder locations. SHGetFolderPath/SHGetSpecialFolderPath are the
+        // documented way to get these, but plenty of installers (older NSIS
+        // scripts included) read them straight out of the registry instead —
+        // without these, $PROGRAMFILES-style path resolution can come back
+        // empty and silently corrupt a later CreateDirectory/path-join.
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion",
+            "ProgramFilesDir",
+            RegValue::Sz("C:\\Program Files".into()),
+        );
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion",
+            "CommonFilesDir",
+            RegValue::Sz("C:\\Program Files\\Common Files".into()),
+        );
+        self.set_value_path(
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+            "SystemRoot",
+            RegValue::Sz("C:\\Windows".into()),
+        );
+        let shell_folders = [
+            ("AppData", "C:\\Users\\guest\\AppData\\Roaming"),
+            ("Local AppData", "C:\\Users\\guest\\AppData\\Local"),
+            ("Desktop", "C:\\Users\\guest\\Desktop"),
+            ("Personal", "C:\\Users\\guest\\Documents"),
+            ("Favorites", "C:\\Users\\guest\\Favorites"),
+            (
+                "Programs",
+                "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs",
+            ),
+            (
+                "Start Menu",
+                "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu",
+            ),
+        ];
+        for (name, value) in shell_folders {
+            self.set_value_path(
+                "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
+                name,
+                RegValue::Sz(value.into()),
+            );
+        }
     }
 
     // ---- path-based access (used by the regedit host bridge and seeding) ----
