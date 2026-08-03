@@ -434,17 +434,17 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("kernel32.dll", "FreeEnvironmentStringsA", r1_1),
-        ("kernel32.dll", "InitializeCriticalSection", r0_1),
+        ("kernel32.dll", "InitializeCriticalSection", k32_init_cs),
         (
             "kernel32.dll",
             "InitializeCriticalSectionAndSpinCount",
-            r1_2,
+            k32_init_cs_spin,
         ),
-        ("kernel32.dll", "InitializeCriticalSectionEx", r1_3),
-        ("kernel32.dll", "DeleteCriticalSection", r0_1),
-        ("kernel32.dll", "EnterCriticalSection", r0_1),
-        ("kernel32.dll", "LeaveCriticalSection", r0_1),
-        ("kernel32.dll", "TryEnterCriticalSection", r1_1),
+        ("kernel32.dll", "InitializeCriticalSectionEx", k32_init_cs_ex),
+        ("kernel32.dll", "DeleteCriticalSection", k32_delete_cs),
+        ("kernel32.dll", "EnterCriticalSection", k32_enter_cs),
+        ("kernel32.dll", "LeaveCriticalSection", k32_leave_cs),
+        ("kernel32.dll", "TryEnterCriticalSection", k32_try_enter_cs),
         ("kernel32.dll", "TlsAlloc", tls_alloc),
         ("kernel32.dll", "TlsSetValue", tls_set),
         ("kernel32.dll", "TlsGetValue", tls_get),
@@ -3594,11 +3594,100 @@ fn interlocked_cmpxchg(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// stub helpers
+// ── Critical sections (kernel32 wrappers over RTL_CRITICAL_SECTION layout) ──
+// Single-threaded guest: enter always succeeds; fields still match Wine/Windows
+// so debuggers and apps that inspect the structure see valid state.
 
-// Stub family: return a constant in EAX and clean exactly `n` stdcall args.
-// Naming: r{val}_{nargs}. Correct arg counts matter â€” a wrong count drifts
-// the guest stack and eventually derails a `ret`.
+const CS_DEBUG_INFO: u32 = 0;
+const CS_LOCK_COUNT: u32 = 4;
+const CS_RECURSION: u32 = 8;
+const CS_OWNING_THREAD: u32 = 12;
+const CS_LOCK_SEMAPHORE: u32 = 16;
+const CS_SPIN_COUNT: u32 = 20;
+
+fn init_cs_fields(ctx: &mut ApiContext, cs: u32, spin: u32) {
+    if cs == 0 {
+        return;
+    }
+    let _ = ctx.memory.write_u32(cs + CS_DEBUG_INFO, 0xFFFF_FFFF);
+    let _ = ctx.memory.write_u32(cs + CS_LOCK_COUNT, 0xFFFF_FFFF);
+    let _ = ctx.memory.write_u32(cs + CS_RECURSION, 0);
+    let _ = ctx.memory.write_u32(cs + CS_OWNING_THREAD, 0);
+    let _ = ctx.memory.write_u32(cs + CS_LOCK_SEMAPHORE, 0);
+    let _ = ctx.memory.write_u32(cs + CS_SPIN_COUNT, spin);
+}
+
+fn k32_init_cs(ctx: &mut ApiContext) -> Handled {
+    init_cs_fields(ctx, ctx.arg(0), 0);
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn k32_init_cs_spin(ctx: &mut ApiContext) -> Handled {
+    // BOOL InitializeCriticalSectionAndSpinCount(lpCS, dwSpinCount)
+    init_cs_fields(ctx, ctx.arg(0), ctx.arg(1));
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+fn k32_init_cs_ex(ctx: &mut ApiContext) -> Handled {
+    // BOOL InitializeCriticalSectionEx(lpCS, dwSpinCount, Flags)
+    init_cs_fields(ctx, ctx.arg(0), ctx.arg(1));
+    ctx.ret_stdcall(1, 3);
+    Handled::Ok
+}
+
+fn k32_delete_cs(ctx: &mut ApiContext) -> Handled {
+    let cs = ctx.arg(0);
+    if cs != 0 {
+        let _ = ctx.memory.write_bytes(cs, &[0u8; 24]);
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn k32_enter_cs(ctx: &mut ApiContext) -> Handled {
+    let cs = ctx.arg(0);
+    if cs != 0 {
+        let rec = ctx.memory.read_u32(cs + CS_RECURSION).unwrap_or(0);
+        let _ = ctx.memory.write_u32(cs + CS_LOCK_COUNT, 0);
+        let _ = ctx.memory.write_u32(cs + CS_RECURSION, rec.wrapping_add(1));
+        let _ = ctx.memory.write_u32(cs + CS_OWNING_THREAD, 1);
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn k32_leave_cs(ctx: &mut ApiContext) -> Handled {
+    let cs = ctx.arg(0);
+    if cs != 0 {
+        let rec = ctx.memory.read_u32(cs + CS_RECURSION).unwrap_or(1);
+        let next = rec.saturating_sub(1);
+        let _ = ctx.memory.write_u32(cs + CS_RECURSION, next);
+        if next == 0 {
+            let _ = ctx.memory.write_u32(cs + CS_OWNING_THREAD, 0);
+            let _ = ctx.memory.write_u32(cs + CS_LOCK_COUNT, 0xFFFF_FFFF);
+        }
+    }
+    ctx.ret_stdcall(0, 1);
+    Handled::Ok
+}
+
+fn k32_try_enter_cs(ctx: &mut ApiContext) -> Handled {
+    let cs = ctx.arg(0);
+    if cs != 0 {
+        let rec = ctx.memory.read_u32(cs + CS_RECURSION).unwrap_or(0);
+        let _ = ctx.memory.write_u32(cs + CS_LOCK_COUNT, 0);
+        let _ = ctx.memory.write_u32(cs + CS_RECURSION, rec.wrapping_add(1));
+        let _ = ctx.memory.write_u32(cs + CS_OWNING_THREAD, 1);
+    }
+    ctx.ret_stdcall(1, 1);
+    Handled::Ok
+}
+
+// Constant-return helpers for APIs whose documented behaviour is a fixed
+// success/failure with no guest-visible side effects (e.g. FreeLibrary → TRUE).
+// Naming: r{val}_{nargs}. Arg counts are load-bearing for stdcall.
 macro_rules! stubs {
     ($($name:ident => ($val:expr, $n:expr)),* $(,)?) => {
         $( #[allow(dead_code)] fn $name(c: &mut ApiContext) -> Handled { c.ret_stdcall($val, $n); Handled::Ok } )*

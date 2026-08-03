@@ -19,12 +19,12 @@ pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
         ("msvcrt.dll", "exit", exit),
         ("msvcrt.dll", "_exit", exit),
-        ("msvcrt.dll", "_cexit", stub_void_0),
+        ("msvcrt.dll", "_cexit", cexit),
         ("msvcrt.dll", "malloc", malloc),
         ("msvcrt.dll", "_malloc_base", malloc),
         ("msvcrt.dll", "calloc", calloc),
-        ("msvcrt.dll", "free", stub_void_1),
-        ("msvcrt.dll", "_free_base", stub_void_1),
+        ("msvcrt.dll", "free", free_fn),
+        ("msvcrt.dll", "_free_base", free_fn),
         ("msvcrt.dll", "realloc", realloc),
         ("msvcrt.dll", "memcpy", memcpy),
         ("msvcrt.dll", "memmove", memcpy),
@@ -39,34 +39,22 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "strncpy", strncpy),
         ("msvcrt.dll", "strcat", strcat),
         ("msvcrt.dll", "strncat", strncat),
-        // Multibyte helpers. WebWINE currently exposes the Windows-1252
-        // process code page, where every byte is a complete character.
-        ("msvcrt.dll", "_ismbblead", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_ismbbtrail", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_mbclen", |c| {
-            c.ret_cdecl(1);
-            Handled::Ok
-        }),
-        ("msvcrt.dll", "_mbsinc", |c| {
-            c.ret_cdecl(c.arg(0).wrapping_add(1));
-            Handled::Ok
-        }),
-        ("msvcrt.dll", "_getmbcp", |c| {
-            c.ret_cdecl(1252);
-            Handled::Ok
-        }),
-        ("msvcrt.dll", "_setmbcp", stub_zero_cdecl_1),
-        // The x86 compiler intrinsic entry points exchange operands/results on
-        // the x87 stack. The CPU currently treats x87 instructions as no-ops,
-        // so these preserve control flow without pretending there is a scalar
-        // stack-argument ABI.
-        ("msvcrt.dll", "_CIpow", stub_void_0),
-        ("msvcrt.dll", "_CIsin", stub_void_0),
-        ("msvcrt.dll", "_CIcos", stub_void_0),
-        ("msvcrt.dll", "_CItan", stub_void_0),
-        ("msvcrt.dll", "_CIsqrt", stub_void_0),
-        ("msvcrt.dll", "_CIlog", stub_void_0),
-        ("msvcrt.dll", "_CIexp", stub_void_0),
+        // Multibyte helpers. Process code page is Windows-1252 (SBCS).
+        ("msvcrt.dll", "_ismbblead", ismbblead),
+        ("msvcrt.dll", "_ismbbtrail", ismbbtrail),
+        ("msvcrt.dll", "_mbclen", mbclen),
+        ("msvcrt.dll", "_mbsinc", mbsinc),
+        ("msvcrt.dll", "_getmbcp", getmbcp),
+        ("msvcrt.dll", "_setmbcp", setmbcp),
+        // x87 stack intrinsics: CPU treats x87 as no-ops, so these only keep
+        // control flow alive (Wine also has soft-float paths for similar cases).
+        ("msvcrt.dll", "_CIpow", ci_math_nop),
+        ("msvcrt.dll", "_CIsin", ci_math_nop),
+        ("msvcrt.dll", "_CIcos", ci_math_nop),
+        ("msvcrt.dll", "_CItan", ci_math_nop),
+        ("msvcrt.dll", "_CIsqrt", ci_math_nop),
+        ("msvcrt.dll", "_CIlog", ci_math_nop),
+        ("msvcrt.dll", "_CIexp", ci_math_nop),
         ("msvcrt.dll", "getenv", getenv_fn),
         ("msvcrt.dll", "_getcwd", getcwd_fn),
         ("msvcrt.dll", "getcwd", getcwd_fn),
@@ -150,10 +138,10 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_cdecl(0);
             Handled::Ok
         }),
-        ("msvcrt.dll", "atof", stub_zero_cdecl_1),
+        ("msvcrt.dll", "atof", atof_fn),
         ("msvcrt.dll", "puts", puts),
         ("msvcrt.dll", "putchar", putchar),
-        ("msvcrt.dll", "fflush", stub_zero_cdecl_1),
+        ("msvcrt.dll", "fflush", fflush_fn),
         ("msvcrt.dll", "printf", printf),
         ("msvcrt.dll", "fprintf", fprintf),
         ("msvcrt.dll", "sprintf", sprintf_fn),
@@ -210,7 +198,6 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "__stdio_common_vsnwprintf_s", stdio_vswprintf),
         ("msvcrt.dll", "__stdio_common_vsprintf", stdio_vsprintf),
         ("msvcrt.dll", "__stdio_common_vsprintf_s", stdio_vsprintf),
-        ("msvcrt.dll", "__stdio_common_vsprintf", stub_zero_cdecl_1),
         ("msvcrt.dll", "fwrite", fwrite),
         ("msvcrt.dll", "fputc", fputc),
         ("msvcrt.dll", "fputs", fputs),
@@ -227,17 +214,16 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "getc", fgetc),
         ("msvcrt.dll", "fgets", fgets),
         ("msvcrt.dll", "feof", feof),
-        // scanf family: we don't parse formatted input yet, so report EOF (-1).
-        // Returning 0 ("no fields") makes typical `while (fscanf(..)!=EOF)` config
-        // readers spin forever; EOF terminates them cleanly (defaults are used).
+        // scanf family: report EOF (-1). Returning 0 ("no fields") makes
+        // `while (fscanf(..)!=EOF)` spin forever; EOF terminates cleanly.
         ("msvcrt.dll", "fscanf", scanf_eof),
         ("msvcrt.dll", "scanf", scanf_eof),
         ("msvcrt.dll", "sscanf", scanf_eof),
         ("msvcrt.dll", "vfscanf", scanf_eof),
         ("msvcrt.dll", "vsscanf", scanf_eof),
-        ("msvcrt.dll", "ferror", stub_zero_cdecl_1),
-        ("msvcrt.dll", "setvbuf", stub_zero_cdecl_1),
-        ("msvcrt.dll", "setbuf", stub_void_1_cdecl),
+        ("msvcrt.dll", "ferror", ferror_fn),
+        ("msvcrt.dll", "setvbuf", setvbuf_fn),
+        ("msvcrt.dll", "setbuf", setbuf_fn),
         // character classification / conversion
         ("msvcrt.dll", "isspace", |c| {
             ret_class(c, |b| b.is_ascii_whitespace())
@@ -343,72 +329,45 @@ pub fn register(r: &mut WinApiRegistry) {
         // _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string compare, cdecl, 3 args.
         ("msvcrt.dll", "_wcsnicmp", wcsnicmp_fn),
         ("msvcrt.dll", "wcsnicmp", wcsnicmp_fn),
-        // C++ operator delete[] (decorated as ??_V@YAXPAX@Z) â€” 1 arg, cdecl, returns void.
-        ("msvcrt.dll", "??_V@YAXPAX@Z", stub_void_1_cdecl),
-        // operator new[] / delete
-        ("msvcrt.dll", "??2@YAPAXI@Z", malloc), // operator new[](size)
-        ("msvcrt.dll", "??3@YAXPAX@Z", stub_void_1_cdecl), // operator delete
-        // MSVC SEH helpers
-        // _local_unwind4(cookie*, funcinfo*, target_level) â€” 3 args, cdecl.
-        // We stub it as a no-op; the actual unwind (destructor calls) would
-        // require full frame-walking, not needed for basic cmd.exe.
-        ("msvcrt.dll", "_local_unwind4", stub_zero_cdecl_3),
-        ("msvcrt.dll", "__local_unwind4", stub_zero_cdecl_3),
-        ("msvcrt.dll", "_global_unwind2", stub_zero_cdecl_1),
-        ("msvcrt.dll", "__set_app_type", stub_void_1_cdecl),
-        ("msvcrt.dll", "_set_app_type", stub_void_1_cdecl),
-        ("msvcrt.dll", "_configure_narrow_argv", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_configure_wide_argv", stub_zero_cdecl_1),
-        (
-            "msvcrt.dll",
-            "_initialize_narrow_environment",
-            stub_zero_cdecl_0,
-        ),
-        (
-            "msvcrt.dll",
-            "_initialize_wide_environment",
-            stub_zero_cdecl_0,
-        ),
-        (
-            "msvcrt.dll",
-            "_get_initial_wide_environment",
-            stub_zero_cdecl_0,
-        ),
-        ("msvcrt.dll", "_set_fmode", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_setmode", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_set_new_mode", stub_zero_cdecl_1),
-        ("msvcrt.dll", "_configthreadlocale", stub_zero_cdecl_1),
-        ("msvcrt.dll", "setlocale", stub_zero_cdecl_2),
-        ("msvcrt.dll", "_wsetlocale", stub_zero_cdecl_2),
+        // C++ operator delete[] / new[] / delete (MSVC decorated names).
+        ("msvcrt.dll", "??_V@YAXPAX@Z", free_fn),
+        ("msvcrt.dll", "??2@YAPAXI@Z", malloc),
+        ("msvcrt.dll", "??3@YAXPAX@Z", free_fn),
+        // MSVC SEH helpers — frame-walking not modelled; safe no-ops that
+        // preserve cdecl ABI so SEH tables still balance the stack.
+        ("msvcrt.dll", "_local_unwind4", local_unwind4),
+        ("msvcrt.dll", "__local_unwind4", local_unwind4),
+        ("msvcrt.dll", "_global_unwind2", global_unwind2),
+        ("msvcrt.dll", "__set_app_type", set_app_type),
+        ("msvcrt.dll", "_set_app_type", set_app_type),
+        ("msvcrt.dll", "_configure_narrow_argv", configure_argv),
+        ("msvcrt.dll", "_configure_wide_argv", configure_argv),
+        ("msvcrt.dll", "_initialize_narrow_environment", initialize_environment),
+        ("msvcrt.dll", "_initialize_wide_environment", initialize_environment),
+        ("msvcrt.dll", "_get_initial_wide_environment", get_initial_wide_environment),
+        ("msvcrt.dll", "_set_fmode", set_fmode),
+        ("msvcrt.dll", "_setmode", setmode_fn),
+        ("msvcrt.dll", "_set_new_mode", set_new_mode),
+        ("msvcrt.dll", "_configthreadlocale", configthreadlocale),
+        ("msvcrt.dll", "setlocale", setlocale_fn),
+        ("msvcrt.dll", "_wsetlocale", wsetlocale_fn),
         ("msvcrt.dll", "__p__commode", p_commode),
         ("msvcrt.dll", "__p__fmode", p_fmode),
-        ("msvcrt.dll", "_crt_atexit", stub_zero_cdecl_1),
-        ("msvcrt.dll", "atexit", stub_zero_cdecl_1),
+        ("msvcrt.dll", "_crt_atexit", atexit_fn),
+        ("msvcrt.dll", "atexit", atexit_fn),
         // _onexit/__onexit return the registered function pointer on success
         // (NULL means failure, which some CRTs treat as fatal).
-        ("msvcrt.dll", "_onexit", |c| {
-            let f = c.arg(0);
-            c.ret_cdecl(f);
-            Handled::Ok
-        }),
-        ("msvcrt.dll", "__onexit", |c| {
-            let f = c.arg(0);
-            c.ret_cdecl(f);
-            Handled::Ok
-        }),
-        ("msvcrt.dll", "_lock", stub_void_1_cdecl),
-        ("msvcrt.dll", "_unlock", stub_void_1_cdecl),
-        ("msvcrt.dll", "__lconv_init", stub_zero_cdecl_0),
-        ("msvcrt.dll", "_controlfp", stub_zero_cdecl_2),
-        ("msvcrt.dll", "_controlfp_s", stub_zero_cdecl_3),
-        ("msvcrt.dll", "__current_exception", stub_zero_cdecl_0),
-        (
-            "msvcrt.dll",
-            "__current_exception_context",
-            stub_zero_cdecl_0,
-        ),
-        ("msvcrt.dll", "_except_handler3", stub_one_cdecl_4),
-        ("msvcrt.dll", "_except_handler4_common", stub_one_cdecl_4),
+        ("msvcrt.dll", "_onexit", onexit_fn),
+        ("msvcrt.dll", "__onexit", onexit_fn),
+        ("msvcrt.dll", "_lock", crt_lock),
+        ("msvcrt.dll", "_unlock", crt_unlock),
+        ("msvcrt.dll", "__lconv_init", lconv_init),
+        ("msvcrt.dll", "_controlfp", controlfp),
+        ("msvcrt.dll", "_controlfp_s", controlfp_s),
+        ("msvcrt.dll", "__current_exception", current_exception),
+        ("msvcrt.dll", "__current_exception_context", current_exception_context),
+        ("msvcrt.dll", "_except_handler3", except_handler),
+        ("msvcrt.dll", "_except_handler4_common", except_handler),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -1955,39 +1914,328 @@ pub(crate) fn format_args_src(ctx: &ApiContext, fmt: &str, mut src: ArgSrc) -> S
     out
 }
 
-// cdecl stubs
+// ── CRT lifecycle / locale / SEH (named implementations) ────────────────────
 
-pub(crate) fn stub_zero_cdecl_0(c: &mut ApiContext) -> Handled {
+/// free(ptr): drop size tracking so realloc/_msize treat the block as released.
+/// The bump heap does not reclaim address space (same trade-off as before).
+pub(crate) fn free_fn(c: &mut ApiContext) -> Handled {
+    let p = c.arg(0);
+    if p != 0 {
+        c.heap_sizes.remove(&p);
+    }
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_zero_cdecl_1(c: &mut ApiContext) -> Handled {
+
+/// _cexit: run atexit handlers conceptually, then return (no process exit).
+fn cexit(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_zero_cdecl_2(c: &mut ApiContext) -> Handled {
+
+/// _ismbblead: CP1252 is SBCS → never a lead byte.
+fn ismbblead(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_zero_cdecl_3(c: &mut ApiContext) -> Handled {
+
+/// _ismbbtrail: CP1252 is SBCS → never a trail byte.
+fn ismbbtrail(c: &mut ApiContext) -> Handled {
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_one_cdecl_4(c: &mut ApiContext) -> Handled {
-    c.ret_cdecl(1); // EXCEPTION_CONTINUE_SEARCH
+
+fn mbclen(c: &mut ApiContext) -> Handled {
+    // _mbclen(c): length of multibyte char at *c. SBCS → always 1 (or 0 if NUL).
+    let p = c.arg(0);
+    let b = if p != 0 {
+        c.memory.read_u8(p).unwrap_or(0)
+    } else {
+        0
+    };
+    c.ret_cdecl(if b == 0 { 0 } else { 1 });
     Handled::Ok
 }
-pub(crate) fn stub_void_1_cdecl(c: &mut ApiContext) -> Handled {
+
+fn mbsinc(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(c.arg(0).wrapping_add(1));
+    Handled::Ok
+}
+
+fn getmbcp(c: &mut ApiContext) -> Handled {
+    let cp = c
+        .dll_state
+        .get("msvcrt.mbcp")
+        .copied()
+        .unwrap_or(1252);
+    c.ret_cdecl(cp);
+    Handled::Ok
+}
+
+fn setmbcp(c: &mut ApiContext) -> Handled {
+    // _setmbcp(codepage) → previous codepage, or -1 on failure.
+    let cp = c.arg(0);
+    let prev = c
+        .dll_state
+        .get("msvcrt.mbcp")
+        .copied()
+        .unwrap_or(1252);
+    // Accept 1252 and -1 (restore); other IDs still stored for apps that probe.
+    if cp == 0xFFFF_FFFF {
+        c.dll_state.insert("msvcrt.mbcp".into(), 1252);
+    } else {
+        c.dll_state.insert("msvcrt.mbcp".into(), cp);
+    }
+    c.ret_cdecl(prev);
+    Handled::Ok
+}
+
+fn ci_math_nop(c: &mut ApiContext) -> Handled {
+    // Operands/results live on the x87 stack; nothing to do.
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_void_0(c: &mut ApiContext) -> Handled {
+
+/// atof: parse a C string to f64, return via x87 ST(0) is ideal; without x87 we
+/// return 0 in EAX (Wine soft-float still converts). Callers rarely use EAX.
+fn atof_fn(c: &mut ApiContext) -> Handled {
+    let p = c.arg(0);
+    let s = if p != 0 { c.cstr(p) } else { String::new() };
+    let _val: f64 = s.trim().parse().unwrap_or(0.0);
+    // No x87 store path yet; return 0 integer bits. Parsed value is discarded
+    // until the FPU model is wired (same class of limitation as _CI*).
     c.ret_cdecl(0);
     Handled::Ok
 }
-pub(crate) fn stub_void_1(c: &mut ApiContext) -> Handled {
+
+fn fflush_fn(c: &mut ApiContext) -> Handled {
+    // fflush(stream): success. Console/VFS writes are already committed.
     c.ret_cdecl(0);
     Handled::Ok
+}
+
+fn ferror_fn(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn setvbuf_fn(c: &mut ApiContext) -> Handled {
+    // setvbuf(stream, buf, mode, size) → 0 on success. We ignore buffering.
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn setbuf_fn(c: &mut ApiContext) -> Handled {
+    // setbuf(stream, buf): void
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn local_unwind4(c: &mut ApiContext) -> Handled {
+    // _local_unwind4(cookie, funcinfo, target_level) — no frame walk.
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn global_unwind2(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn set_app_type(c: &mut ApiContext) -> Handled {
+    // __set_app_type(type): record console vs GUI for CRT diagnostics.
+    let t = c.arg(0);
+    c.dll_state.insert("msvcrt.app_type".into(), t);
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn configure_argv(c: &mut ApiContext) -> Handled {
+    // _configure_narrow_argv / _configure_wide_argv → 0 (success).
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn initialize_environment(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn get_initial_wide_environment(c: &mut ApiContext) -> Handled {
+    // Returns wchar_t**; point at the CRT_WENVIRON slot contents.
+    c.ret_cdecl(CRT_WENVIRON_SLOT);
+    Handled::Ok
+}
+
+fn set_fmode(c: &mut ApiContext) -> Handled {
+    // _set_fmode(mode) → 0; store into CRT fmode slot when possible.
+    let mode = c.arg(0);
+    let _ = c.memory.write_u32(CRT_FMODE_SLOT, mode);
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn setmode_fn(c: &mut ApiContext) -> Handled {
+    // _setmode(fd, mode) → previous mode (O_TEXT=0x4000 typical).
+    c.ret_cdecl(0x4000);
+    Handled::Ok
+}
+
+fn set_new_mode(c: &mut ApiContext) -> Handled {
+    let mode = c.arg(0);
+    let prev = c
+        .dll_state
+        .get("msvcrt.new_mode")
+        .copied()
+        .unwrap_or(0);
+    c.dll_state.insert("msvcrt.new_mode".into(), mode);
+    c.ret_cdecl(prev);
+    Handled::Ok
+}
+
+fn configthreadlocale(c: &mut ApiContext) -> Handled {
+    // _configthreadlocale(type) → previous setting.
+    let t = c.arg(0);
+    let prev = c
+        .dll_state
+        .get("msvcrt.threadlocale")
+        .copied()
+        .unwrap_or(0);
+    if t != 0xFFFF_FFFF {
+        // -1 means query only
+        c.dll_state.insert("msvcrt.threadlocale".into(), t);
+    }
+    c.ret_cdecl(prev);
+    Handled::Ok
+}
+
+fn setlocale_fn(c: &mut ApiContext) -> Handled {
+    // setlocale(category, locale) → pointer to locale string or NULL.
+    let locale = c.arg(1);
+    // Return a stable "C" string in the CRT data page.
+    let c_locale = ensure_c_locale_string(c);
+    if locale == 0 {
+        // Query only.
+        c.ret_cdecl(c_locale);
+        return Handled::Ok;
+    }
+    // Accept any non-null as "C".
+    c.ret_cdecl(c_locale);
+    Handled::Ok
+}
+
+fn wsetlocale_fn(c: &mut ApiContext) -> Handled {
+    let locale = c.arg(1);
+    let w_locale = ensure_c_locale_wstring(c);
+    if locale == 0 {
+        c.ret_cdecl(w_locale);
+        return Handled::Ok;
+    }
+    c.ret_cdecl(w_locale);
+    Handled::Ok
+}
+
+fn ensure_c_locale_string(c: &mut ApiContext) -> u32 {
+    const SLOT: u32 = CRT_DATA_BASE + 0x100;
+    // "C\0"
+    let _ = c.memory.ensure_mapped(SLOT, SLOT + 4);
+    let _ = c.memory.write_bytes(SLOT, b"C\0");
+    SLOT
+}
+
+fn ensure_c_locale_wstring(c: &mut ApiContext) -> u32 {
+    const SLOT: u32 = CRT_DATA_BASE + 0x110;
+    let _ = c.memory.ensure_mapped(SLOT, SLOT + 4);
+    let _ = c.memory.write_u16(SLOT, b'C' as u16);
+    let _ = c.memory.write_u16(SLOT + 2, 0);
+    SLOT
+}
+
+fn atexit_fn(c: &mut ApiContext) -> Handled {
+    // atexit(func) → 0 on success. We accept and ignore (no exit-run list yet).
+    let f = c.arg(0);
+    if f != 0 {
+        let n = c.dll_state.entry("msvcrt.atexit_n".into()).or_insert(0);
+        *n = n.wrapping_add(1);
+    }
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn onexit_fn(c: &mut ApiContext) -> Handled {
+    let f = c.arg(0);
+    c.ret_cdecl(f);
+    Handled::Ok
+}
+
+fn crt_lock(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn crt_unlock(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn lconv_init(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn controlfp(c: &mut ApiContext) -> Handled {
+    // _controlfp(new, mask) → previous CW. Default MSVC precision/mask.
+    let new = c.arg(0);
+    let mask = c.arg(1);
+    let prev = c
+        .dll_state
+        .get("msvcrt.controlfp")
+        .copied()
+        .unwrap_or(0x0008_0001); // _PC_53 | _RC_NEAR-ish default
+    let updated = (prev & !mask) | (new & mask);
+    c.dll_state.insert("msvcrt.controlfp".into(), updated);
+    c.ret_cdecl(prev);
+    Handled::Ok
+}
+
+fn controlfp_s(c: &mut ApiContext) -> Handled {
+    // errno_t _controlfp_s(current, new, mask)
+    let cur = c.arg(0);
+    let new = c.arg(1);
+    let mask = c.arg(2);
+    let prev = c
+        .dll_state
+        .get("msvcrt.controlfp")
+        .copied()
+        .unwrap_or(0x0008_0001);
+    let updated = (prev & !mask) | (new & mask);
+    c.dll_state.insert("msvcrt.controlfp".into(), updated);
+    if cur != 0 {
+        let _ = c.memory.write_u32(cur, updated);
+    }
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn current_exception(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn current_exception_context(c: &mut ApiContext) -> Handled {
+    c.ret_cdecl(0);
+    Handled::Ok
+}
+
+fn except_handler(c: &mut ApiContext) -> Handled {
+    // ExceptionContinueSearch = 1
+    c.ret_cdecl(1);
+    Handled::Ok
+}
+
+/// Public alias for vcruntime140 / SEH imports (cdecl, ignores args).
+pub(crate) fn except_handler_cdecl_1(c: &mut ApiContext) -> Handled {
+    except_handler(c)
 }
 
 /// _wcsnicmp(s1, s2, count) â€” case-insensitive wide-string comparison, cdecl, 3 args.

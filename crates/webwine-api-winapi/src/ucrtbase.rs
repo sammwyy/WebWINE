@@ -5,7 +5,7 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ucrtbase.dll", "exit", crate::msvcrt::exit),
         ("ucrtbase.dll", "_exit", crate::msvcrt::exit),
         ("ucrtbase.dll", "malloc", crate::msvcrt::malloc),
-        ("ucrtbase.dll", "free", crate::msvcrt::stub_void_1),
+        ("ucrtbase.dll", "free", crate::msvcrt::free_fn),
         ("ucrtbase.dll", "printf", crate::msvcrt::printf),
         ("ucrtbase.dll", "puts", crate::msvcrt::puts),
         ("ucrtbase.dll", "__stdio_common_vfprintf", crate::msvcrt::stdio_vfprintf),
