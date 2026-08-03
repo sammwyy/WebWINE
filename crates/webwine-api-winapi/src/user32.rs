@@ -69,6 +69,10 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 5);
             Handled::Ok
         }),
+        ("user32.dll", "SetDlgItemTextA", |c| {
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
         ("user32.dll", "SetDlgItemTextW", |c| {
             c.ret_stdcall(1, 3);
             Handled::Ok

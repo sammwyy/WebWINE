@@ -173,8 +173,13 @@ impl VirtualFileSystem {
             &["Users", "guest", "AppData", "Roaming"],
             &["Users", "guest", "AppData", "Local", "Temp"],
             &["Windows", "System32"],
+            &["Windows", "Fonts"],
             &["Windows", "Temp"],
             &["Temp"],
+            &["Program Files"],
+            &["Program Files (x86)"],
+            &["ProgramData"],
+            &["Users", "guest", "AppData", "LocalLow"],
         ];
         for chain in DIRS {
             let mut acc = format!("{drive}:");
