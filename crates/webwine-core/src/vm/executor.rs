@@ -87,11 +87,13 @@ pub fn run_slice(
             StepResult::Fault(r) => {
                 let fault_eip = proc.cpu.eip; // before SEH mutates it
                 let last = describe_instr(proc, prev_eip);
+                let regs = dump_regs(proc);
+                let stack = dump_stack_window(proc, 16);
                 logs.log(
                     LogLevel::Error,
                     "cpu",
                     &format!(
-                        "[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}",
+                        "[cpu] fault at EIP=0x{:08X}: {r}\n  last: {last}\n  {regs}\n  stack: {stack}",
                         proc.cpu.eip
                     ),
                     Some(proc.pid),
@@ -639,6 +641,32 @@ fn try_seh(
         node = proc.memory.read_u32(node).unwrap_or(0xFFFF_FFFF);
     }
     false
+}
+
+/// Register snapshot for a crash report.
+fn dump_regs(proc: &GuestProcess) -> String {
+    let c = &proc.cpu;
+    format!(
+        "EAX=0x{:08X} EBX=0x{:08X} ECX=0x{:08X} EDX=0x{:08X} ESI=0x{:08X} EDI=0x{:08X} EBP=0x{:08X} ESP=0x{:08X}",
+        c.eax, c.ebx, c.ecx, c.edx, c.esi, c.edi, c.ebp, c.esp
+    )
+}
+
+/// Dump `count` dwords starting at ESP, so a control-flow-corruption crash
+/// (a `ret`/`call` landing on a bad address) shows what was actually sitting
+/// on the stack — useful to spot a stale/garbage return address left behind
+/// by an earlier stdcall-arity mismatch.
+fn dump_stack_window(proc: &GuestProcess, count: u32) -> String {
+    let esp = proc.cpu.esp;
+    let mut parts = Vec::new();
+    for i in 0..count {
+        let addr = esp.wrapping_add(4 * i);
+        match proc.memory.read_u32(addr) {
+            Ok(v) => parts.push(format!("[esp+{:02X}]=0x{v:08X}", 4 * i)),
+            Err(_) => break,
+        }
+    }
+    parts.join(" ")
 }
 
 /// Decode the instruction at `addr` for a crash report. For memory-operand
