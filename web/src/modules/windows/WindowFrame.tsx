@@ -17,8 +17,10 @@ interface WindowFrameProps {
 }
 
 export function WindowFrame({ record }: WindowFrameProps) {
-  const { closeWindow, focusWindow, activeId } = useWindowStore();
-  const isActive = activeId === record.id;
+  // Narrow subscriptions: do NOT pull the whole store (that re-rendered every
+  // window on each title/style tick and fought with busy console content).
+  const focusWindow = useWindowStore((s) => s.focusWindow);
+  const isActive = useWindowStore((s) => s.activeId === record.id);
 
   let variantClass = "min-w-[320px] min-h-[180px]";
   if (record.variant === "dialog") variantClass = "min-w-[280px]";

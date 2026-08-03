@@ -1,4 +1,5 @@
 import React, { useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { clamp } from "@/shared/lib/utils";
 import { useWindowStore } from "@/state/windowStore";
 
@@ -13,14 +14,21 @@ export function WindowTitlebar({
   className,
   children,
 }: WindowTitlebarProps) {
-  const {
-    windows,
-    closeWindow,
-    minimizeWindow,
-    maximizeWindow,
-    restoreWindow,
-  } = useWindowStore();
-  const record = windows.find((w) => w.id === windowId);
+  // Only re-render this titlebar when *this* window's chrome fields change.
+  const record = useWindowStore(
+    useShallow((s) => {
+      const w = s.windows.find((x) => x.id === windowId);
+      if (!w) return null;
+      return {
+        id: w.id,
+        title: w.title,
+        icon: w.icon,
+        maximized: w.maximized,
+        variant: w.variant,
+        resizable: w.resizable,
+      };
+    }),
+  );
 
   const onTitlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -61,14 +69,15 @@ export function WindowTitlebar({
 
   const onMaxClick = useCallback(() => {
     if (!record) return;
-    if (record.maximized) restoreWindow(record.id);
-    else maximizeWindow(record.id);
-  }, [record, maximizeWindow, restoreWindow]);
+    const store = useWindowStore.getState();
+    if (record.maximized) store.restoreWindow(record.id);
+    else store.maximizeWindow(record.id);
+  }, [record]);
 
   const onMinClick = useCallback(() => {
     if (!record) return;
-    minimizeWindow(record.id);
-  }, [record, minimizeWindow]);
+    useWindowStore.getState().minimizeWindow(record.id);
+  }, [record]);
 
   if (!record) return null;
 
@@ -133,7 +142,7 @@ export function WindowTitlebar({
         <button
           type="button"
           className={`${controlBtnClass} hover:!bg-[var(--window-close-hover)] hover:!text-[var(--window-close-hover-text)] before:content-[''] before:absolute before:left-1/2 before:top-1/2 before:w-3 before:h-px before:bg-current before:-translate-x-1/2 before:-translate-y-1/2 before:rotate-45 after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:w-3 after:h-px after:bg-current after:-translate-x-1/2 after:-translate-y-1/2 after:-rotate-45`}
-          onClick={() => closeWindow(record.id)}
+          onClick={() => useWindowStore.getState().closeWindow(record.id)}
           aria-label="Close"
         />
       </div>

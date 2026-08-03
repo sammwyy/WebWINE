@@ -1,16 +1,24 @@
+/**
+ * Process console — guest stdout/stderr/stdin.
+ *
+ * Terminal *content* is written straight to the DOM (batched per frame). React
+ * state is only used for chrome that actually needs it (title bits, stick-to-
+ * bottom banner, exit state). That keeps the window manager / drag free even
+ * when a process floods thousands of lines.
+ */
+
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useCallback,
+  memo,
 } from "react";
 import { useWindowStore } from "@/state/windowStore";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { LogEvent, UiEvent } from "@/core/wasm/worker";
 import { handleUiEvents } from "../guest-window/GuestWindowApp";
 import { basename } from "@/shared/lib/utils";
-
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 
 export interface ConsoleOptions {
@@ -19,6 +27,11 @@ export interface ConsoleOptions {
   /** Extra command-line arguments appended after argv[0] (the image path). */
   args?: string;
 }
+
+/** Soft cap: drop oldest text when buffer exceeds this many characters. */
+const MAX_TERM_CHARS = 400_000;
+/** Hard prune target after overflow (keep recent tail). */
+const TRIM_TERM_CHARS = 300_000;
 
 export async function openProcessConsole(
   path: string,
@@ -78,17 +91,6 @@ export async function launchProcessHidden(
   runtime.runProcess(launched.pid);
 }
 
-function splitKeepLast(text: string): { content: string; nl: boolean }[] {
-  const parts = text.split("\n");
-  const out: { content: string; nl: boolean }[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const isLast = i === parts.length - 1;
-    if (isLast && parts[i] === "") continue;
-    out.push({ content: parts[i], nl: !isLast });
-  }
-  return out;
-}
-
 function countNewLines(text: string): number {
   let n = 0;
   for (let i = 0; i < text.length; i++) {
@@ -101,12 +103,194 @@ function isAtBottom(el: HTMLElement, thresholdPx = 40): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= thresholdPx;
 }
 
-interface TermSpan {
-  text: string;
-  cls?: string;
+type PendingChunk = { text: string; cls?: string };
+
+/**
+ * Imperative terminal buffer: queues writes and flushes once per animation
+ * frame into a single <pre> via DocumentFragment. Zero React involvement.
+ */
+class TermBuffer {
+  private readonly host: HTMLElement;
+  private readonly body: HTMLElement;
+  private readonly caret: HTMLElement;
+  private queue: PendingChunk[] = [];
+  private raf = 0;
+  private charCount = 0;
+  stickToBottom = true;
+  private ignoreScroll = false;
+  private pendingLines = 0;
+  private onPendingChange: ((n: number) => void) | null = null;
+  private bannerRaf = 0;
+
+  constructor(host: HTMLElement) {
+    this.host = host;
+    host.replaceChildren();
+
+    this.body = document.createElement("pre");
+    this.body.className =
+      "m-0 p-0 font-inherit text-inherit whitespace-pre-wrap break-all";
+    this.body.setAttribute("aria-live", "off");
+
+    this.caret = document.createElement("span");
+    this.caret.className = "animate-[blink_1s_step-end_infinite]";
+    this.caret.textContent = "█";
+    this.caret.hidden = false;
+
+    // Scroll container is `host`; body+caret live inside.
+    const wrap = document.createElement("div");
+    wrap.append(this.body, this.caret);
+    host.append(wrap);
+
+    host.addEventListener(
+      "scroll",
+      () => {
+        if (this.ignoreScroll) return;
+        if (isAtBottom(host)) {
+          this.stickToBottom = true;
+          this.setPending(0);
+        } else {
+          this.stickToBottom = false;
+        }
+      },
+      { passive: true },
+    );
+  }
+
+  setPendingListener(fn: (n: number) => void) {
+    this.onPendingChange = fn;
+  }
+
+  setCaretVisible(visible: boolean) {
+    this.caret.hidden = !visible;
+  }
+
+  private setPending(n: number) {
+    this.pendingLines = n;
+    if (this.bannerRaf) return;
+    this.bannerRaf = requestAnimationFrame(() => {
+      this.bannerRaf = 0;
+      this.onPendingChange?.(this.pendingLines);
+    });
+  }
+
+  write(text: string, cls?: string) {
+    if (!text) return;
+    this.queue.push({ text, cls });
+    if (!this.stickToBottom) {
+      this.setPending(this.pendingLines + countNewLines(text));
+    }
+    if (!this.raf) {
+      this.raf = requestAnimationFrame(() => this.flush());
+    }
+  }
+
+  /** Immediate flush (e.g. before backspace). */
+  flushSync() {
+    if (this.raf) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+    }
+    this.flush();
+  }
+
+  private flush() {
+    this.raf = 0;
+    if (this.queue.length === 0) return;
+
+    const chunks = this.queue;
+    this.queue = [];
+
+    const frag = document.createDocumentFragment();
+    for (const { text, cls } of chunks) {
+      if (cls) {
+        const span = document.createElement("span");
+        span.className = cls;
+        span.textContent = text;
+        frag.append(span);
+      } else {
+        frag.append(document.createTextNode(text));
+      }
+      this.charCount += text.length;
+    }
+    this.body.append(frag);
+
+    if (this.charCount > MAX_TERM_CHARS) {
+      this.trimOld();
+    }
+
+    if (this.stickToBottom) {
+      this.scrollToBottom();
+    }
+  }
+
+  private trimOld() {
+    // Drop whole leading nodes until under TRIM_TERM_CHARS.
+    while (
+      this.charCount > TRIM_TERM_CHARS &&
+      this.body.firstChild
+    ) {
+      const node = this.body.firstChild;
+      const len =
+        node.nodeType === Node.TEXT_NODE
+          ? (node.textContent?.length ?? 0)
+          : (node.textContent?.length ?? 0);
+      this.body.removeChild(node);
+      this.charCount = Math.max(0, this.charCount - len);
+    }
+  }
+
+  scrollToBottom() {
+    this.stickToBottom = true;
+    this.setPending(0);
+    this.ignoreScroll = true;
+    this.host.scrollTop = this.host.scrollHeight;
+    requestAnimationFrame(() => {
+      this.host.scrollTop = this.host.scrollHeight;
+      requestAnimationFrame(() => {
+        this.ignoreScroll = false;
+      });
+    });
+  }
+
+  /** Delete one character from the end (local echo backspace). */
+  backspace() {
+    this.flushSync();
+    // Walk backwards through last text node / span.
+    let node: ChildNode | null = this.body.lastChild;
+    while (node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = node.textContent ?? "";
+        if (t.length > 0) {
+          node.textContent = t.slice(0, -1);
+          this.charCount = Math.max(0, this.charCount - 1);
+          if (node.textContent.length === 0) node.parentNode?.removeChild(node);
+          return;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        const t = el.textContent ?? "";
+        if (t.length > 0) {
+          el.textContent = t.slice(0, -1);
+          this.charCount = Math.max(0, this.charCount - 1);
+          if (!el.textContent) el.remove();
+          return;
+        }
+      }
+      const prev = node.previousSibling;
+      node.parentNode?.removeChild(node);
+      node = prev;
+    }
+  }
+
+  dispose() {
+    if (this.raf) cancelAnimationFrame(this.raf);
+    if (this.bannerRaf) cancelAnimationFrame(this.bannerRaf);
+    this.queue = [];
+  }
 }
 
-function ProcessConsoleApp({
+// memo: parent WindowFrame may re-render on focus/title; console chrome stays put.
+const ProcessConsoleApp = memo(function ProcessConsoleApp({
   path,
   runtime,
   opts,
@@ -120,120 +304,31 @@ function ProcessConsoleApp({
   const fileName = basename(path);
   const debug = opts.debug ?? false;
 
-  const [spans, setSpans] = useState<TermSpan[]>([]);
   const [stateText, setStateText] = useState("starting");
   const [pid, setPid] = useState<number | null>(null);
-  const [running, setRunning] = useState(false);
-  const [exited, setExited] = useState(false);
   const [pendingLines, setPendingLines] = useState(0);
-  /** Forces a re-render of the banner without thrashing on every line. */
-  const [bannerTick, setBannerTick] = useState(0);
 
-  const termRef = useRef<HTMLDivElement>(null);
-  /** Stick to bottom until the user scrolls away. Starts true so launch output follows. */
-  const stickToBottomRef = useRef(true);
-  /** Ignore scroll events caused by our own scrollTop writes. */
-  const ignoreScrollRef = useRef(false);
-  const pendingLinesRef = useRef(0);
-  const bannerRafRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<TermBuffer | null>(null);
+  const pidRef = useRef<number | null>(null);
+  const runningRef = useRef(false);
 
-  const applyScrollBottom = useCallback(() => {
-    const el = termRef.current;
-    if (!el) return;
-    ignoreScrollRef.current = true;
-    el.scrollTop = el.scrollHeight;
-    // Second pass after layout (rapid text can grow after the first write).
-    requestAnimationFrame(() => {
-      const node = termRef.current;
-      if (node && stickToBottomRef.current) {
-        node.scrollTop = node.scrollHeight;
-      }
-      // Keep ignoring until after the browser has delivered any scroll events.
-      requestAnimationFrame(() => {
-        ignoreScrollRef.current = false;
-      });
-    });
-  }, []);
-
-  const pinToBottom = useCallback(() => {
-    stickToBottomRef.current = true;
-    pendingLinesRef.current = 0;
-    setPendingLines(0);
-    applyScrollBottom();
-  }, [applyScrollBottom]);
-
-  // After paint with new text, stick to bottom if enabled.
-  useLayoutEffect(() => {
-    if (stickToBottomRef.current) {
-      applyScrollBottom();
-    }
-  }, [spans, applyScrollBottom]);
-
-  // User scroll tracking — never treat programmatic scrolls as "user left bottom".
+  // Mount imperative terminal once.
   useEffect(() => {
-    const el = termRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      if (ignoreScrollRef.current) return;
-      if (isAtBottom(el)) {
-        stickToBottomRef.current = true;
-        if (pendingLinesRef.current !== 0) {
-          pendingLinesRef.current = 0;
-          setPendingLines(0);
-        }
-      } else {
-        stickToBottomRef.current = false;
-      }
+    const host = scrollRef.current;
+    if (!host) return;
+    const term = new TermBuffer(host);
+    term.setPendingListener(setPendingLines);
+    termRef.current = term;
+    return () => {
+      term.dispose();
+      termRef.current = null;
     };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Title sync (only when pid/state change — not every byte of output).
-  useEffect(() => {
-    const id = winId();
-    if (id) {
-      const tag = debug ? " | debug" : "";
-      useWindowStore
-        .getState()
-        .setTitle(
-          id,
-          `${fileName} | pid ${pid ?? "?"} | ${stateText}${tag}`,
-        );
-    }
-  }, [pid, stateText, debug, fileName, winId]);
-
-  const bumpPending = useCallback((lineDelta: number) => {
-    if (lineDelta <= 0) return;
-    pendingLinesRef.current += lineDelta;
-    // Coalesce banner updates to one per frame so rapid stdout doesn't thrash React.
-    if (bannerRafRef.current === 0) {
-      bannerRafRef.current = requestAnimationFrame(() => {
-        bannerRafRef.current = 0;
-        setPendingLines(pendingLinesRef.current);
-        setBannerTick((t) => t + 1);
-      });
-    }
+  const write = useCallback((text: string, cls?: string) => {
+    termRef.current?.write(text, cls);
   }, []);
-
-  const appendSpans = useCallback(
-    (newSpans: TermSpan[], lineDelta: number) => {
-      setSpans((s) => [...s, ...newSpans]);
-      if (!stickToBottomRef.current) {
-        bumpPending(lineDelta);
-      }
-    },
-    [bumpPending],
-  );
-
-  const write = useCallback(
-    (text: string, cls?: string) => {
-      appendSpans([{ text, cls }], countNewLines(text));
-    },
-    [appendSpans],
-  );
 
   const writeLog = useCallback(
     (ev: LogEvent) => {
@@ -243,69 +338,73 @@ function ProcessConsoleApp({
           : ev.level === "warn"
             ? "text-[#f9f1a5]"
             : "text-[#3b78ff]";
-      appendSpans(
-        [
-          { text: `[${ev.target}] `, cls: `${levelCls} font-bold` },
-          { text: `${ev.message}\n`, cls: levelCls },
-        ],
-        1,
-      );
+      termRef.current?.write(`[${ev.target}] `, `${levelCls} font-bold`);
+      termRef.current?.write(`${ev.message}\n`, levelCls);
     },
-    [appendSpans],
+    [],
   );
+
+  // Title only when pid/state change — never on stdout.
+  useEffect(() => {
+    const id = winId();
+    if (!id) return;
+    const tag = debug ? " | debug" : "";
+    useWindowStore
+      .getState()
+      .setTitle(id, `${fileName} | pid ${pid ?? "?"} | ${stateText}${tag}`);
+  }, [pid, stateText, debug, fileName, winId]);
 
   useEffect(() => {
     let active = true;
-    // Ensure stick is on at launch so the first flood of CRT output follows.
-    stickToBottomRef.current = true;
+    if (termRef.current) termRef.current.stickToBottom = true;
 
     const ready =
       opts.attachPid !== undefined
         ? Promise.resolve({
             pid: opts.attachPid,
             launchLogs: [] as LogEvent[],
-            attached: true,
           })
         : opts.args
-          ? runtime
-              .launchProcessWithArgs(path, opts.args)
-              .then((r) => ({ ...r, attached: false }))
-          : runtime
-              .launchProcess(path)
-              .then((r) => ({ ...r, attached: false }));
+          ? runtime.launchProcessWithArgs(path, opts.args)
+          : runtime.launchProcess(path);
 
     ready
       .then(({ pid: newPid, launchLogs }) => {
         if (!active) return;
 
+        pidRef.current = newPid;
+        runningRef.current = true;
         setPid(newPid);
-        setRunning(true);
         setStateText("running");
-        stickToBottomRef.current = true;
+        if (termRef.current) {
+          termRef.current.stickToBottom = true;
+          termRef.current.setCaretVisible(true);
+        }
 
-        if (debug) {
-          launchLogs.forEach(writeLog);
+        if (debug && launchLogs) {
+          for (const ev of launchLogs) writeLog(ev);
         }
 
         runtime.onProcessOutput(newPid, {
           stdout: (text) => {
             if (!active) return;
             if (debug) {
-              const parts = splitKeepLast(text);
-              const newSpans: TermSpan[] = [];
-              for (const line of parts) {
-                if (line.content) {
-                  newSpans.push({
-                    text: "[stdout] ",
-                    cls: "text-[#3b78ff] font-bold",
-                  });
+              // Prefix each logical line once in debug mode without React.
+              const parts = text.split("\n");
+              for (let i = 0; i < parts.length; i++) {
+                const isLast = i === parts.length - 1;
+                if (isLast && parts[i] === "") continue;
+                if (parts[i]) {
+                  termRef.current?.write(
+                    "[stdout] ",
+                    "text-[#3b78ff] font-bold",
+                  );
                 }
-                newSpans.push({
-                  text: line.content + (line.nl ? "\n" : ""),
-                  cls: "text-[#cccccc]",
-                });
+                termRef.current?.write(
+                  parts[i] + (isLast ? "" : "\n"),
+                  "text-[#cccccc]",
+                );
               }
-              appendSpans(newSpans, countNewLines(text));
             } else {
               write(text);
             }
@@ -319,22 +418,25 @@ function ProcessConsoleApp({
           log: debug
             ? (events) => {
                 if (!active) return;
-                events.forEach(writeLog);
+                for (const ev of events) writeLog(ev);
               }
             : undefined,
           exited: (code) => {
             if (!active) return;
-            setRunning(false);
-            setExited(true);
+            runningRef.current = false;
             setStateText(`exited (${code})`);
-            write(`\n[process exited with code ${code}]\n`, "text-[#89b4fa]");
+            termRef.current?.setCaretVisible(false);
+            write(
+              `\n[process exited with code ${code}]\n`,
+              "text-[#89b4fa]",
+            );
             window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
           },
           crashed: (reason) => {
             if (!active) return;
-            setRunning(false);
-            setExited(true);
+            runningRef.current = false;
             setStateText("crashed");
+            termRef.current?.setCaretVisible(false);
             write(`\n[process crashed: ${reason}]\n`, "text-[#c50f1f]");
             window.dispatchEvent(new CustomEvent("webwine:fs-changed"));
           },
@@ -345,113 +447,79 @@ function ProcessConsoleApp({
       .catch((err) => {
         if (!active) return;
         setStateText("error");
+        termRef.current?.setCaretVisible(false);
         write(`\n[failed to launch: ${err}]\n`, "text-[#c50f1f]");
       });
 
     return () => {
       active = false;
-      if (bannerRafRef.current) {
-        cancelAnimationFrame(bannerRafRef.current);
-        bannerRafRef.current = 0;
-      }
     };
-  }, [
-    path,
-    runtime,
-    opts.attachPid,
-    opts.args,
-    debug,
-    write,
-    writeLog,
-    appendSpans,
-  ]);
+  }, [path, runtime, opts.attachPid, opts.args, debug, write, writeLog]);
+
+  const pinToBottom = useCallback(() => {
+    termRef.current?.scrollToBottom();
+  }, []);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!running || pid === null) return;
+      const p = pidRef.current;
+      if (!runningRef.current || p === null) return;
 
       if (e.key === "Enter") {
         e.preventDefault();
-        // Typing should follow output if we were stuck to bottom.
         write("\n", debug ? "text-[#a6e3a1]" : undefined);
-        runtime.writeStdin(pid, "\r\n");
+        runtime.writeStdin(p, "\r\n");
       } else if (e.key === "Backspace") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x08");
-        setSpans((prev) => {
-          const newSpans = [...prev];
-          for (let i = newSpans.length - 1; i >= 0; i--) {
-            if (newSpans[i].text.length > 0) {
-              newSpans[i] = {
-                ...newSpans[i],
-                text: newSpans[i].text.slice(0, -1),
-              };
-              break;
-            }
-          }
-          return newSpans;
-        });
+        runtime.writeStdin(p, "\x08");
+        termRef.current?.backspace();
       } else if (e.key === "Tab") {
         e.preventDefault();
         write("\t", debug ? "text-[#a6e3a1]" : undefined);
-        runtime.writeStdin(pid, "\t");
+        runtime.writeStdin(p, "\t");
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x1b[A");
+        runtime.writeStdin(p, "\x1b[A");
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x1b[B");
+        runtime.writeStdin(p, "\x1b[B");
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x1b[C");
+        runtime.writeStdin(p, "\x1b[C");
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x1b[D");
+        runtime.writeStdin(p, "\x1b[D");
       } else if (e.key === "Escape") {
         e.preventDefault();
-        runtime.writeStdin(pid, "\x1b");
+        runtime.writeStdin(p, "\x1b");
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         write(e.key, debug ? "text-[#a6e3a1]" : undefined);
-        runtime.writeStdin(pid, e.key);
+        runtime.writeStdin(p, e.key);
       }
     },
-    [running, pid, write, debug, runtime],
+    [write, debug, runtime],
   );
 
-  const shownPending = pendingLines;
   const pendingLabel =
-    shownPending === 1
+    pendingLines === 1
       ? "Go to bottom (1 new line)"
-      : `Go to bottom (${shownPending} new lines)`;
+      : `Go to bottom (${pendingLines} new lines)`;
 
   return (
-    <div className="relative bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] flex flex-col h-full min-h-0">
+    <div className="relative bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] flex flex-col h-full min-h-0 contain-strict">
       <div
-        className="flex-1 min-h-0 overflow-auto p-2 flex flex-col whitespace-pre-wrap break-all outline-none"
+        ref={scrollRef}
+        className="flex-1 min-h-0 overflow-auto p-2 outline-none contain-content"
         tabIndex={0}
-        ref={termRef}
         onKeyDown={onKeyDown}
-        onMouseDown={() => termRef.current?.focus()}
-      >
-        <span>
-          {spans.map((s, i) => (
-            <span key={i} className={s.cls}>
-              {s.text}
-            </span>
-          ))}
-          {!exited && (
-            <span className="animate-[blink_1s_step-end_infinite]">█</span>
-          )}
-        </span>
-      </div>
+        onMouseDown={() => scrollRef.current?.focus()}
+      />
 
-      {shownPending > 0 && (
+      {pendingLines > 0 && (
         <button
           type="button"
-          key={bannerTick}
           onMouseDown={(e) => {
-            // Prevent focus steal / scroll races before click.
             e.preventDefault();
             e.stopPropagation();
             pinToBottom();
@@ -468,4 +536,4 @@ function ProcessConsoleApp({
       )}
     </div>
   );
-}
+});
