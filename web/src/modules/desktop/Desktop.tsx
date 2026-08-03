@@ -7,7 +7,15 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRuntimeStore } from "@/state/runtimeStore";
-import { useDesktopStore, DESKTOP_ICON_LAYOUTS } from "@/state/desktopStore";
+import {
+  useDesktopStore,
+  DESKTOP_ICON_LAYOUTS,
+  DESKTOP_GRID_MAX_ROWS,
+  pixelToGrid,
+  findFreeSlot,
+  occupiedCells,
+  type IconPosition,
+} from "@/state/desktopStore";
 import { useClipboardStore } from "@/state/clipboardStore";
 import { log } from "@/state/logStore";
 import {
@@ -39,6 +47,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     iconSize,
     setIconSize,
     selectedIds,
+    setPositions,
   } = useDesktopStore();
   const clipboard = useClipboardStore();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -368,43 +377,96 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
       onDrop={async (e) => {
         e.preventDefault();
         setDragOver(false);
-        const payload = decodeDragPayload(e.dataTransfer.getData("application/x-webwine-paths"));
-        const offsetRaw = e.dataTransfer.getData("application/x-webwine-drag-offset");
-        const offsets = offsetRaw ? JSON.parse(offsetRaw) : null;
+        const payload = decodeDragPayload(
+          e.dataTransfer.getData("application/x-webwine-paths"),
+        );
+        const offsetRaw = e.dataTransfer.getData(
+          "application/x-webwine-drag-offset",
+        );
+        type DragOffset = { x: number; y: number; path: string };
+        let offsets: DragOffset | null = null;
+        if (offsetRaw) {
+          try {
+            const parsed = JSON.parse(offsetRaw) as Partial<DragOffset>;
+            if (
+              typeof parsed.x === "number" &&
+              typeof parsed.y === "number" &&
+              typeof parsed.path === "string"
+            ) {
+              offsets = { x: parsed.x, y: parsed.y, path: parsed.path };
+            }
+          } catch {
+            offsets = null;
+          }
+        }
 
         if (runtime && payload.length > 0) {
-          const isFromDesktop = payload.every((p) => {
-            return parentPath(p.path).toLowerCase() === DESKTOP_PATH.toLowerCase();
-          });
+          const isFromDesktop = payload.every(
+            (p) =>
+              parentPath(p.path).toLowerCase() === DESKTOP_PATH.toLowerCase(),
+          );
 
           if (isFromDesktop) {
             const gridEl = gridRef.current;
             if (gridEl) {
               const layout = DESKTOP_ICON_LAYOUTS[iconSize];
               const gridRect = gridEl.getBoundingClientRect();
-              
-              if (offsets && offsets.path) {
-                const grabbedPath = offsets.path;
-                const oldGrabbedPos = positions[grabbedPath] ?? { col: 0, row: 0 };
-                const newCol = Math.max(0, Math.round((e.clientX - offsets.x - gridRect.left - 10) / layout.cellWidth));
-                const newRow = Math.max(0, Math.round((e.clientY - offsets.y - gridRect.top - 10) / layout.cellHeight));
-                const dCol = newCol - oldGrabbedPos.col;
-                const dRow = newRow - oldGrabbedPos.row;
+              const movingPaths = payload.map((p) => p.path);
 
-                payload.forEach((p) => {
-                  const oldPos = positions[p.path] ?? { col: 0, row: 0 };
-                  setPosition(p.path, {
-                    col: Math.max(0, oldPos.col + dCol),
-                    row: Math.max(0, oldPos.row + dRow),
-                  });
-                });
-              } else {
-                payload.forEach((p) => {
-                  const col = Math.max(0, Math.round((e.clientX - gridRect.left - 10) / layout.cellWidth));
-                  const row = Math.max(0, Math.round((e.clientY - gridRect.top - 10) / layout.cellHeight));
-                  setPosition(p.path, { col, row });
-                });
+              // Target cell under the grab point (or cursor if no offset).
+              const prefer = offsets?.path
+                ? pixelToGrid(
+                    e.clientX - offsets.x - gridRect.left,
+                    e.clientY - offsets.y - gridRect.top,
+                    layout.cellWidth,
+                    layout.cellHeight,
+                  )
+                : pixelToGrid(
+                    e.clientX - gridRect.left,
+                    e.clientY - gridRect.top,
+                    layout.cellWidth,
+                    layout.cellHeight,
+                  );
+
+              const grabbedPath = offsets?.path ?? payload[0]?.path;
+              const oldGrabbed =
+                (grabbedPath && positions[grabbedPath]) || { col: 0, row: 0 };
+              const dCol = prefer.col - oldGrabbed.col;
+              const dRow = prefer.row - oldGrabbed.row;
+
+              // Cells already taken by icons that are not being moved.
+              const occupied = occupiedCells(positions, movingPaths);
+              const updates: Record<string, IconPosition> = {};
+
+              // Place the grabbed icon first at prefer (or next free).
+              if (grabbedPath) {
+                const slot = findFreeSlot(
+                  occupied,
+                  DESKTOP_GRID_MAX_ROWS,
+                  prefer,
+                );
+                occupied.add(`${slot.col},${slot.row}`);
+                updates[grabbedPath] = slot;
               }
+
+              // Others keep relative delta when free; otherwise claim free slots.
+              for (const p of payload) {
+                if (p.path === grabbedPath) continue;
+                const oldPos = positions[p.path] ?? { col: 0, row: 0 };
+                const desired: IconPosition = {
+                  col: Math.max(0, oldPos.col + dCol),
+                  row: Math.max(0, oldPos.row + dRow),
+                };
+                const slot = findFreeSlot(
+                  occupied,
+                  DESKTOP_GRID_MAX_ROWS,
+                  desired,
+                );
+                occupied.add(`${slot.col},${slot.row}`);
+                updates[p.path] = slot;
+              }
+
+              setPositions(updates);
             }
           } else {
             try {
@@ -425,9 +487,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           <DesktopIcon
             key={entry.path}
             entry={entry}
-            position={
-              positions[entry.path] ?? { col: 0, row: 0 }
-            }
+            position={positions[entry.path] ?? { col: 0, row: 0 }}
             gridEl={gridRef.current}
             onRefresh={doRefresh}
             onRename={(e) => {

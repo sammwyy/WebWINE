@@ -312,7 +312,10 @@ export function DesktopIcon({
           el.style.left = `${clampV(newLeft, ICON_PAD, Math.max(ICON_PAD, gridEl.clientWidth - layout.cellWidth))}px`;
           el.style.top = `${clampV(newTop, ICON_PAD, Math.max(ICON_PAD, gridEl.clientHeight - layout.cellHeight))}px`;
         }}
-        onDragEnd={() => {
+        onDragEnd={(e) => {
+          // Clear drag-time pixel offsets so React grid `style` owns placement again.
+          e.currentTarget.style.left = "";
+          e.currentTarget.style.top = "";
           setDragging(false);
         }}
         onDragOver={(e) => {

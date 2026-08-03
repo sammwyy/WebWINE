@@ -24,9 +24,11 @@ export async function openProcessConsole(
   // Try to extract icon from PE, fallback to default_executable
   const resolved = await resolveIcon(
     { name, path, kind: "file", size: 0 },
-    runtime
+    runtime,
   );
-  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
+  const icon =
+    resolved?.src ||
+    `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
 
   let winId = "";
   winId = useWindowStore.getState().openWindow({
@@ -55,8 +57,8 @@ export async function launchProcessHidden(
     : await runtime.launchProcess(path);
 
   runtime.onProcessOutput(launched.pid, {
-    stdout: () => { },
-    stderr: () => { },
+    stdout: () => {},
+    stderr: () => {},
     ui: (events: UiEvent[]) => {
       handleUiEvents(launched.pid, events, runtime);
     },
@@ -84,6 +86,20 @@ function splitKeepLast(text: string): { content: string; nl: boolean }[] {
   return out;
 }
 
+/** Count complete newline-terminated lines in a chunk of console text. */
+function countNewLines(text: string): number {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") n++;
+  }
+  return n;
+}
+
+/** True when the scroll viewport is at (or very near) the bottom. */
+function isAtBottom(el: HTMLElement, thresholdPx = 24): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= thresholdPx;
+}
+
 interface TermSpan {
   text: string;
   cls?: string;
@@ -109,15 +125,47 @@ function ProcessConsoleApp({
   const [pid, setPid] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [exited, setExited] = useState(false);
+  /** Pending lines received while the user scrolled away from the bottom. */
+  const [pendingLines, setPendingLines] = useState(0);
 
   const termRef = useRef<HTMLDivElement>(null);
+  /** Stick to bottom until the user scrolls up. */
+  const stickToBottomRef = useRef(true);
 
-  // Auto-scroll term
+  const scrollToBottom = useCallback(() => {
+    const el = termRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+    setPendingLines(0);
+  }, []);
+
+  // After new output / input, autoscroll only when still stuck to the bottom.
   useEffect(() => {
-    if (termRef.current) {
-      termRef.current.scrollTop = termRef.current.scrollHeight;
+    const el = termRef.current;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [spans, inputLine]);
+
+  // Track user scroll: leaving the bottom freezes autoscroll; returning re-arms it.
+  useEffect(() => {
+    const el = termRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      if (isAtBottom(el)) {
+        stickToBottomRef.current = true;
+        setPendingLines(0);
+      } else {
+        stickToBottomRef.current = false;
+      }
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Title sync
   useEffect(() => {
@@ -133,18 +181,39 @@ function ProcessConsoleApp({
     }
   }, [pid, stateText, debug, fileName, winId]);
 
-  const write = useCallback((text: string, cls?: string) => {
-    setSpans((s) => [...s, { text, cls }]);
+  /** Append spans; if not stuck to bottom, accumulate "new lines" for the banner. */
+  const appendSpans = useCallback((newSpans: TermSpan[], lineDelta: number) => {
+    setSpans((s) => [...s, ...newSpans]);
+    if (!stickToBottomRef.current && lineDelta > 0) {
+      setPendingLines((n) => n + lineDelta);
+    }
   }, []);
 
-  const writeLog = useCallback((ev: LogEvent) => {
-    const levelCls = ev.level === "error" ? "text-[#c50f1f]" : ev.level === "warn" ? "text-[#f9f1a5]" : "text-[#3b78ff]";
-    setSpans((s) => [
-      ...s,
-      { text: `[${ev.target}] `, cls: `${levelCls} font-bold` },
-      { text: `${ev.message}\n`, cls: levelCls },
-    ]);
-  }, []);
+  const write = useCallback(
+    (text: string, cls?: string) => {
+      appendSpans([{ text, cls }], countNewLines(text));
+    },
+    [appendSpans],
+  );
+
+  const writeLog = useCallback(
+    (ev: LogEvent) => {
+      const levelCls =
+        ev.level === "error"
+          ? "text-[#c50f1f]"
+          : ev.level === "warn"
+            ? "text-[#f9f1a5]"
+            : "text-[#3b78ff]";
+      appendSpans(
+        [
+          { text: `[${ev.target}] `, cls: `${levelCls} font-bold` },
+          { text: `${ev.message}\n`, cls: levelCls },
+        ],
+        1,
+      );
+    },
+    [appendSpans],
+  );
 
   // Launch process
   useEffect(() => {
@@ -153,17 +222,17 @@ function ProcessConsoleApp({
     const ready =
       opts.attachPid !== undefined
         ? Promise.resolve({
-          pid: opts.attachPid,
-          launchLogs: [] as LogEvent[],
-          attached: true,
-        })
+            pid: opts.attachPid,
+            launchLogs: [] as LogEvent[],
+            attached: true,
+          })
         : opts.args
           ? runtime
-            .launchProcessWithArgs(path, opts.args)
-            .then((r) => ({ ...r, attached: false }))
+              .launchProcessWithArgs(path, opts.args)
+              .then((r) => ({ ...r, attached: false }))
           : runtime
-            .launchProcess(path)
-            .then((r) => ({ ...r, attached: false }));
+              .launchProcess(path)
+              .then((r) => ({ ...r, attached: false }));
 
     ready
       .then(({ pid: newPid, launchLogs }) => {
@@ -195,7 +264,7 @@ function ProcessConsoleApp({
                   cls: "text-[#cccccc]",
                 });
               }
-              setSpans((s) => [...s, ...newSpans]);
+              appendSpans(newSpans, countNewLines(text));
             } else {
               write(text);
             }
@@ -208,9 +277,9 @@ function ProcessConsoleApp({
           },
           log: debug
             ? (events) => {
-              if (!active) return;
-              events.forEach(writeLog);
-            }
+                if (!active) return;
+                events.forEach(writeLog);
+              }
             : undefined,
           exited: (code) => {
             if (!active) return;
@@ -241,7 +310,16 @@ function ProcessConsoleApp({
     return () => {
       active = false;
     };
-  }, [path, runtime, opts.attachPid, opts.args, debug, write, writeLog]);
+  }, [
+    path,
+    runtime,
+    opts.attachPid,
+    opts.args,
+    debug,
+    write,
+    writeLog,
+    appendSpans,
+  ]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -258,7 +336,10 @@ function ProcessConsoleApp({
           const newSpans = [...prev];
           for (let i = newSpans.length - 1; i >= 0; i--) {
             if (newSpans[i].text.length > 0) {
-              newSpans[i] = { ...newSpans[i], text: newSpans[i].text.slice(0, -1) };
+              newSpans[i] = {
+                ...newSpans[i],
+                text: newSpans[i].text.slice(0, -1),
+              };
               break;
             }
           }
@@ -292,10 +373,15 @@ function ProcessConsoleApp({
     [running, pid, write, debug, runtime],
   );
 
+  const pendingLabel =
+    pendingLines === 1
+      ? "Go to bottom (1 new line)"
+      : `Go to bottom (${pendingLines} new lines)`;
+
   return (
-    <div className="bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] p-2 overflow-auto flex flex-col h-full">
+    <div className="relative bg-[#0c0c0c] text-[#cccccc] font-['Consolas','Lucida_Console',monospace] text-[14px] flex flex-col h-full min-h-0">
       <div
-        className="flex-1 flex flex-col whitespace-pre-wrap break-all outline-none"
+        className="flex-1 min-h-0 overflow-auto p-2 flex flex-col whitespace-pre-wrap break-all outline-none"
         tabIndex={0}
         ref={termRef}
         onKeyDown={onKeyDown}
@@ -307,9 +393,21 @@ function ProcessConsoleApp({
               {s.text}
             </span>
           ))}
-          {!exited && <span className="animate-[blink_1s_step-end_infinite]">█</span>}
+          {!exited && (
+            <span className="animate-[blink_1s_step-end_infinite]">█</span>
+          )}
         </span>
       </div>
+
+      {pendingLines > 0 && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 text-[12px] font-sans font-medium text-white bg-[#0078d7] border border-[#0078d7] rounded-sm shadow-[0_4px_16px_rgba(0,0,0,0.45)] hover:bg-[#006cc1] hover:border-[#006cc1] cursor-pointer whitespace-nowrap"
+        >
+          {pendingLabel}
+        </button>
+      )}
     </div>
   );
 }
