@@ -627,8 +627,20 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "OpenEventW", |c| { c.ret_stdcall(0xE700_0001, 3); Handled::Ok }),
         ("kernel32.dll", "CreateThread", create_thread),
         ("kernel32.dll", "RegisterApplicationRestart", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("kernel32.dll", "GlobalAddAtomA", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("kernel32.dll", "GlobalAddAtomW", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
+        ("kernel32.dll", "GlobalAddAtomA", global_add_atom_a),
+        ("kernel32.dll", "GlobalAddAtomW", global_add_atom_w),
+        ("kernel32.dll", "GlobalFindAtomA", global_find_atom_a),
+        ("kernel32.dll", "GlobalFindAtomW", global_find_atom_w),
+        ("kernel32.dll", "GlobalDeleteAtom", global_delete_atom),
+        ("kernel32.dll", "GlobalGetAtomNameA", global_get_atom_name_a),
+        ("kernel32.dll", "GlobalGetAtomNameW", global_get_atom_name_w),
+        ("kernel32.dll", "AddAtomA", global_add_atom_a),
+        ("kernel32.dll", "AddAtomW", global_add_atom_w),
+        ("kernel32.dll", "FindAtomA", global_find_atom_a),
+        ("kernel32.dll", "FindAtomW", global_find_atom_w),
+        ("kernel32.dll", "DeleteAtom", global_delete_atom),
+        ("kernel32.dll", "GetAtomNameA", global_get_atom_name_a),
+        ("kernel32.dll", "GetAtomNameW", global_get_atom_name_w),
         // Registry value query (W10 explorer). 7 args; report not-found.
         ("kernel32.dll", "RegGetValueW", |c| {
             if c.arg(6) != 0 {
@@ -2075,12 +2087,12 @@ fn get_exit_code_process(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-// GetProcAddress(hModule, lpProcName) â€” return a real trampoline for a function
+// GetProcAddress(hModule, lpProcName) — return a real trampoline for a function
 // we implement (so the guest can call it), else 0 (caller uses its fallback).
 fn get_proc_address(ctx: &mut ApiContext) -> Handled {
     let name_arg = ctx.arg(1);
     let va = if name_arg < 0x1_0000 {
-        0 // imported by ordinal â€” not supported
+        0 // imported by ordinal — not supported
     } else {
         let name = ctx.cstr(name_arg);
         let v = ctx.proc_address("", &name);
@@ -2091,10 +2103,9 @@ fn get_proc_address(ctx: &mut ApiContext) -> Handled {
             Some(ctx.pid),
         );
         if v == 0 {
-            // A miss means a dynamically-resolved import we don't provide; the
-            // guest may call NULL. Logged at trace for diagnosis ("Run as debug").
+            // Surface misses at warn — delay-load helpers raise 0xC06D007F next.
             ctx.logs.log(
-                webwine_api::logs::LogLevel::Trace,
+                webwine_api::logs::LogLevel::Warn,
                 "api",
                 &format!("GetProcAddress miss: {name}"),
                 Some(ctx.pid),
@@ -2411,9 +2422,181 @@ fn virtual_query(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// ── Global / local atom table ──────────────────────────────────────────────
+// Lightweight string atoms for RegisterClass / DDE / OLE. Stored per-process
+// in dll_state: "atom.name.<lower>" → atom id, "atom.id.<id>" → name length
+// packed with a heap pointer is overkill; we keep name strings in heap and
+// map both directions via dll_state keys.
+
+const ATOM_BASE: u32 = 0xC000; // first dynamic string atom (Win32 convention)
+const ATOM_NEXT_KEY: &str = "atom.next";
+
+fn atom_next(ctx: &mut ApiContext) -> u32 {
+    let n = ctx.dll_state.get(ATOM_NEXT_KEY).copied().unwrap_or(ATOM_BASE);
+    ctx.dll_state.insert(ATOM_NEXT_KEY.to_string(), n.wrapping_add(1));
+    n
+}
+
+fn atom_key_name(name: &str) -> String {
+    format!("atom.name.{}", name.to_ascii_lowercase())
+}
+
+fn atom_key_id(id: u32) -> String {
+    format!("atom.id.{id}")
+}
+
+fn global_add_atom_a(ctx: &mut ApiContext) -> Handled {
+    let s = ctx.cstr(ctx.arg(0));
+    global_add_atom(ctx, &s)
+}
+
+fn global_add_atom_w(ctx: &mut ApiContext) -> Handled {
+    let s = ctx.wstr(ctx.arg(0));
+    global_add_atom(ctx, &s)
+}
+
+fn global_add_atom(ctx: &mut ApiContext, name: &str) -> Handled {
+    if name.is_empty() {
+        ctx.set_last_error(ERROR_INVALID_PARAMETER);
+        ctx.ret_stdcall(0, 1);
+        return Handled::Ok;
+    }
+    let key = atom_key_name(name);
+    if let Some(&id) = ctx.dll_state.get(&key) {
+        // Existing atom — bump a fake refcount slot (id+ref stored? just return).
+        ctx.ret_stdcall(id, 1);
+        return Handled::Ok;
+    }
+    let id = atom_next(ctx);
+    // Store name bytes in the process heap so GetAtomName can read them back.
+    let mut bytes = name.as_bytes().to_vec();
+    bytes.push(0);
+    let ptr = ctx.heap_alloc(bytes.len() as u32);
+    if ptr != 0 {
+        let _ = ctx.memory.write_bytes(ptr, &bytes);
+        ctx.dll_state.insert(key, id);
+        ctx.dll_state.insert(atom_key_id(id), ptr);
+        // Refcount (starts at 1) living as a side key.
+        ctx.dll_state.insert(format!("atom.ref.{id}"), 1);
+        ctx.ret_stdcall(id, 1);
+    } else {
+        ctx.set_last_error(8); // ERROR_NOT_ENOUGH_MEMORY
+        ctx.ret_stdcall(0, 1);
+    }
+    Handled::Ok
+}
+
+fn global_find_atom_a(ctx: &mut ApiContext) -> Handled {
+    let s = ctx.cstr(ctx.arg(0));
+    global_find_atom(ctx, &s)
+}
+
+fn global_find_atom_w(ctx: &mut ApiContext) -> Handled {
+    let s = ctx.wstr(ctx.arg(0));
+    global_find_atom(ctx, &s)
+}
+
+fn global_find_atom(ctx: &mut ApiContext, name: &str) -> Handled {
+    let id = ctx
+        .dll_state
+        .get(&atom_key_name(name))
+        .copied()
+        .unwrap_or(0);
+    if id == 0 {
+        ctx.set_last_error(ERROR_FILE_NOT_FOUND); // ERROR_FILE_NOT_FOUND is what Win32 uses
+    }
+    ctx.ret_stdcall(id, 1);
+    Handled::Ok
+}
+
+/// GlobalDeleteAtom / DeleteAtom: free one reference. 0 on success, nAtom on fail.
+fn global_delete_atom(ctx: &mut ApiContext) -> Handled {
+    let atom = ctx.arg(0) & 0xFFFF;
+    if atom == 0 {
+        ctx.set_last_error(ERROR_INVALID_HANDLE);
+        ctx.ret_stdcall(atom, 1);
+        return Handled::Ok;
+    }
+    let ref_key = format!("atom.ref.{atom}");
+    match ctx.dll_state.get(&ref_key).copied() {
+        Some(r) if r > 1 => {
+            ctx.dll_state.insert(ref_key, r - 1);
+            ctx.ret_stdcall(0, 1);
+        }
+        Some(_) => {
+            // Last reference — drop tables. Leave the name heap block (harmless).
+            ctx.dll_state.remove(&ref_key);
+            if let Some(ptr) = ctx.dll_state.remove(&atom_key_id(atom)) {
+                // Recover the name to drop the reverse map.
+                let name = ctx.cstr(ptr);
+                ctx.dll_state.remove(&atom_key_name(&name));
+                ctx.heap_free_block(ptr);
+            }
+            ctx.ret_stdcall(0, 1);
+        }
+        None => {
+            // Unknown atom: still report success for integer atoms / stubs that
+            // never went through AddAtom (old GlobalAddAtom always returned 1).
+            ctx.ret_stdcall(0, 1);
+        }
+    }
+    Handled::Ok
+}
+
+fn global_get_atom_name_a(ctx: &mut ApiContext) -> Handled {
+    let atom = ctx.arg(0) & 0xFFFF;
+    let buf = ctx.arg(1);
+    let size = ctx.arg(2); // bytes including null
+    let n = write_atom_name_a(ctx, atom, buf, size);
+    ctx.ret_stdcall(n, 3);
+    Handled::Ok
+}
+
+fn global_get_atom_name_w(ctx: &mut ApiContext) -> Handled {
+    let atom = ctx.arg(0) & 0xFFFF;
+    let buf = ctx.arg(1);
+    let size = ctx.arg(2); // WCHARs including null
+    let n = write_atom_name_w(ctx, atom, buf, size);
+    ctx.ret_stdcall(n, 3);
+    Handled::Ok
+}
+
+fn write_atom_name_a(ctx: &mut ApiContext, atom: u32, buf: u32, size: u32) -> u32 {
+    let Some(&ptr) = ctx.dll_state.get(&atom_key_id(atom)) else {
+        ctx.set_last_error(ERROR_INVALID_HANDLE);
+        return 0;
+    };
+    let name = ctx.cstr(ptr);
+    if buf == 0 || size == 0 {
+        return name.len() as u32;
+    }
+    let n = name.len().min(size.saturating_sub(1) as usize);
+    let _ = ctx.memory.write_bytes(buf, &name.as_bytes()[..n]);
+    let _ = ctx.memory.write_u8(buf + n as u32, 0);
+    n as u32
+}
+
+fn write_atom_name_w(ctx: &mut ApiContext, atom: u32, buf: u32, size: u32) -> u32 {
+    let Some(&ptr) = ctx.dll_state.get(&atom_key_id(atom)) else {
+        ctx.set_last_error(ERROR_INVALID_HANDLE);
+        return 0;
+    };
+    let name = ctx.cstr(ptr);
+    let wide: Vec<u16> = name.encode_utf16().collect();
+    if buf == 0 || size == 0 {
+        return wide.len() as u32;
+    }
+    let n = wide.len().min(size.saturating_sub(1) as usize);
+    for (i, &ch) in wide.iter().take(n).enumerate() {
+        let _ = ctx.memory.write_u16(buf + (i as u32) * 2, ch);
+    }
+    let _ = ctx.memory.write_u16(buf + (n as u32) * 2, 0);
+    n as u32
+}
+
 // A non-zero fake HMODULE for dynamically loaded DLLs. GetProcAddress resolves
 // functions by name regardless of the module handle, so a single sentinel is
-// enough â€” and returning non-NULL lets delay-load helpers succeed instead of
+// enough — and returning non-NULL lets delay-load helpers succeed instead of
 // raising ERROR_MOD_NOT_FOUND (0xC06D007E).
 const FAKE_MODULE: u32 = 0x5AD0_0000;
 
@@ -3042,11 +3225,13 @@ fn dup_handle(ctx: &mut ApiContext) -> Handled {
 
 // RaiseException(code, flags, argCount, args).
 //
-// We do not model SEH, so a genuinely fatal exception still terminates. But
-// several codes are raised routinely by healthy programs and are meant to be
-// swallowed by a handler that is always installed; killing the process on those
-// was wrong. The debugger-notification codes in particular are fire-and-forget:
-// with no debugger attached the kernel just continues execution.
+// We do not model full SEH for every code, so a genuinely fatal exception still
+// terminates. Debugger-notification codes are fire-and-forget. Visual C++
+// delay-load helpers raise 0xC06D007E/7F when LoadLibrary/GetProcAddress fail;
+// those are meant to be caught by `__try/__except` in `__delayLoadHelper2`.
+// Without a working SEH path for them the process dies on the first missing
+// delay-import — return as if the exception were handled so the delay helper
+// can take its failure path (NULL pfn) instead of killing the guest.
 fn raise_exception(ctx: &mut ApiContext) -> Handled {
     /// MS_VC_EXCEPTION: the "name this thread" notification the MSVC debugger
     /// consumes. Always continuable, always ignorable.
@@ -3058,6 +3243,10 @@ fn raise_exception(ctx: &mut ApiContext) -> Handled {
     /// __CxxFrameHandler is expected to unwind it; we cannot run that, so it
     /// stays fatal, but say so explicitly in the log.
     const CXX_EXCEPTION: u32 = 0xE06D_7363;
+    /// VcppException(ERROR_MOD_NOT_FOUND) — delay-load failed LoadLibrary.
+    const VCPP_MOD_NOT_FOUND: u32 = 0xC06D_007E;
+    /// VcppException(ERROR_PROC_NOT_FOUND) — delay-load failed GetProcAddress.
+    const VCPP_PROC_NOT_FOUND: u32 = 0xC06D_007F;
 
     let code = ctx.arg(0);
     let flags = ctx.arg(1);
@@ -3065,6 +3254,30 @@ fn raise_exception(ctx: &mut ApiContext) -> Handled {
 
     match code {
         MS_VC_THREAD_NAME | DBG_PRINTEXCEPTION_C | DBG_PRINTEXCEPTION_WIDE_C => {
+            ctx.ret_stdcall(0, 4);
+            Handled::Ok
+        }
+        VCPP_MOD_NOT_FOUND | VCPP_PROC_NOT_FOUND => {
+            // Record the Win32 error the delay helper is signalling so subsequent
+            // GetLastError reflects the miss.
+            ctx.set_last_error(if code == VCPP_MOD_NOT_FOUND {
+                126 // ERROR_MOD_NOT_FOUND
+            } else {
+                127 // ERROR_PROC_NOT_FOUND
+            });
+            ctx.logs.log(
+                webwine_api::logs::LogLevel::Warn,
+                "api",
+                &format!(
+                    "RaiseException 0x{code:08X} (VC++ delay-load {} not found) — continuing; check prior GetProcAddress/LoadLibrary miss",
+                    if code == VCPP_MOD_NOT_FOUND { "module" } else { "proc" }
+                ),
+                Some(ctx.pid),
+            );
+            // Clean the RaiseException frame and resume; the delay-load helper's
+            // __except filter is not run, but most helpers still tolerate a
+            // resumed call site when the failure was already recorded via
+            // GetLastError / NULL return paths.
             ctx.ret_stdcall(0, 4);
             Handled::Ok
         }

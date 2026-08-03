@@ -35,10 +35,23 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "wcslen", wcslen),
         ("msvcrt.dll", "strcmp", strcmp),
         ("msvcrt.dll", "strncmp", strncmp),
+        ("msvcrt.dll", "_stricmp", stricmp),
+        ("msvcrt.dll", "stricmp", stricmp),
+        ("msvcrt.dll", "_strcmpi", stricmp),
+        ("msvcrt.dll", "strcmpi", stricmp),
+        ("msvcrt.dll", "_strnicmp", strnicmp),
+        ("msvcrt.dll", "strnicmp", strnicmp),
+        ("msvcrt.dll", "_strncmpi", strnicmp),
         ("msvcrt.dll", "strcpy", strcpy),
         ("msvcrt.dll", "strncpy", strncpy),
         ("msvcrt.dll", "strcat", strcat),
         ("msvcrt.dll", "strncat", strncat),
+        // File delete (CRT); mirrors kernel32 DeleteFile against the VFS.
+        ("msvcrt.dll", "remove", remove_fn),
+        ("msvcrt.dll", "_unlink", remove_fn),
+        ("msvcrt.dll", "unlink", remove_fn),
+        ("msvcrt.dll", "_wremove", wremove_fn),
+        ("msvcrt.dll", "_wunlink", wremove_fn),
         // Multibyte helpers. Process code page is Windows-1252 (SBCS).
         ("msvcrt.dll", "_ismbblead", ismbblead),
         ("msvcrt.dll", "_ismbbtrail", ismbbtrail),
@@ -568,6 +581,88 @@ pub(crate) fn strncmp(ctx: &mut ApiContext) -> Handled {
         }
     }
     ctx.ret_cdecl(r as u32);
+    Handled::Ok
+}
+
+/// Case-insensitive strcmp (`_stricmp` / `stricmp` / `_strcmpi`).
+/// MSVC folds A–Z only for the "C" locale we expose; ASCII is enough for games.
+pub(crate) fn stricmp(ctx: &mut ApiContext) -> Handled {
+    let (pa, pb) = (ctx.arg(0), ctx.arg(1));
+    let mut r = 0i32;
+    for i in 0.. {
+        let a = ctx
+            .memory
+            .read_u8(pa.wrapping_add(i))
+            .unwrap_or(0)
+            .to_ascii_lowercase();
+        let b = ctx
+            .memory
+            .read_u8(pb.wrapping_add(i))
+            .unwrap_or(0)
+            .to_ascii_lowercase();
+        if a != b {
+            r = a as i32 - b as i32;
+            break;
+        }
+        if a == 0 {
+            break;
+        }
+    }
+    ctx.ret_cdecl(r as u32);
+    Handled::Ok
+}
+
+/// Case-insensitive strncmp (`_strnicmp` / `strnicmp`).
+pub(crate) fn strnicmp(ctx: &mut ApiContext) -> Handled {
+    let (pa, pb) = (ctx.arg(0), ctx.arg(1));
+    let n = ctx.arg(2);
+    let mut r = 0i32;
+    for i in 0..n {
+        let a = ctx
+            .memory
+            .read_u8(pa.wrapping_add(i))
+            .unwrap_or(0)
+            .to_ascii_lowercase();
+        let b = ctx
+            .memory
+            .read_u8(pb.wrapping_add(i))
+            .unwrap_or(0)
+            .to_ascii_lowercase();
+        if a != b {
+            r = a as i32 - b as i32;
+            break;
+        }
+        if a == 0 {
+            break;
+        }
+    }
+    ctx.ret_cdecl(r as u32);
+    Handled::Ok
+}
+
+/// `remove` / `_unlink` — delete a file from the guest VFS. 0 success, -1 fail.
+pub(crate) fn remove_fn(ctx: &mut ApiContext) -> Handled {
+    let path = ctx.cstr(ctx.arg(0));
+    let full = ctx.resolve_path(&path);
+    let ok = if full.is_empty() {
+        false
+    } else {
+        ctx.fs.delete_node(&full).is_ok()
+    };
+    ctx.ret_cdecl(if ok { 0 } else { 0xFFFF_FFFF });
+    Handled::Ok
+}
+
+/// `_wremove` / `_wunlink` — wide-path variant.
+pub(crate) fn wremove_fn(ctx: &mut ApiContext) -> Handled {
+    let path = ctx.wstr(ctx.arg(0));
+    let full = ctx.resolve_path(&path);
+    let ok = if full.is_empty() {
+        false
+    } else {
+        ctx.fs.delete_node(&full).is_ok()
+    };
+    ctx.ret_cdecl(if ok { 0 } else { 0xFFFF_FFFF });
     Handled::Ok
 }
 
