@@ -312,6 +312,27 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 3);
             Handled::Ok
         }),
+        ("user32.dll", "wsprintfA", |c| wsprintf(c, false)),
+        ("user32.dll", "wsprintfW", |c| wsprintf(c, true)),
+        // GetKeyboardState/SetKeyboardState: no real input-polling backing yet,
+        // so report "all keys up" / accept-and-ignore rather than failing —
+        // callers that don't check the (currently-always-0) return value were
+        // reading whatever garbage sat in the guest buffer.
+        ("user32.dll", "GetKeyboardState", |c| {
+            let buf = c.arg(0);
+            let _ = c.memory.write_bytes(buf, &[0u8; 256]);
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetKeyboardState", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetTimer", set_timer),
+        ("user32.dll", "KillTimer", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
     ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
@@ -1571,6 +1592,95 @@ pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
         });
     }
     ctx.ret_stdcall(h.max(0) as u32, 12);
+    Handled::Ok
+}
+
+// wsprintfA/W(dst, fmt, ...) -> chars written (excl. null terminator).
+// Declared WINAPI (stdcall) but variadic: the real user32.dll implementation
+// pops exactly as many stack dwords as the format string consumed, so the
+// stack cleanup here must track that count rather than use a fixed arity —
+// the previous "unimplemented" fallback always popped 1 arg regardless of
+// how many were actually pushed, corrupting the caller's stack.
+fn wsprintf(ctx: &mut ApiContext, wide: bool) -> Handled {
+    let dst = ctx.arg(0);
+    let fmt_ptr = ctx.arg(1);
+    let fmt = if wide { ctx.wstr(fmt_ptr) } else { ctx.cstr(fmt_ptr) };
+
+    let mut out = String::new();
+    let mut consumed = 0u32;
+    let chars: Vec<char> = fmt.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '%' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if i >= chars.len() {
+            break;
+        }
+        while i < chars.len() && "0123456789-+ #.*lh".contains(chars[i]) {
+            i += 1;
+        }
+        if i >= chars.len() {
+            break;
+        }
+        let spec = chars[i];
+        i += 1;
+        if spec == '%' {
+            out.push('%');
+            continue;
+        }
+        let arg = ctx.arg(2 + consumed);
+        consumed += 1;
+        match spec {
+            'd' | 'i' => out.push_str(&(arg as i32).to_string()),
+            'u' => out.push_str(&arg.to_string()),
+            'x' => out.push_str(&format!("{:x}", arg)),
+            'X' => out.push_str(&format!("{:X}", arg)),
+            'c' => out.push(char::from_u32(arg).unwrap_or('\0')),
+            's' => {
+                let s = if wide { ctx.wstr(arg) } else { ctx.cstr(arg) };
+                out.push_str(&s);
+            }
+            _ => {
+                out.push('%');
+                out.push(spec);
+            }
+        }
+    }
+
+    let n = out.chars().count() as u32;
+    if wide {
+        let mut units: Vec<u16> = out.encode_utf16().collect();
+        units.push(0);
+        let bytes: Vec<u8> = units.iter().flat_map(|u| u.to_le_bytes()).collect();
+        let _ = ctx.memory.write_bytes(dst, &bytes);
+    } else {
+        let mut bytes = out.into_bytes();
+        bytes.push(0);
+        let _ = ctx.memory.write_bytes(dst, &bytes);
+    }
+    ctx.ret_stdcall(n, 2 + consumed);
+    Handled::Ok
+}
+
+// SetTimer(hWnd, nIDEvent, uElapse, lpTimerFunc) -> timer id.
+// We don't run a real timer queue yet (WM_TIMER is never posted), but callers
+// must get a stable non-zero id back — returning 0 (as the generic
+// "unimplemented" stub did) signals failure, which some apps treat as fatal.
+fn set_timer(ctx: &mut ApiContext) -> Handled {
+    let id_arg = ctx.arg(1);
+    let id = if id_arg != 0 {
+        id_arg
+    } else {
+        let next = ctx.dll_state.entry("user32:next_timer_id".to_string()).or_insert(1);
+        let id = *next;
+        *next += 1;
+        id
+    };
+    ctx.ret_stdcall(id, 4);
     Handled::Ok
 }
 

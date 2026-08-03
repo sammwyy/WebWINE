@@ -8,6 +8,14 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 1);
             Handled::Ok
         }),
+        // Ordinal-only import: comctl32.spec exports InitCommonControls as
+        // both a name and ordinal 17; apps linking by ordinal (foobar2000)
+        // otherwise miss it and fall back to the generic "unimplemented"
+        // stub, which guesses 1 stack arg for a 0-arg function.
+        ("comctl32.dll", "#17", |c| {
+            c.ret_stdcall(0, 0);
+            Handled::Ok
+        }),
         // comctl32 â€” common controls (putty's config dialog uses drag lists etc.)
         ("comctl32.dll", "InitCommonControls", |c| {
             c.ret_stdcall(0, 0);

@@ -30,6 +30,13 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "CloseHandle", close_handle),
         ("kernel32.dll", "GetLastError", get_last_error),
         ("kernel32.dll", "SetLastError", set_last_error),
+        // Obsolete MS-DOS-compat handle-limit knob; real Windows just echoes
+        // the requested count back.
+        ("kernel32.dll", "SetHandleCount", |c| {
+            let n = c.arg(0);
+            c.ret_stdcall(n, 1);
+            Handled::Ok
+        }),
         ("kernel32.dll", "GetProcessHeap", get_process_heap),
         ("kernel32.dll", "HeapAlloc", heap_alloc),
         ("kernel32.dll", "HeapFree", heap_free),
