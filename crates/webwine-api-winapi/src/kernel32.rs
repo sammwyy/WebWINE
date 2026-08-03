@@ -1558,10 +1558,29 @@ fn create_directory(ctx: &mut ApiContext, name: String) -> Handled {
     let path = ctx.resolve_path(&name);
     if ctx.fs.node_exists(&path) {
         ctx.cpu.last_error = 183; // ERROR_ALREADY_EXISTS
+        ctx.logs.log(
+            webwine_api::logs::LogLevel::Trace,
+            "api",
+            &format!("CreateDirectory {path:?} -> already exists"),
+            Some(ctx.pid),
+        );
         ctx.ret_stdcall(0, 2);
         return Handled::Ok;
     }
-    let ok = ctx.fs.create_dir(&path).is_ok();
+    let result = ctx.fs.create_dir(&path);
+    let ok = result.is_ok();
+    if let Err(e) = &result {
+        // ERROR_PATH_NOT_FOUND: a real CreateDirectory only makes the leaf
+        // component, same as here — a missing ancestor is a genuine failure,
+        // not something we should silently work around.
+        ctx.cpu.last_error = 3;
+        ctx.logs.log(
+            webwine_api::logs::LogLevel::Trace,
+            "api",
+            &format!("CreateDirectory {path:?} -> failed: {e}"),
+            Some(ctx.pid),
+        );
+    }
     ctx.ret_stdcall(ok as u32, 2);
     Handled::Ok
 }
