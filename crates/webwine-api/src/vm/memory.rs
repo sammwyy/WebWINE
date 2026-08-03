@@ -144,7 +144,19 @@ impl GuestMemory {
         Ok(&r.bytes[off..off + len])
     }
 
-    pub fn read_cstr(&self, va: u32) -> String {
+    /// Longest string any of the string readers will return. Guest strings are
+    /// bounded only by their NUL, so this is purely a runaway guard; the old
+    /// 4096 limit silently truncated ordinary data (long command lines, file
+    /// contents passed through the CRT string functions).
+    const MAX_STR: usize = 1 << 20;
+
+    /// Raw bytes of a NUL-terminated string, terminator excluded.
+    ///
+    /// Prefer this over `read_cstr` whenever the bytes are going to be written
+    /// back to guest memory or measured: `read_cstr` decodes lossily, so any
+    /// byte >= 0x80 (i.e. any CP1252 text) becomes a 3-byte U+FFFD and both the
+    /// length and the content change.
+    pub fn read_cstr_bytes(&self, va: u32) -> Vec<u8> {
         let mut s = Vec::new();
         let mut addr = va;
         loop {
@@ -152,25 +164,32 @@ impl GuestMemory {
                 Ok(0) | Err(_) => break,
                 Ok(b) => { s.push(b); addr = addr.wrapping_add(1); }
             }
-            if s.len() > 4096 { break; }
+            if s.len() >= Self::MAX_STR { break; }
         }
-        String::from_utf8_lossy(&s).into_owned()
+        s
     }
 
-    pub fn read_wstr(&self, va: u32) -> String {
+    /// Raw UTF-16 code units of a NUL-terminated wide string, terminator
+    /// excluded. Preserves unpaired surrogates, which `read_wstr` replaces.
+    pub fn read_wstr_units(&self, va: u32) -> Vec<u16> {
         let mut s = Vec::new();
         let mut addr = va;
         loop {
             match self.read_u16(addr) {
                 Ok(0) | Err(_) => break,
-                Ok(c) => {
-                    s.push(c);
-                    addr = addr.wrapping_add(2);
-                }
+                Ok(c) => { s.push(c); addr = addr.wrapping_add(2); }
             }
-            if s.len() > 4096 { break; }
+            if s.len() >= Self::MAX_STR { break; }
         }
-        String::from_utf16_lossy(&s)
+        s
+    }
+
+    pub fn read_cstr(&self, va: u32) -> String {
+        String::from_utf8_lossy(&self.read_cstr_bytes(va)).into_owned()
+    }
+
+    pub fn read_wstr(&self, va: u32) -> String {
+        String::from_utf16_lossy(&self.read_wstr_units(va))
     }
 }
 

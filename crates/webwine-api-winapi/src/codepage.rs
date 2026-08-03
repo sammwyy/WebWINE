@@ -105,9 +105,162 @@ pub fn encode(codepage: u32, src: &[u16]) -> Vec<u8> {
     src.iter().map(|&w| wchar_to_byte(codepage, w)).collect()
 }
 
+// character classification (GetStringTypeW)
+
+pub const C1_UPPER: u16 = 0x0001;
+pub const C1_LOWER: u16 = 0x0002;
+pub const C1_DIGIT: u16 = 0x0004;
+pub const C1_SPACE: u16 = 0x0008;
+pub const C1_PUNCT: u16 = 0x0010;
+pub const C1_CNTRL: u16 = 0x0020;
+pub const C1_BLANK: u16 = 0x0040;
+pub const C1_XDIGIT: u16 = 0x0080;
+pub const C1_ALPHA: u16 = 0x0100;
+pub const C1_DEFINED: u16 = 0x0200;
+
+const C2_NOTAPPLICABLE: u16 = 0x0000;
+const C2_LEFTTORIGHT: u16 = 0x0001;
+const C2_EUROPENUMBER: u16 = 0x0003;
+const C2_EUROPESEPARATOR: u16 = 0x0004;
+const C2_COMMONSEPARATOR: u16 = 0x0007;
+const C2_WHITESPACE: u16 = 0x000C;
+const C2_OTHERNEUTRAL: u16 = 0x000B;
+
+const C3_NONSPACING: u16 = 0x0001;
+const C3_SYMBOL: u16 = 0x0008;
+const C3_ALPHA: u16 = 0x8000;
+
+/// CT_CTYPE1 flags for one code unit, matching the C1_* semantics Wine's
+/// `get_char_type` returns from the NLS tables.
+pub fn char_type1(c: u16) -> u16 {
+    let Some(ch) = char::from_u32(c as u32) else {
+        return 0;
+    };
+    let mut t = C1_DEFINED;
+    if ch.is_uppercase() {
+        t |= C1_UPPER | C1_ALPHA;
+    }
+    if ch.is_lowercase() {
+        t |= C1_LOWER | C1_ALPHA;
+    }
+    if ch.is_alphabetic() {
+        t |= C1_ALPHA;
+    }
+    if ch.is_ascii_digit() {
+        t |= C1_DIGIT;
+    }
+    if ch.is_ascii_hexdigit() {
+        t |= C1_XDIGIT;
+    }
+    if ch.is_whitespace() {
+        t |= C1_SPACE;
+    }
+    if ch == ' ' || ch == '\t' {
+        t |= C1_BLANK;
+    }
+    if ch.is_control() {
+        t |= C1_CNTRL;
+    }
+    if ch.is_ascii_punctuation() || matches!(c, 0xA1..=0xBF | 0x2010..=0x205E) {
+        t |= C1_PUNCT;
+    }
+    t
+}
+
+/// CT_CTYPE2 (bidirectional layout class).
+pub fn char_type2(c: u16) -> u16 {
+    let Some(ch) = char::from_u32(c as u32) else {
+        return C2_NOTAPPLICABLE;
+    };
+    match ch {
+        '0'..='9' => C2_EUROPENUMBER,
+        '+' | '-' => C2_EUROPESEPARATOR,
+        ',' | '.' | ':' => C2_COMMONSEPARATOR,
+        c if c.is_whitespace() => C2_WHITESPACE,
+        c if c.is_alphabetic() => C2_LEFTTORIGHT,
+        c if c.is_control() => C2_NOTAPPLICABLE,
+        _ => C2_OTHERNEUTRAL,
+    }
+}
+
+/// CT_CTYPE3 (text-processing class).
+pub fn char_type3(c: u16) -> u16 {
+    let Some(ch) = char::from_u32(c as u32) else {
+        return 0;
+    };
+    let mut t = 0;
+    if ch.is_alphabetic() {
+        t |= C3_ALPHA;
+    }
+    if matches!(c, 0x0300..=0x036F) {
+        t |= C3_NONSPACING;
+    }
+    if !ch.is_alphanumeric()
+        && !ch.is_whitespace()
+        && !ch.is_control()
+        && !ch.is_ascii_punctuation()
+    {
+        t |= C3_SYMBOL;
+    }
+    t
+}
+
+/// Upper/lowercase one code unit. Only single-unit mappings are applied, which
+/// is what LCMapString's in-place contract allows anyway.
+pub fn to_upper(c: u16) -> u16 {
+    char::from_u32(c as u32)
+        .and_then(|ch| {
+            let mut it = ch.to_uppercase();
+            let up = it.next()?;
+            if it.next().is_some() {
+                return None; // multi-char expansion (ß -> SS): leave as is
+            }
+            u16::try_from(up as u32).ok()
+        })
+        .unwrap_or(c)
+}
+
+pub fn to_lower(c: u16) -> u16 {
+    char::from_u32(c as u32)
+        .and_then(|ch| {
+            let mut it = ch.to_lowercase();
+            let low = it.next()?;
+            if it.next().is_some() {
+                return None;
+            }
+            u16::try_from(low as u32).ok()
+        })
+        .unwrap_or(c)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classifies_ascii_like_the_c1_flags() {
+        assert_eq!(
+            char_type1(b'A' as u16) & (C1_UPPER | C1_ALPHA),
+            C1_UPPER | C1_ALPHA
+        );
+        assert_eq!(
+            char_type1(b'7' as u16) & (C1_DIGIT | C1_XDIGIT),
+            C1_DIGIT | C1_XDIGIT
+        );
+        assert_eq!(
+            char_type1(b' ' as u16) & (C1_SPACE | C1_BLANK),
+            C1_SPACE | C1_BLANK
+        );
+        assert_eq!(char_type1(b'A' as u16) & C1_DIGIT, 0);
+        assert_ne!(char_type1(0xE9) & C1_LOWER, 0); // é
+    }
+
+    #[test]
+    fn case_maps_single_units_only() {
+        assert_eq!(to_upper(b'a' as u16), b'A' as u16);
+        assert_eq!(to_lower(0xC9), 0xE9); // É -> é
+        assert_eq!(to_upper(0xDF), 0xDF); // ß has no single-unit uppercase
+    }
 
     #[test]
     fn sbcs_round_trips_one_to_one() {

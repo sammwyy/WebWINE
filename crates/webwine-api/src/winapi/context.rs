@@ -120,6 +120,18 @@ impl<'a> ApiContext<'a> {
         self.memory.read_wstr(va)
     }
 
+    /// Raw bytes of a null-terminated string. Use this instead of `cstr` when
+    /// the result is copied back into guest memory or measured — `cstr`
+    /// decodes lossily and mangles anything above ASCII.
+    pub fn cstr_bytes(&self, va: u32) -> Vec<u8> {
+        self.memory.read_cstr_bytes(va)
+    }
+
+    /// Raw UTF-16 units of a null-terminated wide string.
+    pub fn wstr_units(&self, va: u32) -> Vec<u16> {
+        self.memory.read_wstr_units(va)
+    }
+
     pub fn current_trampoline_va(&self) -> u32 {
         self.cpu.eip
     }

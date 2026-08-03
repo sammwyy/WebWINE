@@ -1,9 +1,9 @@
 use super::{ApiContext, Handled, WinApiRegistry};
-use webwine_api::winapi::context::ApiRuntimeEnv;
 use webwine_api::vm::handles::{
     KernelObject, CURRENT_PROCESS, CURRENT_THREAD, INVALID_HANDLE, STD_ERROR_HANDLE,
     STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
+use webwine_api::winapi::context::ApiRuntimeEnv;
 
 // Win32 error codes used by the file APIs.
 const ERROR_FILE_NOT_FOUND: u32 = 2;
@@ -117,8 +117,12 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0x409, 0);
             Handled::Ok
         }),
-        ("kernel32.dll", "GetLocaleInfoA", r0_4),
-        ("kernel32.dll", "GetLocaleInfoW", r0_4),
+        ("kernel32.dll", "GetLocaleInfoA", |c| {
+            get_locale_info(c, false)
+        }),
+        ("kernel32.dll", "GetLocaleInfoW", |c| {
+            get_locale_info(c, true)
+        }),
         ("kernel32.dll", "GetThreadLocale", |c| {
             c.ret_stdcall(0x409, 0);
             Handled::Ok
@@ -146,7 +150,11 @@ pub fn register(r: &mut WinApiRegistry) {
         }),
         ("kernel32.dll", "FreeLibrary", r1_1),
         ("kernel32.dll", "IsDebuggerPresent", r0_0),
-        ("kernel32.dll", "IsProcessorFeaturePresent", r1_1),
+        (
+            "kernel32.dll",
+            "IsProcessorFeaturePresent",
+            is_processor_feature_present,
+        ),
         ("kernel32.dll", "InitializeSListHead", r0_1),
         ("kernel32.dll", "QueryDepthSList", r0_1),
         ("kernel32.dll", "InterlockedPushEntrySList", r0_2),
@@ -198,7 +206,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "GetStartupInfoA", get_startup_info),
         ("kernel32.dll", "GetStartupInfoW", get_startup_info),
         ("kernel32.dll", "GlobalMemoryStatus", global_memory_status),
-        ("kernel32.dll", "GlobalMemoryStatusEx", global_memory_status_ex),
+        (
+            "kernel32.dll",
+            "GlobalMemoryStatusEx",
+            global_memory_status_ex,
+        ),
         (
             "kernel32.dll",
             "GetCurrentProcessId",
@@ -454,9 +466,16 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("kernel32.dll", "IsValidCodePage", r1_1),
-        ("kernel32.dll", "GetCPInfo", r0_2),
-        ("kernel32.dll", "LCMapStringW", r0_6),
-        ("kernel32.dll", "LCMapStringEx", r0_8),
+        ("kernel32.dll", "GetCPInfo", get_cp_info),
+        ("kernel32.dll", "LCMapStringW", |c| lcmap_string(c, true, 6)),
+        ("kernel32.dll", "LCMapStringA", |c| {
+            lcmap_string(c, false, 6)
+        }),
+        // LCMapStringEx(name, flags, src, srclen, dst, dstlen, version,
+        // reserved, sortHandle) - same conversion, 9 args, wide only.
+        ("kernel32.dll", "LCMapStringEx", |c| {
+            lcmap_string(c, true, 9)
+        }),
         ("kernel32.dll", "CreateFileA", create_file_a),
         ("kernel32.dll", "CreateFileW", create_file_w),
         ("kernel32.dll", "GetFileSize", get_file_size),
@@ -471,8 +490,10 @@ pub fn register(r: &mut WinApiRegistry) {
         ("kernel32.dll", "DuplicateHandle", dup_handle),
         ("kernel32.dll", "TerminateProcess", terminate_process),
         ("kernel32.dll", "RaiseException", raise_exception),
-        ("kernel32.dll", "GetStringTypeW", r0_4),
-        ("kernel32.dll", "GetStringTypeA", r0_5),
+        ("kernel32.dll", "GetStringTypeW", get_string_type_w),
+        ("kernel32.dll", "GetStringTypeExW", get_string_type_ex_w),
+        ("kernel32.dll", "GetStringTypeA", get_string_type_a),
+        ("kernel32.dll", "GetStringTypeExA", get_string_type_a),
         ("kernel32.dll", "FormatMessageA", format_message_a),
         ("kernel32.dll", "FormatMessageW", format_message_w),
         ("kernel32.dll", "OutputDebugStringA", output_debug_string_a),
@@ -763,7 +784,8 @@ pub fn register(r: &mut WinApiRegistry) {
             "api-ms-win-core-localization-l1-2-0.dll",
             "FormatMessageA",
             format_message_a_fwd,
-        ),    ];
+        ),
+    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
@@ -1225,12 +1247,11 @@ fn create_file(ctx: &mut ApiContext, name: String, nargs: u32) -> Handled {
     // that overwrote a file, or OPEN_ALWAYS that opened one, still reports
     // ERROR_ALREADY_EXISTS; every other success clears the error. Callers use
     // this to tell "created" from "reused" without a second stat.
-    ctx.cpu.last_error =
-        if exists && (disposition == CREATE_ALWAYS || disposition == OPEN_ALWAYS) {
-            ERROR_ALREADY_EXISTS
-        } else {
-            0
-        };
+    ctx.cpu.last_error = if exists && (disposition == CREATE_ALWAYS || disposition == OPEN_ALWAYS) {
+        ERROR_ALREADY_EXISTS
+    } else {
+        0
+    };
     ctx.ret_stdcall(h, nargs);
     Handled::Ok
 }
@@ -2045,11 +2066,11 @@ fn virtual_query(ctx: &mut ApiContext) -> Handled {
     fn to_win_prot(bits: u32) -> u32 {
         let (r, w, x) = (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0);
         match (x, w, r) {
-            (true, true, _) => 0x40,  // PAGE_EXECUTE_READWRITE
-            (true, false, true) => 0x20, // PAGE_EXECUTE_READ
-            (true, false, false) => 0x10, // PAGE_EXECUTE
-            (false, true, _) => 0x04, // PAGE_READWRITE
-            (false, false, true) => 0x02, // PAGE_READONLY
+            (true, true, _) => 0x40,       // PAGE_EXECUTE_READWRITE
+            (true, false, true) => 0x20,   // PAGE_EXECUTE_READ
+            (true, false, false) => 0x10,  // PAGE_EXECUTE
+            (false, true, _) => 0x04,      // PAGE_READWRITE
+            (false, false, true) => 0x02,  // PAGE_READONLY
             (false, false, false) => 0x01, // PAGE_NOACCESS
         }
     }
@@ -2064,20 +2085,42 @@ fn virtual_query(ctx: &mut ApiContext) -> Handled {
     let page = addr & !0xFFF;
 
     // Region containing addr, if any (Copy fields → immutable borrow ends here).
-    let mapped = ctx.memory.regions.range(..=addr).next_back()
+    let mapped = ctx
+        .memory
+        .regions
+        .range(..=addr)
+        .next_back()
         .filter(|(_, r)| addr < r.base.wrapping_add(r.size))
         .map(|(_, r)| (r.base, r.base.wrapping_add(r.size), r.prot.bits()));
 
     let (base_addr, alloc_base, alloc_prot, region_size, state, protect, mem_type) = match mapped {
         Some((base, end, bits)) => {
             let p = to_win_prot(bits);
-            (page, base, p, end.wrapping_sub(page), 0x1000u32 /*MEM_COMMIT*/, p, 0x20000u32 /*MEM_PRIVATE*/)
+            (
+                page,
+                base,
+                p,
+                end.wrapping_sub(page),
+                0x1000u32, /*MEM_COMMIT*/
+                p,
+                0x20000u32, /*MEM_PRIVATE*/
+            )
         }
         None => {
             // Free hole: RegionSize spans up to the next mapped region.
-            let next = ctx.memory.regions.range(addr..).next().map(|(&b, _)| b).unwrap_or(0);
+            let next = ctx
+                .memory
+                .regions
+                .range(addr..)
+                .next()
+                .map(|(&b, _)| b)
+                .unwrap_or(0);
             let size = if next > page { next - page } else { 0x1000 };
-            (page, 0, 0, size, 0x10000u32 /*MEM_FREE*/, 0x01u32 /*PAGE_NOACCESS*/, 0)
+            (
+                page, 0, 0, size, 0x10000u32, /*MEM_FREE*/
+                0x01u32,    /*PAGE_NOACCESS*/
+                0,
+            )
         }
     };
 
@@ -2418,8 +2461,19 @@ fn get_current_thread(ctx: &mut ApiContext) -> Handled {
 // FILETIME (100ns since 1601-01-01) for a fixed base date, advanced by the
 // shared virtual clock so successive reads differ. Base = 2024-01-01 00:00 UTC.
 fn fake_filetime() -> u64 {
-    const BASE_2024: u64 = 133_485_408_000_000_000;
-    BASE_2024 + crate::winmm::tick_ms() as u64 * 10_000
+    BASE_2024_FILETIME + crate::winmm::tick_ms() as u64 * 10_000
+}
+
+/// 2024-01-01 00:00:00 UTC as a FILETIME, the base every clock we expose shares.
+const BASE_2024_FILETIME: u64 = 133_485_408_000_000_000;
+/// The same instant as a Unix time_t.
+const BASE_2024_UNIX: u32 = 1_704_067_200;
+
+/// Seconds since the Unix epoch, advancing with the same virtual clock as
+/// GetSystemTimeAsFileTime and GetTickCount so the CRT's `time()` and the
+/// Win32 clocks cannot disagree (and `srand(time(NULL))` gets a fresh seed).
+pub(crate) fn unix_time_secs() -> u32 {
+    BASE_2024_UNIX + crate::winmm::tick_ms() / 1000
 }
 
 // GetSystemTimeAsFileTime / GetSystemTimePreciseAsFileTime(LPFILETIME): write a
@@ -2443,7 +2497,16 @@ fn get_system_time_struct(ctx: &mut ApiContext) -> Handled {
     if p != 0 {
         // wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds
         let ms = (crate::winmm::tick_ms() % 1000) as u16;
-        for (off, v) in [(0, 2024u16), (2, 1), (4, 1), (6, 1), (8, 12), (10, 0), (12, 0), (14, ms)] {
+        for (off, v) in [
+            (0, 2024u16),
+            (2, 1),
+            (4, 1),
+            (6, 1),
+            (8, 12),
+            (10, 0),
+            (12, 0),
+            (14, ms),
+        ] {
             let _ = ctx.memory.write_u16(p + off, v);
         }
     }
@@ -2457,13 +2520,13 @@ fn global_memory_status(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
         const G2: u32 = 2 * 1024 * 1024 * 1024 - 1; // ~2 GB (fits in u32)
-        let _ = ctx.memory.write_u32(p, 32);          // dwLength
-        let _ = ctx.memory.write_u32(p + 4, 25);      // dwMemoryLoad
-        let _ = ctx.memory.write_u32(p + 8, G2);      // dwTotalPhys
+        let _ = ctx.memory.write_u32(p, 32); // dwLength
+        let _ = ctx.memory.write_u32(p + 4, 25); // dwMemoryLoad
+        let _ = ctx.memory.write_u32(p + 8, G2); // dwTotalPhys
         let _ = ctx.memory.write_u32(p + 12, G2 / 4 * 3); // dwAvailPhys (~1.5 GB)
-        let _ = ctx.memory.write_u32(p + 16, G2);     // dwTotalPageFile
+        let _ = ctx.memory.write_u32(p + 16, G2); // dwTotalPageFile
         let _ = ctx.memory.write_u32(p + 20, G2 / 4 * 3); // dwAvailPageFile
-        let _ = ctx.memory.write_u32(p + 24, G2);     // dwTotalVirtual
+        let _ = ctx.memory.write_u32(p + 24, G2); // dwTotalVirtual
         let _ = ctx.memory.write_u32(p + 28, G2 / 4 * 3); // dwAvailVirtual
     }
     ctx.ret_stdcall(0, 1);
@@ -2481,13 +2544,13 @@ fn global_memory_status_ex(ctx: &mut ApiContext) -> Handled {
         const G4: u64 = 4 * 1024 * 1024 * 1024;
         // dwLength (+0) is set by the caller; leave it. dwMemoryLoad (+4).
         let _ = ctx.memory.write_u32(p + 4, 25);
-        write_u64(ctx, 8, G4);          // ullTotalPhys
+        write_u64(ctx, 8, G4); // ullTotalPhys
         write_u64(ctx, 16, G4 / 4 * 3); // ullAvailPhys
-        write_u64(ctx, 24, G4);         // ullTotalPageFile
+        write_u64(ctx, 24, G4); // ullTotalPageFile
         write_u64(ctx, 32, G4 / 4 * 3); // ullAvailPageFile
-        write_u64(ctx, 40, G4);         // ullTotalVirtual
+        write_u64(ctx, 40, G4); // ullTotalVirtual
         write_u64(ctx, 48, G4 / 4 * 3); // ullAvailVirtual
-        write_u64(ctx, 56, 0);          // ullAvailExtendedVirtual
+        write_u64(ctx, 56, 0); // ullAvailExtendedVirtual
     }
     ctx.ret_stdcall(1, 1);
     Handled::Ok
@@ -2499,17 +2562,17 @@ fn global_memory_status_ex(ctx: &mut ApiContext) -> Handled {
 fn get_system_info(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     if p != 0 {
-        let _ = ctx.memory.write_u16(p, 0);            // wProcessorArchitecture = INTEL
-        let _ = ctx.memory.write_u16(p + 2, 0);        // wReserved
-        let _ = ctx.memory.write_u32(p + 4, 0x1000);   // dwPageSize = 4 KB
-        let _ = ctx.memory.write_u32(p + 8, 0x0001_0000);   // lpMinimumApplicationAddress
-        let _ = ctx.memory.write_u32(p + 12, 0x7FFE_FFFF);  // lpMaximumApplicationAddress
-        let _ = ctx.memory.write_u32(p + 16, 1);       // dwActiveProcessorMask
-        let _ = ctx.memory.write_u32(p + 20, 1);       // dwNumberOfProcessors
-        let _ = ctx.memory.write_u32(p + 24, 586);     // dwProcessorType = PENTIUM
+        let _ = ctx.memory.write_u16(p, 0); // wProcessorArchitecture = INTEL
+        let _ = ctx.memory.write_u16(p + 2, 0); // wReserved
+        let _ = ctx.memory.write_u32(p + 4, 0x1000); // dwPageSize = 4 KB
+        let _ = ctx.memory.write_u32(p + 8, 0x0001_0000); // lpMinimumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 12, 0x7FFE_FFFF); // lpMaximumApplicationAddress
+        let _ = ctx.memory.write_u32(p + 16, 1); // dwActiveProcessorMask
+        let _ = ctx.memory.write_u32(p + 20, 1); // dwNumberOfProcessors
+        let _ = ctx.memory.write_u32(p + 24, 586); // dwProcessorType = PENTIUM
         let _ = ctx.memory.write_u32(p + 28, 0x0001_0000); // dwAllocationGranularity = 64 KB
-        let _ = ctx.memory.write_u16(p + 32, 6);       // wProcessorLevel
-        let _ = ctx.memory.write_u16(p + 34, 0x0E08);  // wProcessorRevision
+        let _ = ctx.memory.write_u16(p + 32, 6); // wProcessorLevel
+        let _ = ctx.memory.write_u16(p + 34, 0x0E08); // wProcessorRevision
     }
     ctx.ret_stdcall(0, 1);
     Handled::Ok
@@ -2701,15 +2764,51 @@ fn dup_handle(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// RaiseException(code, flags, argCount, args).
+//
+// We do not model SEH, so a genuinely fatal exception still terminates. But
+// several codes are raised routinely by healthy programs and are meant to be
+// swallowed by a handler that is always installed; killing the process on those
+// was wrong. The debugger-notification codes in particular are fire-and-forget:
+// with no debugger attached the kernel just continues execution.
 fn raise_exception(ctx: &mut ApiContext) -> Handled {
+    /// MS_VC_EXCEPTION: the "name this thread" notification the MSVC debugger
+    /// consumes. Always continuable, always ignorable.
+    const MS_VC_THREAD_NAME: u32 = 0x406D_1388;
+    /// OutputDebugString's notification exception.
+    const DBG_PRINTEXCEPTION_C: u32 = 0x4001_000A;
+    const DBG_PRINTEXCEPTION_WIDE_C: u32 = 0x4001_000B;
+    /// MSVC C++ throw. Continuable in the sense that the app's own
+    /// __CxxFrameHandler is expected to unwind it; we cannot run that, so it
+    /// stays fatal, but say so explicitly in the log.
+    const CXX_EXCEPTION: u32 = 0xE06D_7363;
+
     let code = ctx.arg(0);
-    ctx.logs.log(
-        webwine_api::logs::LogLevel::Warn,
-        "api",
-        &format!("RaiseException code=0x{code:08X}"),
-        Some(ctx.pid),
-    );
-    Handled::ExitProcess(1)
+    let flags = ctx.arg(1);
+    const EXCEPTION_NONCONTINUABLE: u32 = 1;
+
+    match code {
+        MS_VC_THREAD_NAME | DBG_PRINTEXCEPTION_C | DBG_PRINTEXCEPTION_WIDE_C => {
+            ctx.ret_stdcall(0, 4);
+            Handled::Ok
+        }
+        _ => {
+            let note = if code == CXX_EXCEPTION {
+                " (C++ throw; SEH unwinding is not modelled, so it cannot reach a catch block)"
+            } else if flags & EXCEPTION_NONCONTINUABLE == 0 {
+                " (continuable, but no SEH handler chain is modelled)"
+            } else {
+                ""
+            };
+            ctx.logs.log(
+                webwine_api::logs::LogLevel::Warn,
+                "api",
+                &format!("RaiseException code=0x{code:08X}{note}"),
+                Some(ctx.pid),
+            );
+            Handled::ExitProcess(1)
+        }
+    }
 }
 
 fn output_debug_string_a(ctx: &mut ApiContext) -> Handled {
@@ -2754,6 +2853,329 @@ fn tls_get(ctx: &mut ApiContext) -> Handled {
 const ERROR_INVALID_PARAMETER: u32 = 87;
 const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
 
+// locale / character-classification support
+//
+// These four used to be blanket failure stubs (return 0). The MSVC CRT builds
+// its `isalpha`/`toupper` tables and runs `setlocale` through them at startup,
+// so a hard failure left the tables empty and every ctype query answering "no".
+
+// GetCPInfo(codepage, lpCPInfo) -> BOOL.
+// CPINFO { UINT MaxCharSize; BYTE DefaultChar[2]; BYTE LeadByte[12]; }
+fn get_cp_info(ctx: &mut ApiContext) -> Handled {
+    let cp = crate::codepage::resolve(ctx.arg(0));
+    let p = ctx.arg(1);
+    if p == 0 {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, 2);
+        return Handled::Ok;
+    }
+    // We only expose single-byte codepages plus UTF-8; neither has lead bytes.
+    let max_char = if cp == 65001 { 4 } else { 1 };
+    let _ = ctx.memory.write_u32(p, max_char);
+    let _ = ctx.memory.write_u8(p + 4, b'?'); // DefaultChar
+    let _ = ctx.memory.write_u8(p + 5, 0);
+    let _ = ctx.memory.write_bytes(p + 6, &[0u8; 12]); // LeadByte: none
+    ctx.ret_stdcall(1, 2);
+    Handled::Ok
+}
+
+/// Shared body for GetStringType*: classify `count` units into `out`.
+/// A negative count means "NUL-terminated", and Wine converts that to
+/// `lstrlenW(src) + 1` so the terminator gets an entry too.
+fn string_type_core(
+    ctx: &mut ApiContext,
+    ty: u32,
+    src: u32,
+    count: u32,
+    out: u32,
+    wide: bool,
+) -> bool {
+    if src == 0 || out == 0 || !(1..=3).contains(&ty) {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        return false;
+    }
+    let units: Vec<u16> = if wide {
+        if count == 0xFFFF_FFFF {
+            let mut u = ctx.memory.read_wstr_units(src);
+            u.push(0);
+            u
+        } else {
+            (0..count)
+                .map(|i| ctx.memory.read_u16(src + i * 2).unwrap_or(0))
+                .collect()
+        }
+    } else {
+        let cp = crate::codepage::resolve(0);
+        let bytes = if count == 0xFFFF_FFFF {
+            let mut b = ctx.memory.read_cstr_bytes(src);
+            b.push(0);
+            b
+        } else {
+            ctx.memory
+                .read_bytes(src, count as usize)
+                .unwrap_or_default()
+        };
+        bytes
+            .iter()
+            .map(|&b| crate::codepage::byte_to_wchar(cp, b))
+            .collect()
+    };
+    for (i, &c) in units.iter().enumerate() {
+        let t = match ty {
+            1 => crate::codepage::char_type1(c),
+            2 => crate::codepage::char_type2(c),
+            _ => crate::codepage::char_type3(c),
+        };
+        let _ = ctx.memory.write_u16(out + (i as u32) * 2, t);
+    }
+    true
+}
+
+// GetStringTypeW(dwInfoType, lpSrcStr, cchSrc, lpCharType) - note the info type
+// comes FIRST here, unlike every "Ex"/ANSI variant.
+fn get_string_type_w(ctx: &mut ApiContext) -> Handled {
+    let (ty, src, count, out) = (ctx.arg(0), ctx.arg(1), ctx.arg(2), ctx.arg(3));
+    let ok = string_type_core(ctx, ty, src, count, out, true);
+    ctx.ret_stdcall(ok as u32, 4);
+    Handled::Ok
+}
+
+// GetStringTypeExW(locale, dwInfoType, lpSrcStr, cchSrc, lpCharType).
+fn get_string_type_ex_w(ctx: &mut ApiContext) -> Handled {
+    let (ty, src, count, out) = (ctx.arg(1), ctx.arg(2), ctx.arg(3), ctx.arg(4));
+    let ok = string_type_core(ctx, ty, src, count, out, true);
+    ctx.ret_stdcall(ok as u32, 5);
+    Handled::Ok
+}
+
+// GetStringTypeA/ExA(locale, dwInfoType, lpSrcStr, cchSrc, lpCharType).
+fn get_string_type_a(ctx: &mut ApiContext) -> Handled {
+    let (ty, src, count, out) = (ctx.arg(1), ctx.arg(2), ctx.arg(3), ctx.arg(4));
+    let ok = string_type_core(ctx, ty, src, count, out, false);
+    ctx.ret_stdcall(ok as u32, 5);
+    Handled::Ok
+}
+
+const LCMAP_LOWERCASE: u32 = 0x0000_0100;
+const LCMAP_UPPERCASE: u32 = 0x0000_0200;
+const LCMAP_SORTKEY: u32 = 0x0000_0400;
+
+// LCMapString(W|A) / LCMapStringEx: case mapping (the flags anyone actually
+// uses). Argument positions are identical for all three; only the trailing
+// argument count differs. Unsupported mappings pass the text through unchanged
+// rather than failing, which is what callers can recover from.
+fn lcmap_string(ctx: &mut ApiContext, wide: bool, nargs: u32) -> Handled {
+    let flags = ctx.arg(1);
+    let src = ctx.arg(2);
+    let srclen = ctx.arg(3);
+    let dst = ctx.arg(4);
+    let dstlen = ctx.arg(5);
+
+    if src == 0 || (dst == 0 && dstlen != 0) {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, nargs);
+        return Handled::Ok;
+    }
+
+    let cp = crate::codepage::resolve(0);
+    let units: Vec<u16> = if wide {
+        wc_source(ctx, src, srclen)
+    } else {
+        mb_source(ctx, src, srclen)
+            .iter()
+            .map(|&b| crate::codepage::byte_to_wchar(cp, b))
+            .collect()
+    };
+
+    let mapped: Vec<u16> = units
+        .iter()
+        .map(|&c| {
+            if flags & LCMAP_UPPERCASE != 0 {
+                crate::codepage::to_upper(c)
+            } else if flags & (LCMAP_LOWERCASE | LCMAP_SORTKEY) != 0 {
+                // A sort key is only ever compared against another sort key,
+                // so a case-folded copy is a valid (if coarse) collation order.
+                crate::codepage::to_lower(c)
+            } else {
+                c
+            }
+        })
+        .collect();
+
+    // A sort key is a byte string even in the wide entry point.
+    let byte_output = !wide || flags & LCMAP_SORTKEY != 0;
+    let needed = mapped.len() as u32;
+    if dstlen == 0 {
+        ctx.ret_stdcall(needed, nargs);
+        return Handled::Ok;
+    }
+    if dstlen < needed {
+        ctx.cpu.last_error = ERROR_INSUFFICIENT_BUFFER;
+        ctx.ret_stdcall(0, nargs);
+        return Handled::Ok;
+    }
+    if byte_output {
+        let bytes = crate::codepage::encode(0, &mapped);
+        let _ = ctx.memory.write_bytes(dst, &bytes);
+    } else {
+        for (i, &c) in mapped.iter().enumerate() {
+            let _ = ctx.memory.write_u16(dst + (i as u32) * 2, c);
+        }
+    }
+    ctx.ret_stdcall(needed, nargs);
+    Handled::Ok
+}
+
+const LOCALE_RETURN_NUMBER: u32 = 0x2000_0000;
+
+/// en-US values for the LCTYPEs apps and the CRT actually query.
+fn locale_info_value(lctype: u32) -> Option<&'static str> {
+    const DAYS: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    const ABBREV_DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const ABBREV_MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    Some(match lctype {
+        0x0001 => "0409",                    // LOCALE_ILANGUAGE
+        0x0002 => "English (United States)", // LOCALE_SLANGUAGE
+        0x0003 => "ENU",                     // LOCALE_SABBREVLANGNAME
+        0x0005 => "US",                      // LOCALE_ICOUNTRY
+        0x0006 => "United States",           // LOCALE_SCOUNTRY
+        0x0007 => "USA",                     // LOCALE_SABBREVCTRYNAME
+        0x000B => "437",                     // LOCALE_IDEFAULTCODEPAGE
+        0x000C => ",",                       // LOCALE_SLIST
+        0x000D => "1",                       // LOCALE_IMEASURE (US)
+        0x000E => ".",                       // LOCALE_SDECIMAL
+        0x000F => ",",                       // LOCALE_STHOUSAND
+        0x0010 => "3;0",                     // LOCALE_SGROUPING
+        0x0011 => "2",                       // LOCALE_IDIGITS
+        0x0014 => "$",                       // LOCALE_SCURRENCY
+        0x001D => "/",                       // LOCALE_SDATE
+        0x001E => ":",                       // LOCALE_STIME
+        0x001F => "M/d/yyyy",                // LOCALE_SSHORTDATE
+        0x0020 => "dddd, MMMM d, yyyy",      // LOCALE_SLONGDATE
+        0x0028 => "AM",                      // LOCALE_S1159
+        0x0029 => "PM",                      // LOCALE_S2359
+        0x0050 => "",                        // LOCALE_SPOSITIVESIGN
+        0x0051 => "-",                       // LOCALE_SNEGATIVESIGN
+        0x0059 => "en",                      // LOCALE_SISO639LANGNAME
+        0x005A => "US",                      // LOCALE_SISO3166CTRYNAME
+        0x005C => "en-US",                   // LOCALE_SNAME
+        0x1001 => "English",                 // LOCALE_SENGLANGUAGE
+        0x1002 => "United States",           // LOCALE_SENGCOUNTRY
+        0x1003 => "h:mm:ss tt",              // LOCALE_STIMEFORMAT
+        0x1004 => "1252",                    // LOCALE_IDEFAULTANSICODEPAGE
+        0x1010 => "1",                       // LOCALE_INEGNUMBER
+        0x002A..=0x0030 => DAYS[(lctype - 0x2A) as usize],
+        0x0031..=0x0037 => ABBREV_DAYS[(lctype - 0x31) as usize],
+        0x0038..=0x0043 => MONTHS[(lctype - 0x38) as usize],
+        0x0044..=0x004F => ABBREV_MONTHS[(lctype - 0x44) as usize],
+        _ => return None,
+    })
+}
+
+// GetLocaleInfo(A|W)(locale, lctype, lpLCData, cchData) -> chars written
+// including the NUL, or the required size when cchData is 0. With
+// LOCALE_RETURN_NUMBER the value is written as a DWORD instead.
+fn get_locale_info(ctx: &mut ApiContext, wide: bool) -> Handled {
+    let lctype = ctx.arg(1);
+    let buf = ctx.arg(2);
+    let cch = ctx.arg(3);
+
+    let Some(value) = locale_info_value(lctype & 0x000F_FFFF) else {
+        ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+        ctx.ret_stdcall(0, 4);
+        return Handled::Ok;
+    };
+
+    if lctype & LOCALE_RETURN_NUMBER != 0 {
+        // The caller wants a DWORD; the string form is always decimal here.
+        if cch < 2 {
+            ctx.ret_stdcall(2, 4); // sizeof(DWORD) in "chars"
+            return Handled::Ok;
+        }
+        if buf == 0 {
+            ctx.cpu.last_error = ERROR_INVALID_PARAMETER;
+            ctx.ret_stdcall(0, 4);
+            return Handled::Ok;
+        }
+        let n = value.parse::<u32>().unwrap_or(0);
+        let _ = ctx.memory.write_u32(buf, n);
+        ctx.ret_stdcall(2, 4);
+        return Handled::Ok;
+    }
+
+    let units: Vec<u16> = value.encode_utf16().collect();
+    let needed = if wide {
+        units.len() as u32 + 1
+    } else {
+        crate::codepage::encode(0, &units).len() as u32 + 1
+    };
+    if cch == 0 {
+        ctx.ret_stdcall(needed, 4);
+        return Handled::Ok;
+    }
+    if buf == 0 || cch < needed {
+        ctx.cpu.last_error = ERROR_INSUFFICIENT_BUFFER;
+        ctx.ret_stdcall(0, 4);
+        return Handled::Ok;
+    }
+    if wide {
+        for (i, &c) in units.iter().enumerate() {
+            let _ = ctx.memory.write_u16(buf + (i as u32) * 2, c);
+        }
+        let _ = ctx.memory.write_u16(buf + (units.len() as u32) * 2, 0);
+    } else {
+        let mut bytes = crate::codepage::encode(0, &units);
+        bytes.push(0);
+        let _ = ctx.memory.write_bytes(buf, &bytes);
+    }
+    ctx.ret_stdcall(needed, 4);
+    Handled::Ok
+}
+
+// IsProcessorFeaturePresent(feature): answer per feature instead of "yes" to
+// everything. Claiming every PF_* bit invited the CRT and app hot paths into
+// AVX/XSAVE/RDRAND code our interpreter cannot execute. The list below is what
+// the executor really implements: SSE/SSE2 data movement (movaps/movdqu/pxor/
+// punpck) and a non-executable-page model. cmpxchg8b, rdtsc, cpuid and MMX are
+// not decoded, so they answer FALSE.
+fn is_processor_feature_present(ctx: &mut ApiContext) -> Handled {
+    const PF_XMMI_INSTRUCTIONS_AVAILABLE: u32 = 6;
+    const PF_XMMI64_INSTRUCTIONS_AVAILABLE: u32 = 10;
+    const PF_NX_ENABLED: u32 = 12;
+
+    let present = matches!(
+        ctx.arg(0),
+        PF_XMMI_INSTRUCTIONS_AVAILABLE | PF_XMMI64_INSTRUCTIONS_AVAILABLE | PF_NX_ENABLED
+    );
+    ctx.ret_stdcall(present as u32, 1);
+    Handled::Ok
+}
+
 /// Read exactly `count` bytes of source text. A negative (0xFFFFFFFF) length
 /// means "NUL-terminated", and Wine turns that into `strlen(src) + 1` so the
 /// terminator is part of the conversion and of the returned count
@@ -2774,7 +3196,9 @@ fn mb_source(ctx: &ApiContext, src: u32, srclen: u32) -> Vec<u8> {
         }
         out
     } else {
-        ctx.memory.read_bytes(src, srclen as usize).unwrap_or_default()
+        ctx.memory
+            .read_bytes(src, srclen as usize)
+            .unwrap_or_default()
     }
 }
 
@@ -2862,9 +3286,9 @@ fn widechar_to_multibyte(ctx: &mut ApiContext) -> Handled {
     let units = wc_source(ctx, src, srcl);
     let bytes = crate::codepage::encode(codepage, &units);
     if used != 0 {
-        let any_default = units
-            .iter()
-            .any(|&w| w >= 0x80 && crate::codepage::wchar_to_byte(codepage, w) == b'?' && w != '?' as u16);
+        let any_default = units.iter().any(|&w| {
+            w >= 0x80 && crate::codepage::wchar_to_byte(codepage, w) == b'?' && w != '?' as u16
+        });
         let _ = ctx.memory.write_u32(used, any_default as u32);
     }
 

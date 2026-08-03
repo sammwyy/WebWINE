@@ -37,19 +37,23 @@ pub fn register(r: &mut WinApiRegistry) {
         ("msvcrt.dll", "wcscpy", wcscpy_fn),
         ("msvcrt.dll", "wcscat", wcscat_fn),
         ("msvcrt.dll", "wcsncpy", wcsncpy_fn),
-        ("msvcrt.dll", "wcscmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
-        ("msvcrt.dll", "_wcsicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); c.ret_cdecl(a.cmp(&b) as i32 as u32); Handled::Ok }),
+        ("msvcrt.dll", "wcscmp", |c| wcs_compare(c, u32::MAX, false)),
+        ("msvcrt.dll", "_wcsicmp", |c| wcs_compare(c, u32::MAX, true)),
         ("msvcrt.dll", "wcschr", wcschr_fn),
         ("msvcrt.dll", "wcsrchr", wcsrchr_fn),
         ("msvcrt.dll", "wcsstr", wcsstr_fn),
-        ("msvcrt.dll", "wcsncmp", |c| { let a = c.wstr(c.arg(0)); let b = c.wstr(c.arg(1)); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
-        ("msvcrt.dll", "_wcsnicmp", |c| { let a = c.wstr(c.arg(0)).to_lowercase(); let b = c.wstr(c.arg(1)).to_lowercase(); let n = c.arg(2) as usize; let r = a.chars().take(n).cmp(b.chars().take(n)) as i32; c.ret_cdecl(r as u32); Handled::Ok }),
+        ("msvcrt.dll", "wcsncmp", |c| { let n = c.arg(2); wcs_compare(c, n, false) }),
+        ("msvcrt.dll", "_wcsnicmp", |c| { let n = c.arg(2); wcs_compare(c, n, true) }),
         ("msvcrt.dll", "towupper", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_uppercase() as u32).unwrap_or(v)); Handled::Ok }),
         ("msvcrt.dll", "towlower", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.to_ascii_lowercase() as u32).unwrap_or(v)); Handled::Ok }),
         ("msvcrt.dll", "iswalpha", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_alphabetic() as u32).unwrap_or(0)); Handled::Ok }),
         ("msvcrt.dll", "iswdigit", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_numeric() as u32).unwrap_or(0)); Handled::Ok }),
         ("msvcrt.dll", "iswspace", |c| { let v = c.arg(0); c.ret_cdecl(char::from_u32(v).map(|ch| ch.is_whitespace() as u32).unwrap_or(0)); Handled::Ok }),
-        ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = 1_577_836_800u32; if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
+        // time(t): seconds since the Unix epoch, from the shared virtual clock.
+        // A frozen constant made srand(time(NULL)) reproduce one seed forever.
+        ("msvcrt.dll", "time", |c| { let t = c.arg(0); let now = crate::kernel32::unix_time_secs(); if t != 0 { let _ = c.memory.write_u32(t, now); } c.ret_cdecl(now); Handled::Ok }),
+        // _time64(t): same value widened to 64 bits (returned in EDX:EAX).
+        ("msvcrt.dll", "_time64", |c| { let t = c.arg(0); let now = crate::kernel32::unix_time_secs(); if t != 0 { let _ = c.memory.write_u32(t, now); let _ = c.memory.write_u32(t + 4, 0); } c.cpu.edx = 0; c.ret_cdecl(now); Handled::Ok }),
         ("msvcrt.dll", "srand", |c| {
             *c.rand_seed = c.arg(0);
             c.ret_cdecl(0);
@@ -436,10 +440,61 @@ pub(crate) fn wcslen(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
+// wcscmp / wcsncmp / _wcsicmp / _wcsnicmp over raw UTF-16 units, comparing up
+// to `limit` units. Decoding to a Rust String first replaced unpaired
+// surrogates and made `.chars()` counts diverge from WCHAR counts.
+pub(crate) fn wcs_compare(ctx: &mut ApiContext, limit: u32, fold: bool) -> Handled {
+    let (pa, pb) = (ctx.arg(0), ctx.arg(1));
+    let mut r = 0i32;
+    for i in 0..limit {
+        let mut a = ctx.memory.read_u16(pa.wrapping_add(i * 2)).unwrap_or(0);
+        let mut b = ctx.memory.read_u16(pb.wrapping_add(i * 2)).unwrap_or(0);
+        if fold {
+            a = fold_case(a);
+            b = fold_case(b);
+        }
+        if a != b {
+            r = a as i32 - b as i32;
+            break;
+        }
+        if a == 0 {
+            break;
+        }
+    }
+    ctx.ret_cdecl(r as u32);
+    Handled::Ok
+}
+
+/// Lowercase a single UTF-16 unit. Covers ASCII, Latin-1, Latin Extended-A and
+/// Greek/Cyrillic, the ranges the CRT's `towlower` actually folds for the
+/// codepages we expose; anything else is left alone.
+pub(crate) fn fold_case(c: u16) -> u16 {
+    match c {
+        0x41..=0x5A => c + 0x20,                              // A-Z
+        0xC0..=0xD6 | 0xD8..=0xDE => c + 0x20,                 // Latin-1
+        0x100..=0x137 | 0x14A..=0x177 if c % 2 == 0 => c + 1,  // Latin Ext-A pairs
+        0x139..=0x148 | 0x179..=0x17E if c % 2 == 1 => c + 1,
+        0x391..=0x3A1 | 0x3A3..=0x3AB => c + 0x20,             // Greek
+        0x410..=0x42F => c + 0x20,                             // Cyrillic
+        0x400..=0x40F => c + 0x50,
+        _ => c,
+    }
+}
+
 pub(crate) fn strcmp(ctx: &mut ApiContext) -> Handled {
-    let a = ctx.cstr(ctx.arg(0));
-    let b = ctx.cstr(ctx.arg(1));
-    let r = a.as_str().cmp(b.as_str()) as i32;
+    let (pa, pb) = (ctx.arg(0), ctx.arg(1));
+    let mut r = 0i32;
+    for i in 0.. {
+        let a = ctx.memory.read_u8(pa.wrapping_add(i)).unwrap_or(0);
+        let b = ctx.memory.read_u8(pb.wrapping_add(i)).unwrap_or(0);
+        if a != b {
+            r = a as i32 - b as i32;
+            break;
+        }
+        if a == 0 {
+            break;
+        }
+    }
     ctx.ret_cdecl(r as u32);
     Handled::Ok
 }
@@ -469,8 +524,7 @@ pub(crate) fn strncmp(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn strcpy(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
-    let s = ctx.cstr(src);
-    let mut bytes = s.into_bytes();
+    let mut bytes = ctx.cstr_bytes(src);
     bytes.push(0);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -510,7 +564,7 @@ pub(crate) fn strncpy(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let n = ctx.arg(2) as usize;
-    let s = ctx.memory.read_cstr(src).into_bytes();
+    let s = ctx.cstr_bytes(src);
     let mut buf = vec![0u8; n];
     let copy = s.len().min(n);
     buf[..copy].copy_from_slice(&s[..copy]);
@@ -523,10 +577,9 @@ pub(crate) fn strncat(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
     let n = ctx.arg(2) as usize;
-    let existing = ctx.memory.read_cstr(dst);
-    let append = ctx.memory.read_cstr(src);
-    let take: String = append.chars().take(n).collect();
-    let mut bytes = (existing + &take).into_bytes();
+    let mut bytes = ctx.cstr_bytes(dst);
+    let append = ctx.cstr_bytes(src);
+    bytes.extend_from_slice(&append[..append.len().min(n)]);
     bytes.push(0);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -536,10 +589,8 @@ pub(crate) fn strncat(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn strcat(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let src = ctx.arg(1);
-    let existing = ctx.cstr(dst);
-    let append = ctx.cstr(src);
-    let result = existing + &append;
-    let mut bytes = result.into_bytes();
+    let mut bytes = ctx.cstr_bytes(dst);
+    bytes.extend_from_slice(&ctx.cstr_bytes(src));
     bytes.push(0);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -581,8 +632,8 @@ pub(crate) fn longjmp_fn(ctx: &mut ApiContext) -> Handled {
 
 pub(crate) fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
-    let s = ctx.wstr(ctx.arg(1));
-    let mut bytes: Vec<u8> = s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let units = ctx.wstr_units(ctx.arg(1));
+    let mut bytes: Vec<u8> = units.iter().flat_map(|c| c.to_le_bytes()).collect();
     bytes.extend_from_slice(&[0, 0]);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -592,8 +643,7 @@ pub(crate) fn wcscpy_fn(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
     let n = ctx.arg(2) as usize;
-    let s = ctx.wstr(ctx.arg(1));
-    let units: Vec<u16> = s.encode_utf16().collect();
+    let units = ctx.wstr_units(ctx.arg(1));
     let mut bytes: Vec<u8> = Vec::with_capacity(n * 2);
     for i in 0..n {
         let c = units.get(i).copied().unwrap_or(0); // NUL-pad if src shorter
@@ -606,10 +656,9 @@ pub(crate) fn wcsncpy_fn(ctx: &mut ApiContext) -> Handled {
 
 pub(crate) fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
     let dst = ctx.arg(0);
-    let existing = ctx.wstr(dst);
-    let append = ctx.wstr(ctx.arg(1));
-    let combined = existing + &append;
-    let mut bytes: Vec<u8> = combined.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let mut units = ctx.wstr_units(dst);
+    units.extend_from_slice(&ctx.wstr_units(ctx.arg(1)));
+    let mut bytes: Vec<u8> = units.iter().flat_map(|c| c.to_le_bytes()).collect();
     bytes.extend_from_slice(&[0, 0]);
     let _ = ctx.memory.write_bytes(dst, &bytes);
     ctx.ret_cdecl(dst);
@@ -619,8 +668,8 @@ pub(crate) fn wcscat_fn(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let needle = ctx.arg(1) as u16;
-    let s = ctx.wstr(p);
-    let pos = s.encode_utf16().position(|c| c == needle);
+    let s = ctx.wstr_units(p);
+    let pos = s.iter().position(|&c| c == needle);
     let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -629,8 +678,8 @@ pub(crate) fn wcschr_fn(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let needle = ctx.arg(1) as u16;
-    let s = ctx.wstr(p);
-    let pos = s.encode_utf16().enumerate().filter(|&(_, c)| c == needle).last().map(|(i, _)| i);
+    let s = ctx.wstr_units(p);
+    let pos = s.iter().rposition(|&c| c == needle);
     let r = pos.map(|i| p + (i as u32) * 2).unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -638,10 +687,12 @@ pub(crate) fn wcsrchr_fn(ctx: &mut ApiContext) -> Handled {
 
 pub(crate) fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
-    let hay: Vec<u16> = ctx.wstr(p).encode_utf16().collect();
-    let needle: Vec<u16> = ctx.wstr(ctx.arg(1)).encode_utf16().collect();
+    let hay = ctx.wstr_units(p);
+    let needle = ctx.wstr_units(ctx.arg(1));
     let r = if needle.is_empty() {
         p
+    } else if needle.len() > hay.len() {
+        0
     } else {
         hay.windows(needle.len()).position(|w| w == needle.as_slice())
             .map(|i| p + (i as u32) * 2).unwrap_or(0)
@@ -653,8 +704,8 @@ pub(crate) fn wcsstr_fn(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn strchr(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let c = ctx.arg(1) as u8;
-    let s = ctx.memory.read_cstr(p);
-    let pos = s.bytes().position(|b| b == c);
+    let s = ctx.cstr_bytes(p);
+    let pos = s.iter().position(|&b| b == c);
     let r = pos.map(|i| p + i as u32).unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
@@ -663,41 +714,110 @@ pub(crate) fn strchr(ctx: &mut ApiContext) -> Handled {
 pub(crate) fn strrchr(ctx: &mut ApiContext) -> Handled {
     let p = ctx.arg(0);
     let c = ctx.arg(1) as u8;
-    let s = ctx.memory.read_cstr(p);
-    let pos = s.bytes().rposition(|b| b == c);
+    let s = ctx.cstr_bytes(p);
+    let pos = s.iter().rposition(|&b| b == c);
     let r = pos.map(|i| p + i as u32).unwrap_or(0);
     ctx.ret_cdecl(r);
     Handled::Ok
 }
 
 pub(crate) fn strstr(ctx: &mut ApiContext) -> Handled {
-    let hay = ctx.cstr(ctx.arg(0));
-    let needle = ctx.cstr(ctx.arg(1));
-    let r = hay
-        .find(&needle[..])
-        .map(|i| ctx.arg(0) + i as u32)
-        .unwrap_or(0);
+    let p = ctx.arg(0);
+    let hay = ctx.cstr_bytes(p);
+    let needle = ctx.cstr_bytes(ctx.arg(1));
+    let r = if needle.is_empty() {
+        p
+    } else if needle.len() > hay.len() {
+        0
+    } else {
+        hay.windows(needle.len())
+            .position(|w| w == needle.as_slice())
+            .map(|i| p + i as u32)
+            .unwrap_or(0)
+    };
+    ctx.ret_cdecl(r);
+    Handled::Ok
+}
+
+/// Shared strtol/strtoul/atoi scanner: skip leading whitespace, take an
+/// optional sign, auto-detect 0x/0 when `base` is 0, then consume the longest
+/// valid digit prefix. `Rust`'s `parse` rejects the whole string when there is
+/// a trailing suffix, so "12abc" used to come back as 0 instead of 12.
+fn scan_integer(bytes: &[u8], base: u32) -> (u64, bool, usize) {
+    let mut i = 0;
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let negative = match bytes.get(i) {
+        Some(b'-') => { i += 1; true }
+        Some(b'+') => { i += 1; false }
+        _ => false,
+    };
+    let mut base = base;
+    if (base == 0 || base == 16)
+        && bytes.get(i) == Some(&b'0')
+        && matches!(bytes.get(i + 1), Some(b'x') | Some(b'X'))
+    {
+        base = 16;
+        i += 2;
+    } else if base == 0 {
+        base = if bytes.get(i) == Some(&b'0') { 8 } else { 10 };
+    }
+
+    let digits_start = i;
+    let mut value: u64 = 0;
+    while let Some(d) = bytes.get(i).and_then(|c| (*c as char).to_digit(base)) {
+        value = value.saturating_mul(base as u64).saturating_add(d as u64);
+        i += 1;
+    }
+    // No digits consumed: nothing was converted, endptr stays at the start.
+    if i == digits_start {
+        return (0, negative, 0);
+    }
+    (value, negative, i)
+}
+
+/// strtol(nptr, endptr, base) / strtoul(...). Writes `*endptr` and saturates
+/// like the CRT does (LONG_MIN/LONG_MAX, ULONG_MAX).
+fn strto_common(ctx: &mut ApiContext, signed: bool) -> Handled {
+    let p = ctx.arg(0);
+    let endptr = ctx.arg(1);
+    let base = ctx.arg(2);
+    let bytes = ctx.cstr_bytes(p);
+    let (value, negative, consumed) = scan_integer(&bytes, base);
+    if endptr != 0 {
+        let _ = ctx.memory.write_u32(endptr, p + consumed as u32);
+    }
+    let r = if signed {
+        if negative {
+            (value.min(0x8000_0000) as i64).wrapping_neg() as i32 as u32
+        } else {
+            value.min(0x7FFF_FFFF) as u32
+        }
+    } else {
+        let v = value.min(0xFFFF_FFFF) as u32;
+        if negative { v.wrapping_neg() } else { v }
+    };
     ctx.ret_cdecl(r);
     Handled::Ok
 }
 
 pub(crate) fn strtol(ctx: &mut ApiContext) -> Handled {
-    let s = ctx.cstr(ctx.arg(0));
-    let r = s.trim().parse::<i32>().unwrap_or(0) as u32;
-    ctx.ret_cdecl(r);
-    Handled::Ok
+    strto_common(ctx, true)
 }
 
 pub(crate) fn strtoul(ctx: &mut ApiContext) -> Handled {
-    let s = ctx.cstr(ctx.arg(0));
-    let r = s.trim().parse::<u32>().unwrap_or(0);
-    ctx.ret_cdecl(r);
-    Handled::Ok
+    strto_common(ctx, false)
 }
 
 pub(crate) fn atoi(ctx: &mut ApiContext) -> Handled {
-    let s = ctx.cstr(ctx.arg(0));
-    let r = s.trim().parse::<i32>().unwrap_or(0) as u32;
+    let bytes = ctx.cstr_bytes(ctx.arg(0));
+    let (value, negative, _) = scan_integer(&bytes, 10);
+    let r = if negative {
+        (value.min(0x8000_0000) as i64).wrapping_neg() as i32 as u32
+    } else {
+        value.min(0x7FFF_FFFF) as u32
+    };
     ctx.ret_cdecl(r);
     Handled::Ok
 }
@@ -882,8 +1002,7 @@ pub(crate) fn vsnprintf_fn(ctx: &mut ApiContext) -> Handled {
 
 // _strdup(s): malloc a copy of the C string.
 pub(crate) fn strdup_fn(ctx: &mut ApiContext) -> Handled {
-    let s = ctx.cstr(ctx.arg(0));
-    let mut bytes = s.into_bytes();
+    let mut bytes = ctx.cstr_bytes(ctx.arg(0));
     bytes.push(0);
     let p = ctx.heap_alloc(bytes.len() as u32);
     let _ = ctx.memory.write_bytes(p, &bytes);
@@ -1665,4 +1784,34 @@ pub(crate) fn wcsnicmp_fn(ctx: &mut ApiContext) -> Handled {
     let r = fa.cmp(&fb) as i32;
     ctx.ret_cdecl(r as u32);
     Handled::Ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan_integer;
+
+    #[test]
+    fn strtol_consumes_the_longest_valid_prefix() {
+        // The old `parse()` implementation rejected any trailing suffix and
+        // returned 0 for all of these.
+        assert_eq!(scan_integer(b"12abc", 10), (12, false, 2));
+        assert_eq!(scan_integer(b"  -42xyz", 10), (42, true, 5));
+        assert_eq!(scan_integer(b"7", 10), (7, false, 1));
+    }
+
+    #[test]
+    fn strtol_honours_the_base_argument() {
+        assert_eq!(scan_integer(b"ff", 16), (255, false, 2));
+        assert_eq!(scan_integer(b"0x1F", 16), (31, false, 4));
+        assert_eq!(scan_integer(b"0x1F", 0), (31, false, 4)); // auto-detect
+        assert_eq!(scan_integer(b"017", 0), (15, false, 3)); // octal
+        assert_eq!(scan_integer(b"101", 2), (5, false, 3));
+    }
+
+    #[test]
+    fn strtol_reports_no_conversion() {
+        // endptr must stay at the start when nothing was converted.
+        assert_eq!(scan_integer(b"abc", 10), (0, false, 0));
+        assert_eq!(scan_integer(b"", 10), (0, false, 0));
+    }
 }
