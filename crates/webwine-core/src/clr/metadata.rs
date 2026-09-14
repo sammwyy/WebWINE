@@ -43,13 +43,13 @@ pub const MAX_TABLE: usize = 0x2D;
 /// A column in a metadata table row.
 #[derive(Clone, Copy)]
 enum Col {
-    C2,        // constant 2-byte
-    C4,        // constant 4-byte
-    Str,       // #Strings heap index
-    Guid,      // #GUID heap index
-    Blob,      // #Blob heap index
-    Tab(u8),   // simple index into another table
-    Cod(Coded),// coded index (tag bits + table set)
+    C2,         // constant 2-byte
+    C4,         // constant 4-byte
+    Str,        // #Strings heap index
+    Guid,       // #GUID heap index
+    Blob,       // #Blob heap index
+    Tab(u8),    // simple index into another table
+    Cod(Coded), // coded index (tag bits + table set)
 }
 
 /// Coded index groups (ECMA-335 II.24.2.6). Each maps a small tag to one of
@@ -97,8 +97,8 @@ impl Coded {
             Coded::TypeDefOrRef => &[0x02, 0x01, 0x1B],
             Coded::HasConstant => &[0x04, 0x08, 0x17],
             Coded::HasCustomAttribute => &[
-                0x06, 0x04, 0x01, 0x02, 0x08, 0x09, 0x0A, 0x00, 0x0E, 0x17, 0x14,
-                0x11, 0x1A, 0x1B, 0x20, 0x23, 0x26, 0x27, 0x28, 0x2A, 0x2C, 0x2B,
+                0x06, 0x04, 0x01, 0x02, 0x08, 0x09, 0x0A, 0x00, 0x0E, 0x17, 0x14, 0x11, 0x1A, 0x1B,
+                0x20, 0x23, 0x26, 0x27, 0x28, 0x2A, 0x2C, 0x2B,
             ],
             Coded::HasFieldMarshal => &[0x04, 0x08],
             Coded::HasDeclSecurity => &[0x02, 0x06, 0x20],
@@ -116,54 +116,54 @@ impl Coded {
 
 /// Column layout for every metadata table (ECMA-335 II.22).
 fn columns(table: u8) -> &'static [Col] {
-    use Col::*;
     use Coded::*;
+    use Col::*;
     match table {
-        0x00 => &[C2, Str, Guid, Guid, Guid],                          // Module
-        0x01 => &[Cod(ResolutionScope), Str, Str],                     // TypeRef
+        0x00 => &[C2, Str, Guid, Guid, Guid],      // Module
+        0x01 => &[Cod(ResolutionScope), Str, Str], // TypeRef
         0x02 => &[C4, Str, Str, Cod(TypeDefOrRef), Tab(0x04), Tab(0x06)], // TypeDef
-        0x03 => &[Tab(0x04)],                                          // FieldPtr
-        0x04 => &[C2, Str, Blob],                                      // Field
-        0x05 => &[Tab(0x06)],                                          // MethodPtr
-        0x06 => &[C4, C2, C2, Str, Blob, Tab(0x08)],                   // MethodDef
-        0x07 => &[Tab(0x08)],                                          // ParamPtr
-        0x08 => &[C2, C2, Str],                                        // Param
-        0x09 => &[Tab(0x02), Cod(TypeDefOrRef)],                       // InterfaceImpl
-        0x0A => &[Cod(MemberRefParent), Str, Blob],                    // MemberRef
-        0x0B => &[C2, Cod(HasConstant), Blob],                         // Constant
+        0x03 => &[Tab(0x04)],                      // FieldPtr
+        0x04 => &[C2, Str, Blob],                  // Field
+        0x05 => &[Tab(0x06)],                      // MethodPtr
+        0x06 => &[C4, C2, C2, Str, Blob, Tab(0x08)], // MethodDef
+        0x07 => &[Tab(0x08)],                      // ParamPtr
+        0x08 => &[C2, C2, Str],                    // Param
+        0x09 => &[Tab(0x02), Cod(TypeDefOrRef)],   // InterfaceImpl
+        0x0A => &[Cod(MemberRefParent), Str, Blob], // MemberRef
+        0x0B => &[C2, Cod(HasConstant), Blob],     // Constant
         0x0C => &[Cod(HasCustomAttribute), Cod(CustomAttributeType), Blob], // CustomAttribute
-        0x0D => &[Cod(HasFieldMarshal), Blob],                         // FieldMarshal
-        0x0E => &[C2, Cod(HasDeclSecurity), Blob],                     // DeclSecurity
-        0x0F => &[C2, C4, Tab(0x02)],                                  // ClassLayout
-        0x10 => &[C4, Tab(0x04)],                                      // FieldLayout
-        0x11 => &[Blob],                                              // StandAloneSig
-        0x12 => &[Tab(0x02), Tab(0x14)],                               // EventMap
-        0x13 => &[Tab(0x14)],                                          // EventPtr
-        0x14 => &[C2, Str, Cod(TypeDefOrRef)],                         // Event
-        0x15 => &[Tab(0x02), Tab(0x17)],                               // PropertyMap
-        0x16 => &[Tab(0x17)],                                          // PropertyPtr
-        0x17 => &[C2, Str, Blob],                                      // Property
-        0x18 => &[C2, Tab(0x06), Cod(HasSemantics)],                   // MethodSemantics
-        0x19 => &[Tab(0x02), Cod(MethodDefOrRef), Cod(MethodDefOrRef)],// MethodImpl
-        0x1A => &[Str],                                               // ModuleRef
-        0x1B => &[Blob],                                              // TypeSpec
-        0x1C => &[C2, Cod(MemberForwarded), Str, Tab(0x1A)],           // ImplMap
-        0x1D => &[C4, Tab(0x04)],                                      // FieldRVA
-        0x1E => &[C4, C4],                                             // EncLog
-        0x1F => &[C4],                                                // EncMap
-        0x20 => &[C4, C2, C2, C2, C2, C4, Blob, Str, Str],            // Assembly
-        0x21 => &[C4],                                                // AssemblyProcessor
-        0x22 => &[C4, C4, C4],                                        // AssemblyOS
-        0x23 => &[C2, C2, C2, C2, C4, Blob, Str, Str, Blob],          // AssemblyRef
-        0x24 => &[C4, Tab(0x23)],                                     // AssemblyRefProcessor
-        0x25 => &[C4, C4, C4, Tab(0x23)],                             // AssemblyRefOS
-        0x26 => &[C4, Str, Blob],                                     // File
-        0x27 => &[C4, C4, Str, Str, Cod(Implementation)],            // ExportedType
-        0x28 => &[C4, C4, Str, Cod(Implementation)],                 // ManifestResource
-        0x29 => &[Tab(0x02), Tab(0x02)],                             // NestedClass
-        0x2A => &[C2, C2, Cod(TypeOrMethodDef), Str],                // GenericParam
-        0x2B => &[Cod(MethodDefOrRef), Blob],                        // MethodSpec
-        0x2C => &[Tab(0x2A), Cod(TypeDefOrRef)],                      // GenericParamConstraint
+        0x0D => &[Cod(HasFieldMarshal), Blob],     // FieldMarshal
+        0x0E => &[C2, Cod(HasDeclSecurity), Blob], // DeclSecurity
+        0x0F => &[C2, C4, Tab(0x02)],              // ClassLayout
+        0x10 => &[C4, Tab(0x04)],                  // FieldLayout
+        0x11 => &[Blob],                           // StandAloneSig
+        0x12 => &[Tab(0x02), Tab(0x14)],           // EventMap
+        0x13 => &[Tab(0x14)],                      // EventPtr
+        0x14 => &[C2, Str, Cod(TypeDefOrRef)],     // Event
+        0x15 => &[Tab(0x02), Tab(0x17)],           // PropertyMap
+        0x16 => &[Tab(0x17)],                      // PropertyPtr
+        0x17 => &[C2, Str, Blob],                  // Property
+        0x18 => &[C2, Tab(0x06), Cod(HasSemantics)], // MethodSemantics
+        0x19 => &[Tab(0x02), Cod(MethodDefOrRef), Cod(MethodDefOrRef)], // MethodImpl
+        0x1A => &[Str],                            // ModuleRef
+        0x1B => &[Blob],                           // TypeSpec
+        0x1C => &[C2, Cod(MemberForwarded), Str, Tab(0x1A)], // ImplMap
+        0x1D => &[C4, Tab(0x04)],                  // FieldRVA
+        0x1E => &[C4, C4],                         // EncLog
+        0x1F => &[C4],                             // EncMap
+        0x20 => &[C4, C2, C2, C2, C2, C4, Blob, Str, Str], // Assembly
+        0x21 => &[C4],                             // AssemblyProcessor
+        0x22 => &[C4, C4, C4],                     // AssemblyOS
+        0x23 => &[C2, C2, C2, C2, C4, Blob, Str, Str, Blob], // AssemblyRef
+        0x24 => &[C4, Tab(0x23)],                  // AssemblyRefProcessor
+        0x25 => &[C4, C4, C4, Tab(0x23)],          // AssemblyRefOS
+        0x26 => &[C4, Str, Blob],                  // File
+        0x27 => &[C4, C4, Str, Str, Cod(Implementation)], // ExportedType
+        0x28 => &[C4, C4, Str, Cod(Implementation)], // ManifestResource
+        0x29 => &[Tab(0x02), Tab(0x02)],           // NestedClass
+        0x2A => &[C2, C2, Cod(TypeOrMethodDef), Str], // GenericParam
+        0x2B => &[Cod(MethodDefOrRef), Blob],      // MethodSpec
+        0x2C => &[Tab(0x2A), Cod(TypeDefOrRef)],   // GenericParamConstraint
         _ => &[],
     }
 }
@@ -271,7 +271,8 @@ impl ClrMetadata {
             let consumed = r.p - name_start;
             let pad = (4 - (consumed % 4)) % 4;
             r.p += pad;
-            let name = String::from_utf8_lossy(&meta[name_start..name_start + name_len]).to_string();
+            let name =
+                String::from_utf8_lossy(&meta[name_start..name_start + name_len]).to_string();
             name_len = name.len();
             let _ = name_len;
             let slice = meta.get(off..off + size).unwrap_or(&[]).to_vec();
@@ -296,7 +297,15 @@ impl ClrMetadata {
             .get(tables_off..tables_off + tables_size)
             .ok_or_else(eof)?;
 
-        Self::parse_tables(tables, runtime_version, stream_names, strings, blobs, user_strings, guids)
+        Self::parse_tables(
+            tables,
+            runtime_version,
+            stream_names,
+            strings,
+            blobs,
+            user_strings,
+            guids,
+        )
     }
 
     fn parse_tables(
@@ -343,15 +352,37 @@ impl ClrMetadata {
                 .map(|&t| row_counts[t as usize])
                 .max()
                 .unwrap_or(0);
-            if max_rows < (1u32 << (16 - bits)) { 2 } else { 4 }
+            if max_rows < (1u32 << (16 - bits)) {
+                2
+            } else {
+                4
+            }
         };
         let col_width = |c: &Col| -> usize {
             match c {
                 Col::C2 => 2,
                 Col::C4 => 4,
-                Col::Str => if heaps.str_wide { 4 } else { 2 },
-                Col::Guid => if heaps.guid_wide { 4 } else { 2 },
-                Col::Blob => if heaps.blob_wide { 4 } else { 2 },
+                Col::Str => {
+                    if heaps.str_wide {
+                        4
+                    } else {
+                        2
+                    }
+                }
+                Col::Guid => {
+                    if heaps.guid_wide {
+                        4
+                    } else {
+                        2
+                    }
+                }
+                Col::Blob => {
+                    if heaps.blob_wide {
+                        4
+                    } else {
+                        2
+                    }
+                }
                 Col::Tab(t) => table_index_size(*t),
                 Col::Cod(c) => coded_index_size(*c),
             }
@@ -410,7 +441,8 @@ impl ClrMetadata {
         }
         let cols = columns(table);
         let Some(kind) = cols.get(col) else { return 0 };
-        let base = self.table_base[t] + (row as usize - 1) * self.row_width[t] + self.col_off[t][col];
+        let base =
+            self.table_base[t] + (row as usize - 1) * self.row_width[t] + self.col_off[t][col];
         let wide = matches!(kind, Col::C4)
             || matches!(kind, Col::Str if self.heaps.str_wide)
             || matches!(kind, Col::Guid if self.heaps.guid_wide)
@@ -418,7 +450,11 @@ impl ClrMetadata {
             || matches!(kind, Col::Tab(t) if self.row_counts[*t as usize] >= (1 << 16))
             || matches!(kind, Col::Cod(c) if self.coded_wide(*c));
         if wide {
-            if base + 4 <= self.tables_blob.len() { rd_u32(&self.tables_blob, base) } else { 0 }
+            if base + 4 <= self.tables_blob.len() {
+                rd_u32(&self.tables_blob, base)
+            } else {
+                0
+            }
         } else if base + 2 <= self.tables_blob.len() {
             rd_u16(&self.tables_blob, base)
         } else {

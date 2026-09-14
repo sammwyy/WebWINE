@@ -129,7 +129,11 @@ impl ClrImage {
             if method_row >= start && method_row < end {
                 let name = self.meta.get_string(self.meta.col(T_TYPEDEF, t, 1));
                 let ns = self.meta.get_string(self.meta.col(T_TYPEDEF, t, 2));
-                return if ns.is_empty() { name } else { format!("{ns}.{name}") };
+                return if ns.is_empty() {
+                    name
+                } else {
+                    format!("{ns}.{name}")
+                };
             }
         }
         String::new()
@@ -225,7 +229,11 @@ pub fn inspect_clr(bytes: &[u8]) -> Result<ClrInfo> {
         .map(|r| {
             let owner = img.method_owner(r);
             let name = m.get_string(m.col(T_METHODDEF, r, 3));
-            if owner.is_empty() { name } else { format!("{owner}.{name}") }
+            if owner.is_empty() {
+                name
+            } else {
+                format!("{owner}.{name}")
+            }
         })
         .unwrap_or_default();
 
@@ -308,25 +316,48 @@ mod tests {
         let Some(bytes) = sample() else { return };
         let info = inspect_clr(&bytes).expect("parse managed image");
 
-        assert!(info.runtime_version.starts_with('v'), "version: {}", info.runtime_version);
+        assert!(
+            info.runtime_version.starts_with('v'),
+            "version: {}",
+            info.runtime_version
+        );
         assert!(info.is_il_only);
-        assert_eq!(info.entry_point_token >> 24, 0x06, "entry should be a MethodDef token");
+        assert_eq!(
+            info.entry_point_token >> 24,
+            0x06,
+            "entry should be a MethodDef token"
+        );
         assert!(info.streams.iter().any(|s| s == "#~" || s == "#-"));
         assert!(info.streams.iter().any(|s| s == "#Strings"));
 
         // The C# program declares a `Program` type with `Main` and `Add`.
-        assert!(info.types.iter().any(|t| t.name == "Program"), "types: {:?}", info.types);
-        assert!(info.methods.iter().any(|m| m.name == "Main"), "methods: {:?}", info.methods);
+        assert!(
+            info.types.iter().any(|t| t.name == "Program"),
+            "types: {:?}",
+            info.types
+        );
+        assert!(
+            info.methods.iter().any(|m| m.name == "Main"),
+            "methods: {:?}",
+            info.methods
+        );
         assert!(info.methods.iter().any(|m| m.name == "Add"));
 
         // Entry point resolves to Program.Main with a real IL RVA.
-        let entry = info.methods.iter().find(|m| m.is_entry).expect("entry method");
+        let entry = info
+            .methods
+            .iter()
+            .find(|m| m.is_entry)
+            .expect("entry method");
         assert_eq!(entry.name, "Main");
         assert!(entry.rva > 0, "entry RVA should be non-zero");
 
         // mscorlib is referenced.
-        assert!(info.assembly_refs.iter().any(|a| a == "mscorlib"),
-            "refs: {:?}", info.assembly_refs);
+        assert!(
+            info.assembly_refs.iter().any(|a| a == "mscorlib"),
+            "refs: {:?}",
+            info.assembly_refs
+        );
     }
 
     #[test]
@@ -337,6 +368,10 @@ mod tests {
         let code = rt.run_entry().expect("run managed entry point");
         assert_eq!(code, 0);
         // Main prints a greeting then the result of Add(2, 40) = 42.
-        assert_eq!(rt.stdout, "Hello from managed WebWINE!\n42\n", "stdout: {:?}", rt.stdout);
+        assert_eq!(
+            rt.stdout, "Hello from managed WebWINE!\n42\n",
+            "stdout: {:?}",
+            rt.stdout
+        );
     }
 }

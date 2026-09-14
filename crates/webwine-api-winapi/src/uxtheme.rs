@@ -8,9 +8,17 @@ const THEME_FLAGS_KEY: &str = "uxtheme.app_props";
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
         // void WINAPI SetThemeAppProperties(DWORD dwFlags);
-        ("uxtheme.dll", "SetThemeAppProperties", set_theme_app_properties),
+        (
+            "uxtheme.dll",
+            "SetThemeAppProperties",
+            set_theme_app_properties,
+        ),
         // DWORD WINAPI GetThemeAppProperties(void);
-        ("uxtheme.dll", "GetThemeAppProperties", get_theme_app_properties),
+        (
+            "uxtheme.dll",
+            "GetThemeAppProperties",
+            get_theme_app_properties,
+        ),
         ("uxtheme.dll", "IsThemeActive", |c| {
             c.ret_stdcall(0, 0);
             Handled::Ok

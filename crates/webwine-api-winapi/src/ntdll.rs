@@ -24,8 +24,16 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ntdll.dll", "NtClose", nt_close),
         ("ntdll.dll", "NtTerminateProcess", nt_terminate),
         ("ntdll.dll", "RtlUnwind", rtl_unwind),
-        ("ntdll.dll", "RtlEnterCriticalSection", rtl_enter_critical_section),
-        ("ntdll.dll", "RtlLeaveCriticalSection", rtl_leave_critical_section),
+        (
+            "ntdll.dll",
+            "RtlEnterCriticalSection",
+            rtl_enter_critical_section,
+        ),
+        (
+            "ntdll.dll",
+            "RtlLeaveCriticalSection",
+            rtl_leave_critical_section,
+        ),
         (
             "ntdll.dll",
             "RtlInitializeCriticalSection",
@@ -51,12 +59,20 @@ pub fn register(r: &mut WinApiRegistry) {
             "NtQueryInformationProcess",
             nt_query_information_process,
         ),
-        ("ntdll.dll", "RtlExitUserProcess", |c| Handled::ExitProcess(c.arg(0))),
-        ("ntdll.dll", "RtlExitUserThread", |c| Handled::ExitProcess(c.arg(0))),
+        ("ntdll.dll", "RtlExitUserProcess", |c| {
+            Handled::ExitProcess(c.arg(0))
+        }),
+        ("ntdll.dll", "RtlExitUserThread", |c| {
+            Handled::ExitProcess(c.arg(0))
+        }),
         ("ntdll.dll", "NtWriteFile", nt_write_file),
         ("ntdll.dll", "NtReadFile", nt_read_file),
         ("ntdll.dll", "NtCreateFile", nt_create_file),
-        ("ntdll.dll", "NtDeviceIoControlFile", nt_device_io_control_file),
+        (
+            "ntdll.dll",
+            "NtDeviceIoControlFile",
+            nt_device_io_control_file,
+        ),
         (
             "ntdll.dll",
             "NtQueryVolumeInformationFile",
@@ -72,7 +88,11 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(0, 1);
             Handled::Ok
         }),
-        ("ntdll.dll", "RtlNtStatusToDosError", rtl_nt_status_to_dos_error),
+        (
+            "ntdll.dll",
+            "RtlNtStatusToDosError",
+            rtl_nt_status_to_dos_error,
+        ),
         ("ntdll.dll", "RtlIsStateSeparationEnabled", |c| {
             c.ret_stdcall(0, 0);
             Handled::Ok
@@ -87,7 +107,11 @@ pub fn register(r: &mut WinApiRegistry) {
             rtl_create_unicode_from_ascii,
         ),
         ("ntdll.dll", "RtlFreeUnicodeString", rtl_free_unicode_string),
-        ("ntdll.dll", "NtQuerySystemInformation", nt_query_system_information),
+        (
+            "ntdll.dll",
+            "NtQuerySystemInformation",
+            nt_query_system_information,
+        ),
         ("ntdll.dll", "RtlGetVersion", rtl_get_version),
     ];
     for &(dll, name, f) in fns {

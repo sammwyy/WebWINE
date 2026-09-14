@@ -40,7 +40,11 @@ impl Value {
             Value::Array(a) => format!("System.Object[{}]", a.borrow().len()),
             Value::Object(o) => {
                 let object = o.borrow();
-                if object.text.is_empty() { object.type_name.clone() } else { object.text.clone() }
+                if object.text.is_empty() {
+                    object.type_name.clone()
+                } else {
+                    object.text.clone()
+                }
             }
             Value::Null => String::new(),
         }
@@ -77,9 +81,9 @@ pub fn dispatch<R: Net20Runtime>(key: &str, args: Vec<Value>, rt: &mut R) -> Opt
             }
             Some(Value::Str(s))
         }
-        "System.Int32::ToString" | "System.Object::ToString" | "System.String::ToString" => {
-            Some(Value::Str(args.first().map(|v| v.display()).unwrap_or_default()))
-        }
+        "System.Int32::ToString" | "System.Object::ToString" | "System.String::ToString" => Some(
+            Value::Str(args.first().map(|v| v.display()).unwrap_or_default()),
+        ),
         "System.Environment::Exit" => {
             let code = args.first().map(|v| v.as_i4()).unwrap_or(0);
             rt.halt(code);
@@ -98,7 +102,9 @@ pub fn dispatch<R: Net20Runtime>(key: &str, args: Vec<Value>, rt: &mut R) -> Opt
             }
         }
         "System.Windows.Forms.Application::Run" => {
-            let title = args.first().map(Value::display)
+            let title = args
+                .first()
+                .map(Value::display)
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Managed Windows application".to_string());
             rt.show_window(title);

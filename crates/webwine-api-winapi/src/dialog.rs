@@ -802,7 +802,7 @@ pub fn end_dialog(ctx: &mut ApiContext) -> Handled {
         // purge dlg_ctrl entries
         ctx.gui.dlg_ctrl.retain(|&(p, _), _| p != hwnd);
     }
-    
+
     ctx.ui_events.push(UiEvent::DestroyWindow { hwnd });
     ctx.gui.windows.remove(&hwnd);
     ctx.gui.dialog_pending = false;

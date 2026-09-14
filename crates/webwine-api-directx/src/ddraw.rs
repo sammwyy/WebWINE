@@ -12,8 +12,8 @@ use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
 use crate::{
-    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5, hr_ok_6, make_object,
-    register_vtable, Vtable,
+    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5, hr_ok_6,
+    make_object, register_vtable, Vtable,
 };
 
 // HRESULT constants
@@ -59,19 +59,34 @@ pub(crate) const IDDRAW7: Vtable = &[
     ("IDirectDraw7::GetDisplayMode", iddraw7_get_display_mode),
     ("IDirectDraw7::GetFourCCCodes", iddraw7_get_fourcc),
     ("IDirectDraw7::GetGDISurface", hr_ok_2),
-    ("IDirectDraw7::GetMonitorFrequency", iddraw7_get_monitor_frequency),
+    (
+        "IDirectDraw7::GetMonitorFrequency",
+        iddraw7_get_monitor_frequency,
+    ),
     ("IDirectDraw7::GetScanLine", iddraw7_get_scan_line),
-    ("IDirectDraw7::GetVerticalBlankStatus", iddraw7_get_vblank_status),
+    (
+        "IDirectDraw7::GetVerticalBlankStatus",
+        iddraw7_get_vblank_status,
+    ),
     ("IDirectDraw7::Initialize", hr_ok_2),
     ("IDirectDraw7::RestoreDisplayMode", hr_ok_1),
-    ("IDirectDraw7::SetCooperativeLevel", iddraw7_set_cooperative_level),
+    (
+        "IDirectDraw7::SetCooperativeLevel",
+        iddraw7_set_cooperative_level,
+    ),
     ("IDirectDraw7::SetDisplayMode", iddraw7_set_display_mode),
     ("IDirectDraw7::WaitForVerticalBlank", hr_ok_3),
-    ("IDirectDraw7::GetAvailableVidMem", iddraw7_get_available_vidmem),
+    (
+        "IDirectDraw7::GetAvailableVidMem",
+        iddraw7_get_available_vidmem,
+    ),
     ("IDirectDraw7::GetSurfaceFromDC", hr_ok_3),
     ("IDirectDraw7::RestoreAllSurfaces", hr_ok_1),
     ("IDirectDraw7::TestCooperativeLevel", hr_ok_1),
-    ("IDirectDraw7::GetDeviceIdentifier", iddraw7_get_device_identifier),
+    (
+        "IDirectDraw7::GetDeviceIdentifier",
+        iddraw7_get_device_identifier,
+    ),
     ("IDirectDraw7::StartModeTest", hr_ok_4),
     ("IDirectDraw7::EvaluateMode", hr_ok_3),
     ("IDirectDraw7::_reserved30", hr_ok_1),
@@ -92,31 +107,49 @@ pub(crate) const IDDSURFACE7: Vtable = &[
     ("IDirectDrawSurface7::EnumAttachedSurfaces", hr_ok_3),
     ("IDirectDrawSurface7::EnumOverlayZOrders", hr_ok_4),
     ("IDirectDrawSurface7::Flip", iddsurface7_flip),
-    ("IDirectDrawSurface7::GetAttachedSurface", iddsurface7_get_attached_surface),
+    (
+        "IDirectDrawSurface7::GetAttachedSurface",
+        iddsurface7_get_attached_surface,
+    ),
     ("IDirectDrawSurface7::GetBltStatus", hr_ok_2),
     ("IDirectDrawSurface7::GetCaps", iddsurface7_get_caps),
     ("IDirectDrawSurface7::GetClipper", hr_ok_2),
-    ("IDirectDrawSurface7::GetColorKey", iddsurface7_get_color_key),
+    (
+        "IDirectDrawSurface7::GetColorKey",
+        iddsurface7_get_color_key,
+    ),
     ("IDirectDrawSurface7::GetDC", hr_ok_2),
     ("IDirectDrawSurface7::GetFlipStatus", hr_ok_2),
     ("IDirectDrawSurface7::GetOverlayPosition", hr_ok_3),
     ("IDirectDrawSurface7::GetPalette", hr_ok_2),
-    ("IDirectDrawSurface7::GetPixelFormat", iddsurface7_get_pixel_format),
-    ("IDirectDrawSurface7::GetSurfaceDesc", iddsurface7_get_surface_desc),
+    (
+        "IDirectDrawSurface7::GetPixelFormat",
+        iddsurface7_get_pixel_format,
+    ),
+    (
+        "IDirectDrawSurface7::GetSurfaceDesc",
+        iddsurface7_get_surface_desc,
+    ),
     ("IDirectDrawSurface7::Initialize", hr_ok_3),
     ("IDirectDrawSurface7::IsLost", hr_ok_1), // DD_OK = not lost
     ("IDirectDrawSurface7::Lock", iddsurface7_lock),
     ("IDirectDrawSurface7::ReleaseDC", hr_ok_2),
     ("IDirectDrawSurface7::Restore", hr_ok_1),
     ("IDirectDrawSurface7::SetClipper", hr_ok_2),
-    ("IDirectDrawSurface7::SetColorKey", iddsurface7_set_color_key),
+    (
+        "IDirectDrawSurface7::SetColorKey",
+        iddsurface7_set_color_key,
+    ),
     ("IDirectDrawSurface7::SetOverlayPosition", hr_ok_3),
     ("IDirectDrawSurface7::SetPalette", hr_ok_2),
     ("IDirectDrawSurface7::Unlock", iddsurface7_unlock),
     ("IDirectDrawSurface7::UpdateOverlay", hr_ok_6),
     ("IDirectDrawSurface7::UpdateOverlayDisplay", hr_ok_2),
     ("IDirectDrawSurface7::UpdateOverlayZOrder", hr_ok_3),
-    ("IDirectDrawSurface7::GetDDInterface", iddsurface7_get_ddinterface),
+    (
+        "IDirectDrawSurface7::GetDDInterface",
+        iddsurface7_get_ddinterface,
+    ),
 ];
 
 pub(crate) const IDDCLIPPER: Vtable = &[
@@ -126,7 +159,10 @@ pub(crate) const IDDCLIPPER: Vtable = &[
     ("IDirectDrawClipper::GetClipList", hr_ok_4),
     ("IDirectDrawClipper::GetHWnd", iddclipper_get_hwnd),
     ("IDirectDrawClipper::Initialize", hr_ok_3),
-    ("IDirectDrawClipper::IsClipListChanged", iddclipper_is_changed),
+    (
+        "IDirectDrawClipper::IsClipListChanged",
+        iddclipper_is_changed,
+    ),
     ("IDirectDrawClipper::SetClipList", hr_ok_3),
 ];
 

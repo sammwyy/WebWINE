@@ -38,17 +38,26 @@ pub(crate) const IDIRECTINPUTDEVICE8: Vtable = &[
     ("IDirectInputDevice8::QueryInterface", com_qi),
     ("IDirectInputDevice8::AddRef", com_addref),
     ("IDirectInputDevice8::Release", com_release),
-    ("IDirectInputDevice8::GetCapabilities", didev_get_capabilities),
+    (
+        "IDirectInputDevice8::GetCapabilities",
+        didev_get_capabilities,
+    ),
     ("IDirectInputDevice8::EnumObjects", hr_ok_4),
     ("IDirectInputDevice8::GetProperty", hr_ok_3),
     ("IDirectInputDevice8::SetProperty", hr_ok_3),
     ("IDirectInputDevice8::Acquire", didev_acquire),
     ("IDirectInputDevice8::Unacquire", didev_unacquire),
-    ("IDirectInputDevice8::GetDeviceState", didev_get_device_state),
+    (
+        "IDirectInputDevice8::GetDeviceState",
+        didev_get_device_state,
+    ),
     ("IDirectInputDevice8::GetDeviceData", didev_get_device_data),
     ("IDirectInputDevice8::SetDataFormat", hr_ok_2),
     ("IDirectInputDevice8::SetEventNotification", hr_ok_2),
-    ("IDirectInputDevice8::SetCooperativeLevel", didev_set_cooperative_level),
+    (
+        "IDirectInputDevice8::SetCooperativeLevel",
+        didev_set_cooperative_level,
+    ),
     ("IDirectInputDevice8::GetObjectInfo", hr_ok_4),
     ("IDirectInputDevice8::GetDeviceInfo", didev_get_device_info),
     ("IDirectInputDevice8::RunControlPanel", hr_ok_3),
@@ -56,7 +65,10 @@ pub(crate) const IDIRECTINPUTDEVICE8: Vtable = &[
     ("IDirectInputDevice8::CreateEffect", hr_ok_5),
     ("IDirectInputDevice8::EnumEffects", hr_ok_4),
     ("IDirectInputDevice8::GetEffectInfo", hr_ok_3),
-    ("IDirectInputDevice8::GetForceFeedbackState", didev_get_ff_state),
+    (
+        "IDirectInputDevice8::GetForceFeedbackState",
+        didev_get_ff_state,
+    ),
     ("IDirectInputDevice8::SendForceFeedbackCommand", hr_ok_2),
     ("IDirectInputDevice8::EnumCreatedEffectObjects", hr_ok_4),
     ("IDirectInputDevice8::Escape", hr_ok_2),
@@ -190,7 +202,7 @@ fn didev_get_device_info(ctx: &mut ApiContext) -> Handled {
     let out = ctx.arg(1);
     if out != 0 {
         let _ = ctx.memory.write_u32(out, 580); // dwSize of DIDEVICEINSTANCE
-        // Leave GUIDs zeroed; product name at offset ~40 as wide string is optional.
+                                                // Leave GUIDs zeroed; product name at offset ~40 as wide string is optional.
         let name = "WebWINE Keyboard";
         // tszInstanceName is WCHAR[MAX_PATH] at offset 20 typically for A? For W
         // layout it's after two GUIDs (32) + dwDevType (4) = 36.

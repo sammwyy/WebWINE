@@ -80,7 +80,9 @@ pub fn register(r: &mut WinApiRegistry) {
             crate::kernel32::get_user_name_w,
         ),
         ("advapi32.dll", "EventRegister", |c| {
-            if c.arg(3) != 0 { let _ = c.memory.write_u32(c.arg(3), 1); }
+            if c.arg(3) != 0 {
+                let _ = c.memory.write_u32(c.arg(3), 1);
+            }
             c.ret_stdcall(ERROR_SUCCESS, 4);
             Handled::Ok
         }),
@@ -97,19 +99,35 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("advapi32.dll", "StartTraceW", |c| {
-            if c.arg(0) != 0 { let _ = c.memory.write_u32(c.arg(0), 1); }
+            if c.arg(0) != 0 {
+                let _ = c.memory.write_u32(c.arg(0), 1);
+            }
             c.ret_stdcall(ERROR_SUCCESS, 3);
             Handled::Ok
         }),
         ("advapi32.dll", "StartTraceA", |c| {
-            if c.arg(0) != 0 { let _ = c.memory.write_u32(c.arg(0), 1); }
+            if c.arg(0) != 0 {
+                let _ = c.memory.write_u32(c.arg(0), 1);
+            }
             c.ret_stdcall(ERROR_SUCCESS, 3);
             Handled::Ok
         }),
-        ("advapi32.dll", "StopTraceW", |c| { c.ret_stdcall(ERROR_SUCCESS, 3); Handled::Ok }),
-        ("advapi32.dll", "StopTraceA", |c| { c.ret_stdcall(ERROR_SUCCESS, 3); Handled::Ok }),
-        ("advapi32.dll", "EnableTraceEx", |c| { c.ret_stdcall(ERROR_SUCCESS, 8); Handled::Ok }),
-        ("advapi32.dll", "EnableTraceEx2", |c| { c.ret_stdcall(ERROR_SUCCESS, 8); Handled::Ok }),
+        ("advapi32.dll", "StopTraceW", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "StopTraceA", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 3);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "EnableTraceEx", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 8);
+            Handled::Ok
+        }),
+        ("advapi32.dll", "EnableTraceEx2", |c| {
+            c.ret_stdcall(ERROR_SUCCESS, 8);
+            Handled::Ok
+        }),
         ("advapi32.dll", "RegDeleteKeyExW", |c| {
             c.ret_stdcall(ERROR_FILE_NOT_FOUND, 4);
             Handled::Ok

@@ -24,7 +24,11 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("gdiplus.dll", "GdipCreateFromHDC", gdip_create_from_hdc);
     r.add("gdiplus.dll", "GdipCreateFromHWND", gdip_create_from_hwnd);
     r.add("gdiplus.dll", "GdipDeleteGraphics", gdip_delete_graphics);
-    r.add("gdiplus.dll", "GdipCreateBitmapFromScan0", gdip_create_bitmap_from_scan0);
+    r.add(
+        "gdiplus.dll",
+        "GdipCreateBitmapFromScan0",
+        gdip_create_bitmap_from_scan0,
+    );
     r.add(
         "gdiplus.dll",
         "GdipCreateBitmapFromHBITMAP",
@@ -36,18 +40,38 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("gdiplus.dll", "GdipDrawImageRectI", gdip_draw_image_rect_i);
     r.add("gdiplus.dll", "GdipDrawImageI", gdip_draw_image_i);
     r.add("gdiplus.dll", "GdipDrawImageRect", gdip_draw_image_rect_i);
-    r.add("gdiplus.dll", "GdipSetSmoothingMode", gdip_set_smoothing_mode);
+    r.add(
+        "gdiplus.dll",
+        "GdipSetSmoothingMode",
+        gdip_set_smoothing_mode,
+    );
     r.add(
         "gdiplus.dll",
         "GdipSetInterpolationMode",
         gdip_set_interpolation_mode,
     );
     r.add("gdiplus.dll", "GdipGraphicsClear", gdip_graphics_clear);
-    r.add("gdiplus.dll", "GdipGetImageGraphicsContext", gdip_get_image_graphics);
+    r.add(
+        "gdiplus.dll",
+        "GdipGetImageGraphicsContext",
+        gdip_get_image_graphics,
+    );
     r.add("gdiplus.dll", "GdipCloneImage", gdip_clone_image);
-    r.add("gdiplus.dll", "GdipGetImagePixelFormat", gdip_get_image_pixel_format);
-    r.add("gdiplus.dll", "GdipImageGetFrameCount", gdip_image_get_frame_count);
-    r.add("gdiplus.dll", "GdipImageSelectActiveFrame", gdip_image_select_frame);
+    r.add(
+        "gdiplus.dll",
+        "GdipGetImagePixelFormat",
+        gdip_get_image_pixel_format,
+    );
+    r.add(
+        "gdiplus.dll",
+        "GdipImageGetFrameCount",
+        gdip_image_get_frame_count,
+    );
+    r.add(
+        "gdiplus.dll",
+        "GdipImageSelectActiveFrame",
+        gdip_image_select_frame,
+    );
 }
 
 fn gdiplus_startup(c: &mut ApiContext) -> Handled {
@@ -142,12 +166,9 @@ fn gdip_create_bitmap_from_scan0(c: &mut ApiContext) -> Handled {
     }
     let img = alloc_handle(c, TAG_IMAGE);
     // Pack width | height into dll_state; format/scan0 in sibling keys.
-    c.dll_state
-        .insert(format!("gdiplus.img.{img}.w"), width);
-    c.dll_state
-        .insert(format!("gdiplus.img.{img}.h"), height);
-    c.dll_state
-        .insert(format!("gdiplus.img.{img}.fmt"), format);
+    c.dll_state.insert(format!("gdiplus.img.{img}.w"), width);
+    c.dll_state.insert(format!("gdiplus.img.{img}.h"), height);
+    c.dll_state.insert(format!("gdiplus.img.{img}.fmt"), format);
     c.dll_state
         .insert(format!("gdiplus.img.{img}.scan0"), scan0);
     c.write_u32(out, img);
@@ -182,8 +203,7 @@ fn gdip_dispose_image(c: &mut ApiContext) -> Handled {
         return Handled::Ok;
     }
     for suffix in ["w", "h", "fmt", "scan0"] {
-        c.dll_state
-            .remove(&format!("gdiplus.img.{img}.{suffix}"));
+        c.dll_state.remove(&format!("gdiplus.img.{img}.{suffix}"));
     }
     c.return_stdcall(OK, 1);
     Handled::Ok
@@ -302,7 +322,11 @@ fn gdip_clone_image(c: &mut ApiContext) -> Handled {
     }
     let clone = alloc_handle(c, TAG_IMAGE);
     for suffix in ["w", "h", "fmt", "scan0"] {
-        if let Some(v) = c.dll_state.get(&format!("gdiplus.img.{img}.{suffix}")).copied() {
+        if let Some(v) = c
+            .dll_state
+            .get(&format!("gdiplus.img.{img}.{suffix}"))
+            .copied()
+        {
             c.dll_state
                 .insert(format!("gdiplus.img.{clone}.{suffix}"), v);
         }
@@ -353,10 +377,7 @@ fn gdip_image_select_frame(c: &mut ApiContext) -> Handled {
 }
 
 fn alloc_handle(c: &mut ApiContext, tag: u32) -> u32 {
-    let n = c
-        .dll_state
-        .entry("gdiplus.next".into())
-        .or_insert(1);
+    let n = c.dll_state.entry("gdiplus.next".into()).or_insert(1);
     let id = *n;
     *n = n.wrapping_add(1);
     if id == 0 {
@@ -368,10 +389,7 @@ fn alloc_handle(c: &mut ApiContext, tag: u32) -> u32 {
 }
 
 fn next_token(c: &mut ApiContext, base: u32) -> u32 {
-    let n = c
-        .dll_state
-        .entry("gdiplus.tok_seq".into())
-        .or_insert(1);
+    let n = c.dll_state.entry("gdiplus.tok_seq".into()).or_insert(1);
     let id = *n;
     *n = n.wrapping_add(1);
     base | (id & 0x0FFF_FFFF)

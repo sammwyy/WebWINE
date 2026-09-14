@@ -17,24 +17,48 @@ const OFN_TITLE: u32 = 48;
 const DLL_STATE_ERR: &str = "comdlg32.ext_err";
 
 pub fn register(r: &mut WinApiRegistry) {
-    r.add("comdlg32.dll", "GetOpenFileNameA", |c| file_dialog(c, false, false));
-    r.add("comdlg32.dll", "GetOpenFileNameW", |c| file_dialog(c, false, true));
-    r.add("comdlg32.dll", "GetSaveFileNameA", |c| file_dialog(c, true, false));
-    r.add("comdlg32.dll", "GetSaveFileNameW", |c| file_dialog(c, true, true));
+    r.add("comdlg32.dll", "GetOpenFileNameA", |c| {
+        file_dialog(c, false, false)
+    });
+    r.add("comdlg32.dll", "GetOpenFileNameW", |c| {
+        file_dialog(c, false, true)
+    });
+    r.add("comdlg32.dll", "GetSaveFileNameA", |c| {
+        file_dialog(c, true, false)
+    });
+    r.add("comdlg32.dll", "GetSaveFileNameW", |c| {
+        file_dialog(c, true, true)
+    });
     r.add("comdlg32.dll", "ChooseColorA", |c| choose_color(c, false));
     r.add("comdlg32.dll", "ChooseColorW", |c| choose_color(c, true));
     r.add("comdlg32.dll", "ChooseFontA", |c| choose_font(c, false));
     r.add("comdlg32.dll", "ChooseFontW", |c| choose_font(c, true));
     r.add("comdlg32.dll", "PrintDlgA", |c| print_dlg(c, false));
     r.add("comdlg32.dll", "PrintDlgW", |c| print_dlg(c, true));
-    r.add("comdlg32.dll", "PageSetupDlgA", |c| page_setup_dlg(c, false));
+    r.add("comdlg32.dll", "PageSetupDlgA", |c| {
+        page_setup_dlg(c, false)
+    });
     r.add("comdlg32.dll", "PageSetupDlgW", |c| page_setup_dlg(c, true));
-    r.add("comdlg32.dll", "FindTextA", |c| find_replace(c, false, false));
-    r.add("comdlg32.dll", "FindTextW", |c| find_replace(c, true, false));
-    r.add("comdlg32.dll", "ReplaceTextA", |c| find_replace(c, false, true));
-    r.add("comdlg32.dll", "ReplaceTextW", |c| find_replace(c, true, true));
-    r.add("comdlg32.dll", "CommDlgExtendedError", comm_dlg_extended_error);
-    r.add("comdlg32.dll", "GetFileTitleA", |c| get_file_title(c, false));
+    r.add("comdlg32.dll", "FindTextA", |c| {
+        find_replace(c, false, false)
+    });
+    r.add("comdlg32.dll", "FindTextW", |c| {
+        find_replace(c, true, false)
+    });
+    r.add("comdlg32.dll", "ReplaceTextA", |c| {
+        find_replace(c, false, true)
+    });
+    r.add("comdlg32.dll", "ReplaceTextW", |c| {
+        find_replace(c, true, true)
+    });
+    r.add(
+        "comdlg32.dll",
+        "CommDlgExtendedError",
+        comm_dlg_extended_error,
+    );
+    r.add("comdlg32.dll", "GetFileTitleA", |c| {
+        get_file_title(c, false)
+    });
     r.add("comdlg32.dll", "GetFileTitleW", |c| get_file_title(c, true));
 }
 
@@ -167,15 +191,8 @@ fn get_file_title(c: &mut ApiContext, wide: bool) -> Handled {
         c.ret_stdcall(0xFFFF_FFFF, 3);
         return Handled::Ok;
     }
-    let path = if wide {
-        c.wstr(file)
-    } else {
-        c.cstr(file)
-    };
-    let title = path
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(path.as_str());
+    let path = if wide { c.wstr(file) } else { c.cstr(file) };
+    let title = path.rsplit(['\\', '/']).next().unwrap_or(path.as_str());
     if buf == 0 || buflen == 0 {
         c.ret_stdcall(title.len() as u32 + 1, 3);
         return Handled::Ok;

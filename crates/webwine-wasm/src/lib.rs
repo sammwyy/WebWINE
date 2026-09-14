@@ -1,6 +1,8 @@
 use wasm_bindgen::prelude::*;
-use webwine_core::{WebWineVm, DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult, SystemMemoryInfo};
 use webwine_core::registry::{RegValue, RegistrySnapshot};
+use webwine_core::{
+    DirEntry, LogEvent, PeInfo, ProcessInfo, SliceResult, SystemMemoryInfo, WebWineVm,
+};
 
 /// One value row for the regedit UI.
 #[derive(serde::Serialize)]
@@ -147,7 +149,8 @@ impl Runtime {
 
     #[wasm_bindgen(js_name = runProcessSlice)]
     pub fn run_process_slice(&mut self, pid: u32, budget: u32) -> Result<JsValue, JsValue> {
-        let result: SliceResult = self.vm
+        let result: SliceResult = self
+            .vm
             .run_process_slice(pid, budget)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
@@ -162,7 +165,12 @@ impl Runtime {
 
     #[wasm_bindgen(js_name = postWindowMessage)]
     pub fn post_window_message(
-        &mut self, pid: u32, hwnd: u32, message: u32, wparam: u32, lparam: u32,
+        &mut self,
+        pid: u32,
+        hwnd: u32,
+        message: u32,
+        wparam: u32,
+        lparam: u32,
     ) -> Result<(), JsValue> {
         self.vm
             .post_window_message(pid, hwnd, message, wparam, lparam)
@@ -173,7 +181,11 @@ impl Runtime {
     /// (empty string = none).
     #[wasm_bindgen(js_name = postDialogReply)]
     pub fn post_dialog_reply(&mut self, pid: u32, button: u32, file: &str) -> Result<(), JsValue> {
-        let file = if file.is_empty() { None } else { Some(file.to_string()) };
+        let file = if file.is_empty() {
+            None
+        } else {
+            Some(file.to_string())
+        };
         self.vm
             .post_dialog_reply(pid, button, file)
             .map_err(|e| JsValue::from_str(&e.to_string()))
@@ -226,7 +238,14 @@ impl Runtime {
             .vm
             .registry
             .values_of(path)
-            .map(|m| m.iter().map(|(name, value)| NamedValue { name: name.clone(), value: value.clone() }).collect())
+            .map(|m| {
+                m.iter()
+                    .map(|(name, value)| NamedValue {
+                        name: name.clone(),
+                        value: value.clone(),
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         serde_wasm_bindgen::to_value(&rows).map_err(|e| JsValue::from_str(&e.to_string()))
     }
@@ -249,7 +268,12 @@ impl Runtime {
 
     /// Set a value. `value` is a serialized `RegValue` (e.g. `{type:"Dword",data:1}`).
     #[wasm_bindgen(js_name = regSetValue)]
-    pub fn reg_set_value(&mut self, path: &str, name: &str, value: &JsValue) -> Result<(), JsValue> {
+    pub fn reg_set_value(
+        &mut self,
+        path: &str,
+        name: &str,
+        value: &JsValue,
+    ) -> Result<(), JsValue> {
         let v: RegValue = serde_wasm_bindgen::from_value(value.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         self.vm.registry.set_value_path(path, name, v);

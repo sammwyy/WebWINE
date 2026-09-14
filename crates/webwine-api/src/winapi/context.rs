@@ -200,11 +200,7 @@ impl<'a> ApiContext<'a> {
         let aligned = (size + 15) & !15;
 
         // 1) First-fit from the free list.
-        if let Some(idx) = self
-            .heap_free_list
-            .iter()
-            .position(|&(_, s)| s >= aligned)
-        {
+        if let Some(idx) = self.heap_free_list.iter().position(|&(_, s)| s >= aligned) {
             let (ptr, block) = self.heap_free_list.remove(idx);
             let rem = block - aligned;
             if rem >= 16 {
@@ -258,17 +254,16 @@ impl<'a> ApiContext<'a> {
         if ptr.wrapping_add(size) == *self.heap_next {
             *self.heap_next = ptr;
             // Also absorb any free blocks that now sit at the new tip.
-            self.heap_free_list
-                .retain(|&(p, s)| {
-                    if p.wrapping_add(s) == *self.heap_next {
-                        // shouldn't happen after rewind
-                        true
-                    } else if p == *self.heap_next {
-                        false
-                    } else {
-                        true
-                    }
-                });
+            self.heap_free_list.retain(|&(p, s)| {
+                if p.wrapping_add(s) == *self.heap_next {
+                    // shouldn't happen after rewind
+                    true
+                } else if p == *self.heap_next {
+                    false
+                } else {
+                    true
+                }
+            });
             // Pull free blocks that abut the tip into the rewind.
             loop {
                 if let Some(i) = self

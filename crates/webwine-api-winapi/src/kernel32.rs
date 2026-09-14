@@ -4263,19 +4263,32 @@ fn format_message_w(ctx: &mut ApiContext) -> Handled {
 }
 
 fn find_resource_internal(ctx: &mut ApiContext, name: u32, unicode: bool, rtype: u32) -> u32 {
-    if rtype != 5 { return 0; } // Only RT_DIALOG supported
+    if rtype != 5 {
+        return 0;
+    } // Only RT_DIALOG supported
     let bytes = if name < 0x1_0000 {
         ctx.dialogs.get(&name).cloned()
     } else {
-        let n = if unicode { ctx.wstr(name) } else { ctx.cstr(name) };
+        let n = if unicode {
+            ctx.wstr(name)
+        } else {
+            ctx.cstr(name)
+        };
         if let Some(rest) = n.strip_prefix('#') {
             if let Ok(id) = rest.parse::<u32>() {
                 ctx.dialogs.get(&id).cloned()
-            } else { None }
+            } else {
+                None
+            }
         } else {
-            ctx.dialogs_by_name.get(&n.to_ascii_lowercase()).cloned().or_else(|| {
-                n.parse::<u32>().ok().and_then(|id| ctx.dialogs.get(&id).cloned())
-            })
+            ctx.dialogs_by_name
+                .get(&n.to_ascii_lowercase())
+                .cloned()
+                .or_else(|| {
+                    n.parse::<u32>()
+                        .ok()
+                        .and_then(|id| ctx.dialogs.get(&id).cloned())
+                })
         }
     };
     if let Some(b) = bytes {
@@ -4312,7 +4325,11 @@ fn lock_resource(ctx: &mut ApiContext) -> Handled {
 
 fn sizeof_resource(ctx: &mut ApiContext) -> Handled {
     let ptr = ctx.arg(1);
-    let size = if ptr != 0 { ctx.memory.read_u32(ptr - 4).unwrap_or(0) } else { 0 };
+    let size = if ptr != 0 {
+        ctx.memory.read_u32(ptr - 4).unwrap_or(0)
+    } else {
+        0
+    };
     ctx.ret_stdcall(size, 2);
     Handled::Ok
 }

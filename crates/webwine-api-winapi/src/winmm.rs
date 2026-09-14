@@ -31,7 +31,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("winmm.dll", "waveOutOpen", wave_out_open),
         ("winmm.dll", "waveOutClose", wave_out_close),
         ("winmm.dll", "waveOutPrepareHeader", wave_out_prepare_header),
-        ("winmm.dll", "waveOutUnprepareHeader", wave_out_unprepare_header),
+        (
+            "winmm.dll",
+            "waveOutUnprepareHeader",
+            wave_out_unprepare_header,
+        ),
         ("winmm.dll", "waveOutWrite", wave_out_write),
         ("winmm.dll", "waveOutReset", wave_out_reset),
         ("winmm.dll", "waveOutGetPosition", wave_out_get_position),
@@ -44,7 +48,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("winmm.dll", "midiOutLongMsg", midi_out_long_msg),
         ("winmm.dll", "midiOutReset", midi_out_reset),
         ("winmm.dll", "midiOutPrepareHeader", midi_out_prepare_header),
-        ("winmm.dll", "midiOutUnprepareHeader", midi_out_unprepare_header),
+        (
+            "winmm.dll",
+            "midiOutUnprepareHeader",
+            midi_out_unprepare_header,
+        ),
         ("winmm.dll", "midiOutSetVolume", midi_out_set_volume),
         ("winmm.dll", "midiStreamOpen", midi_stream_open),
         ("winmm.dll", "midiStreamClose", midi_stream_close),
@@ -103,10 +111,7 @@ fn time_get_dev_caps(ctx: &mut ApiContext) -> Handled {
 
 fn time_set_event(c: &mut ApiContext) -> Handled {
     // UINT timeSetEvent(delay, resolution, callback, user, flags) → timer id
-    let id = c
-        .dll_state
-        .entry("winmm.timer_id".into())
-        .or_insert(1);
+    let id = c.dll_state.entry("winmm.timer_id".into()).or_insert(1);
     let t = *id;
     *id = id.wrapping_add(1).max(1);
     c.ret_stdcall(t, 5);

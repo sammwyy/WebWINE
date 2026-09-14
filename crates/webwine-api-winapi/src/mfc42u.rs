@@ -60,13 +60,22 @@ fn afx_win_main(c: &mut ApiContext) -> Handled {
     }
 
     let filename = c.exe_path.rsplit(['\\', '/']).next().unwrap_or(c.exe_path);
-    let app = filename.strip_suffix(".exe").or_else(|| filename.strip_suffix(".EXE"))
+    let app = filename
+        .strip_suffix(".exe")
+        .or_else(|| filename.strip_suffix(".EXE"))
         .unwrap_or(filename);
     let is_paint = app.eq_ignore_ascii_case("mspaint");
-    let title = if is_paint { "untitled - Paint".to_string() } else { app.to_string() };
+    let title = if is_paint {
+        "untitled - Paint".to_string()
+    } else {
+        app.to_string()
+    };
     let hwnd = c.gui.next_hwnd;
     c.gui.next_hwnd += 4;
-    c.gui.windows.insert(hwnd, WindowEntry::new_toplevel(0, 800, 600, "mfc42u", &title));
+    c.gui.windows.insert(
+        hwnd,
+        WindowEntry::new_toplevel(0, 800, 600, "mfc42u", &title),
+    );
     c.dll_state.insert(MAIN_WINDOW_KEY.to_string(), hwnd);
     c.ui_events.push(UiEvent::CreateWindow {
         hwnd,
@@ -87,13 +96,17 @@ fn afx_win_main(c: &mut ApiContext) -> Handled {
     });
     if is_paint {
         let labels = ["File", "Edit", "View", "Image", "Colors", "Help"];
-        let items = labels.into_iter().enumerate().map(|(i, text)| MenuItemData {
-            text: text.to_string(),
-            id: 0xE000 + i as u32,
-            separator: false,
-            disabled: false,
-            children: Vec::new(),
-        }).collect();
+        let items = labels
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| MenuItemData {
+                text: text.to_string(),
+                id: 0xE000 + i as u32,
+                separator: false,
+                disabled: false,
+                children: Vec::new(),
+            })
+            .collect();
         c.ui_events.push(UiEvent::SetMenu { hwnd, items });
     }
     Handled::Block

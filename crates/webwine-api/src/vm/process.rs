@@ -423,7 +423,13 @@ pub struct WindowEntry {
 }
 
 impl WindowEntry {
-    pub fn new_toplevel(wndproc: u32, width: i32, height: i32, class_name: &str, title: &str) -> Self {
+    pub fn new_toplevel(
+        wndproc: u32,
+        width: i32,
+        height: i32,
+        class_name: &str,
+        title: &str,
+    ) -> Self {
         WindowEntry {
             wndproc,
             needs_paint: true,
@@ -558,9 +564,7 @@ impl GuestProcess {
         let heap_used: u64 = self.heap_sizes.values().map(|&s| s as u64).sum();
         let heap_free: u64 = self.heap_free_list.iter().map(|&(_, s)| s as u64).sum();
         let mapped_bytes: u64 = self.memory.regions.values().map(|r| r.size as u64).sum();
-        let heap_committed = self
-            .heap_next
-            .saturating_sub(self.heap_base) as u64;
+        let heap_committed = self.heap_next.saturating_sub(self.heap_base) as u64;
         ProcessInfo {
             pid: self.pid,
             path: self.path.clone(),

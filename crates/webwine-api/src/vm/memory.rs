@@ -1,5 +1,5 @@
-use bitflags::bitflags;
 use crate::error::{Result, VmError};
+use bitflags::bitflags;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,11 @@ pub struct GuestMemory {
 }
 
 impl GuestMemory {
-    pub fn new() -> Self { GuestMemory { regions: std::collections::BTreeMap::new() } }
+    pub fn new() -> Self {
+        GuestMemory {
+            regions: std::collections::BTreeMap::new(),
+        }
+    }
 
     pub fn allocate(&mut self, base: u32, size: u32, prot: PageProt) -> Result<()> {
         let new_end = base.wrapping_add(size);
@@ -33,18 +37,28 @@ impl GuestMemory {
             let end = r.base.wrapping_add(r.size);
             if base < end {
                 return Err(VmError::Memory(format!(
-                    "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}", r.base, r.size
+                    "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}",
+                    r.base, r.size
                 )));
             }
         }
         if let Some((_, r)) = self.regions.range(base..).next() {
             if new_end > r.base {
                 return Err(VmError::Memory(format!(
-                    "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}", r.base, r.size
+                    "0x{base:08X}+0x{size:X} overlaps existing 0x{:08X}+0x{:X}",
+                    r.base, r.size
                 )));
             }
         }
-        self.regions.insert(base, MemoryRegion { base, size, prot, bytes: vec![0u8; size as usize] });
+        self.regions.insert(
+            base,
+            MemoryRegion {
+                base,
+                size,
+                prot,
+                bytes: vec![0u8; size as usize],
+            },
+        );
         Ok(())
     }
 
@@ -144,18 +158,23 @@ impl GuestMemory {
     }
 
     pub fn write_bytes(&mut self, va: u32, data: &[u8]) -> Result<()> {
-        let (r, off) = self.region_mut(va)
+        let (r, off) = self
+            .region_mut(va)
             .ok_or_else(|| VmError::Memory(format!("write unmapped 0x{va:08X}")))?;
         let end = off + data.len();
         if end > r.bytes.len() {
-            return Err(VmError::Memory(format!("write 0x{va:08X}+{} overflows", data.len())));
+            return Err(VmError::Memory(format!(
+                "write 0x{va:08X}+{} overflows",
+                data.len()
+            )));
         }
         r.bytes[off..end].copy_from_slice(data);
         Ok(())
     }
 
     pub fn read_bytes(&self, va: u32, len: usize) -> Result<Vec<u8>> {
-        let (r, off) = self.region(va)
+        let (r, off) = self
+            .region(va)
             .ok_or_else(|| VmError::Memory(format!("read unmapped 0x{va:08X}")))?;
         let end = off + len;
         if end > r.bytes.len() {
@@ -164,9 +183,15 @@ impl GuestMemory {
         Ok(r.bytes[off..end].to_vec())
     }
 
-    pub fn write_u8 (&mut self, va: u32, v: u8)  -> Result<()> { self.write_bytes(va, &[v]) }
-    pub fn write_u16(&mut self, va: u32, v: u16) -> Result<()> { self.write_bytes(va, &v.to_le_bytes()) }
-    pub fn write_u32(&mut self, va: u32, v: u32) -> Result<()> { self.write_bytes(va, &v.to_le_bytes()) }
+    pub fn write_u8(&mut self, va: u32, v: u8) -> Result<()> {
+        self.write_bytes(va, &[v])
+    }
+    pub fn write_u16(&mut self, va: u32, v: u16) -> Result<()> {
+        self.write_bytes(va, &v.to_le_bytes())
+    }
+    pub fn write_u32(&mut self, va: u32, v: u32) -> Result<()> {
+        self.write_bytes(va, &v.to_le_bytes())
+    }
 
     pub fn read_u8(&self, va: u32) -> Result<u8> {
         Ok(self.read_bytes(va, 1)?[0])
@@ -181,7 +206,8 @@ impl GuestMemory {
     }
 
     pub fn read_instruction_window(&self, va: u32) -> Result<&[u8]> {
-        let (r, off) = self.region(va)
+        let (r, off) = self
+            .region(va)
             .ok_or_else(|| VmError::Memory(format!("fetch unmapped 0x{va:08X}")))?;
         let len = (r.bytes.len() - off).min(15);
         Ok(&r.bytes[off..off + len])
@@ -205,9 +231,14 @@ impl GuestMemory {
         loop {
             match self.read_u8(addr) {
                 Ok(0) | Err(_) => break,
-                Ok(b) => { s.push(b); addr = addr.wrapping_add(1); }
+                Ok(b) => {
+                    s.push(b);
+                    addr = addr.wrapping_add(1);
+                }
             }
-            if s.len() >= Self::MAX_STR { break; }
+            if s.len() >= Self::MAX_STR {
+                break;
+            }
         }
         s
     }
@@ -220,9 +251,14 @@ impl GuestMemory {
         loop {
             match self.read_u16(addr) {
                 Ok(0) | Err(_) => break,
-                Ok(c) => { s.push(c); addr = addr.wrapping_add(2); }
+                Ok(c) => {
+                    s.push(c);
+                    addr = addr.wrapping_add(2);
+                }
             }
-            if s.len() >= Self::MAX_STR { break; }
+            if s.len() >= Self::MAX_STR {
+                break;
+            }
         }
         s
     }
@@ -237,5 +273,7 @@ impl GuestMemory {
 }
 
 impl Default for GuestMemory {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

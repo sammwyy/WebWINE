@@ -3,7 +3,6 @@ use webwine_api::vm::process::WindowEntry;
 
 pub fn register(r: &mut WinApiRegistry) {
     let fns: &[(&str, &str, super::HandlerFn)] = &[
-
         ("comctl32.dll", "InitCommonControlsEx", |c| {
             c.ret_stdcall(1, 1);
             Handled::Ok
@@ -50,18 +49,28 @@ pub fn register(r: &mut WinApiRegistry) {
             Handled::Ok
         }),
         ("comctl32.dll", "ImageList_GetIconSize", |c| {
-            if c.arg(1) != 0 { let _ = c.memory.write_u32(c.arg(1), 16); }
-            if c.arg(2) != 0 { let _ = c.memory.write_u32(c.arg(2), 16); }
+            if c.arg(1) != 0 {
+                let _ = c.memory.write_u32(c.arg(1), 16);
+            }
+            if c.arg(2) != 0 {
+                let _ = c.memory.write_u32(c.arg(2), 16);
+            }
             c.ret_stdcall(1, 3);
             Handled::Ok
         }),
-        ("comctl32.dll", "ImageList_GetIcon", |c| { c.ret_stdcall(1, 3); Handled::Ok }),
+        ("comctl32.dll", "ImageList_GetIcon", |c| {
+            c.ret_stdcall(1, 3);
+            Handled::Ok
+        }),
         ("comctl32.dll", "#328", |c| {
             let state = c.heap_alloc(16);
             c.ret_stdcall(state, 1);
             Handled::Ok
         }),
-        ("comctl32.dll", "#334", |c| { c.ret_stdcall(c.arg(1), 3); Handled::Ok }),
+        ("comctl32.dll", "#334", |c| {
+            c.ret_stdcall(c.arg(1), 3);
+            Handled::Ok
+        }),
         ("comctl32.dll", "_TrackMouseEvent", |c| {
             c.ret_stdcall(1, 1);
             Handled::Ok
@@ -79,7 +88,8 @@ pub fn register(r: &mut WinApiRegistry) {
         ("comctl32.dll", "PropertySheetA", |c| {
             c.ret_stdcall(0, 1);
             Handled::Ok
-        }),    ];
+        }),
+    ];
     for &(dll, name, f) in fns {
         r.add(dll, name, f);
     }
@@ -88,7 +98,10 @@ pub fn register(r: &mut WinApiRegistry) {
 fn create_status_window(c: &mut super::ApiContext) -> Handled {
     let hwnd = c.gui.next_hwnd;
     c.gui.next_hwnd += 4;
-    c.gui.windows.insert(hwnd, WindowEntry::new_toplevel(0, 400, 24, "msctls_statusbar32", ""));
+    c.gui.windows.insert(
+        hwnd,
+        WindowEntry::new_toplevel(0, 400, 24, "msctls_statusbar32", ""),
+    );
     c.ret_stdcall(hwnd, 4);
     Handled::Ok
 }

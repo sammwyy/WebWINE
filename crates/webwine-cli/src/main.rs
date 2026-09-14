@@ -59,17 +59,27 @@ fn main() {
     };
 
     let exe_path = Path::new(&exe);
-    let host_dir = exe_path.parent().filter(|p| !p.as_os_str().is_empty())
+    let host_dir = exe_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::current_dir().unwrap());
-    let exe_name = exe_path.file_name().expect("exe filename").to_string_lossy().into_owned();
+    let exe_name = exe_path
+        .file_name()
+        .expect("exe filename")
+        .to_string_lossy()
+        .into_owned();
     let guest_exe = format!("{disk}:\\{exe_name}");
 
     let mut vm = WebWineVm::new();
     // Register the real directory as the chosen drive — 1:1, no copy. The driver
     // exposes its own unit via drives().
-    vm.fs.register_storage_driver(Box::new(PassthroughStorageDriver::new(disk, &host_dir)));
-    eprintln!("[webwine] {} -> {disk}:\\  (passthrough, no copy)", host_dir.display());
+    vm.fs
+        .register_storage_driver(Box::new(PassthroughStorageDriver::new(disk, &host_dir)));
+    eprintln!(
+        "[webwine] {} -> {disk}:\\  (passthrough, no copy)",
+        host_dir.display()
+    );
     eprintln!("[webwine] launching {guest_exe}");
 
     let argline = prog_args.join(" ");
@@ -97,7 +107,12 @@ fn main() {
                 UiEvent::MessageBox { title, text, .. } => {
                     eprintln!("[messagebox] {title}: {text}");
                 }
-                UiEvent::CreateWindow { title, width, height, .. } => {
+                UiEvent::CreateWindow {
+                    title,
+                    width,
+                    height,
+                    ..
+                } => {
                     eprintln!("[window] \"{title}\" {width}x{height}");
                 }
                 UiEvent::Blit { hwnd, w, h, .. } => {
@@ -127,17 +142,25 @@ fn main() {
 
 fn collect_exes(root: &Path, out: &mut Vec<PathBuf>) {
     if root.is_file() {
-        if root.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) {
+        if root
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"))
+        {
             out.push(root.to_path_buf());
         }
         return;
     }
-    let Ok(entries) = std::fs::read_dir(root) else { return };
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             collect_exes(&path, out);
-        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) {
+        } else if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"))
+        {
             out.push(path);
         }
     }
@@ -164,23 +187,40 @@ fn run_smoke(root: &Path, disk: char, max_slices: u64) -> i32 {
             Ok(bytes) => bytes,
             Err(e) => {
                 failures += 1;
-                println!("read_error\t?\t0\t0\t0\t{}\t{}\t{}", started.elapsed().as_millis(), exe.display(), clean_field(&e.to_string()));
+                println!(
+                    "read_error\t?\t0\t0\t0\t{}\t{}\t{}",
+                    started.elapsed().as_millis(),
+                    exe.display(),
+                    clean_field(&e.to_string())
+                );
                 continue;
             }
         };
         let arch = webwine_core::pe::inspector::inspect_bytes(&bytes)
-            .map(|p| if p.is_pe32 { p.machine } else { format!("{}-PE32+", p.machine) })
+            .map(|p| {
+                if p.is_pe32 {
+                    p.machine
+                } else {
+                    format!("{}-PE32+", p.machine)
+                }
+            })
             .unwrap_or_else(|_| "invalid".to_string());
         let host_dir = exe.parent().unwrap_or_else(|| Path::new("."));
         let exe_name = exe.file_name().unwrap_or_default().to_string_lossy();
         let guest = format!("{disk}:\\{exe_name}");
         let mut vm = WebWineVm::new();
-        vm.fs.register_storage_driver(Box::new(PassthroughStorageDriver::new(disk, host_dir)));
+        vm.fs
+            .register_storage_driver(Box::new(PassthroughStorageDriver::new(disk, host_dir)));
         let pid = match vm.launch_process(&guest) {
             Ok(pid) => pid,
             Err(e) => {
                 failures += 1;
-                println!("launch_error\t{arch}\t0\t0\t0\t{}\t{}\t{}", started.elapsed().as_millis(), exe.display(), clean_field(&e.to_string()));
+                println!(
+                    "launch_error\t{arch}\t0\t0\t0\t{}\t{}\t{}",
+                    started.elapsed().as_millis(),
+                    exe.display(),
+                    clean_field(&e.to_string())
+                );
                 continue;
             }
         };
@@ -202,7 +242,11 @@ fn run_smoke(root: &Path, disk: char, max_slices: u64) -> i32 {
             ui += result.ui_events.len();
             match result.state {
                 ProcessState::Exited { exit_code } => {
-                    status = if exit_code == 0 { "exited" } else { "exit_error" };
+                    status = if exit_code == 0 {
+                        "exited"
+                    } else {
+                        "exit_error"
+                    };
                     detail = format!("code=0x{exit_code:08X}");
                     break;
                 }
@@ -220,7 +264,10 @@ fn run_smoke(root: &Path, disk: char, max_slices: u64) -> i32 {
             }
         }
         let logs = vm.drain_logs();
-        let unimplemented = logs.iter().filter(|e| e.message.contains("unimplemented:")).count();
+        let unimplemented = logs
+            .iter()
+            .filter(|e| e.message.contains("unimplemented:"))
+            .count();
         for entry in &logs {
             if let Some(rest) = entry.message.split("unimplemented:").nth(1) {
                 let name = rest.split(" — ").next().unwrap_or(rest).trim();
@@ -229,11 +276,18 @@ fn run_smoke(root: &Path, disk: char, max_slices: u64) -> i32 {
                 }
             }
         }
-        if matches!(status, "crashed" | "run_error" | "launch_error" | "exit_error") {
+        if matches!(
+            status,
+            "crashed" | "run_error" | "launch_error" | "exit_error"
+        ) {
             failures += 1;
         }
-        println!("{status}\t{arch}\t{instructions}\t{ui}\t{unimplemented}\t{}\t{}\t{}",
-            started.elapsed().as_millis(), exe.display(), clean_field(&detail));
+        println!(
+            "{status}\t{arch}\t{instructions}\t{ui}\t{unimplemented}\t{}\t{}\t{}",
+            started.elapsed().as_millis(),
+            exe.display(),
+            clean_field(&detail)
+        );
     }
     if !missing_apis.is_empty() {
         let mut missing: Vec<_> = missing_apis.into_iter().collect();
@@ -244,7 +298,11 @@ fn run_smoke(root: &Path, disk: char, max_slices: u64) -> i32 {
         }
     }
     eprintln!("[smoke] {} executables, {} failures", exes.len(), failures);
-    if failures == 0 { 0 } else { 1 }
+    if failures == 0 {
+        0
+    } else {
+        1
+    }
 }
 
 fn clean_field(s: &str) -> String {

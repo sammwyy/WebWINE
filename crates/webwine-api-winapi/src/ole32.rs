@@ -22,7 +22,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ole32.dll", "CoInitialize", co_initialize),
         ("ole32.dll", "CoInitializeEx", co_initialize_ex),
         ("ole32.dll", "OleInitialize", ole_initialize),
-        ("ole32.dll", "CoRegisterClassObject", co_register_class_object),
+        (
+            "ole32.dll",
+            "CoRegisterClassObject",
+            co_register_class_object,
+        ),
         ("ole32.dll", "CoRevokeClassObject", co_revoke_class_object),
         ("ole32.dll", "CoCreateGuid", co_create_guid),
         ("ole32.dll", "CoGetMalloc", co_get_malloc),
@@ -32,10 +36,22 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ole32.dll", "StringFromCLSID", string_from_clsid),
         ("ole32.dll", "ProgIDFromCLSID", prog_id_from_clsid),
         ("ole32.dll", "CLSIDFromProgID", clsid_from_prog_id),
-        ("ole32.dll", "CoFreeUnusedLibraries", co_free_unused_libraries),
-        ("ole32.dll", "CoFreeUnusedLibrariesEx", co_free_unused_libraries_ex),
+        (
+            "ole32.dll",
+            "CoFreeUnusedLibraries",
+            co_free_unused_libraries,
+        ),
+        (
+            "ole32.dll",
+            "CoFreeUnusedLibrariesEx",
+            co_free_unused_libraries_ex,
+        ),
         ("ole32.dll", "OleFlushClipboard", ole_flush_clipboard),
-        ("ole32.dll", "OleIsCurrentClipboard", ole_is_current_clipboard),
+        (
+            "ole32.dll",
+            "OleIsCurrentClipboard",
+            ole_is_current_clipboard,
+        ),
         ("ole32.dll", "CoInitializeSecurity", co_initialize_security),
         ("ole32.dll", "CoSetProxyBlanket", co_set_proxy_blanket),
     ];
@@ -136,10 +152,7 @@ fn ole_initialize(c: &mut ApiContext) -> Handled {
 fn co_register_class_object(c: &mut ApiContext) -> Handled {
     let cookie = c.arg(4);
     if cookie != 0 {
-        let id = c
-            .dll_state
-            .entry("ole32.class_cookie".into())
-            .or_insert(1);
+        let id = c.dll_state.entry("ole32.class_cookie".into()).or_insert(1);
         let v = *id;
         *id = id.wrapping_add(1);
         let _ = c.memory.write_u32(cookie, v);
@@ -160,16 +173,15 @@ fn co_create_guid(c: &mut ApiContext) -> Handled {
         return Handled::Ok;
     }
     // Deterministic pseudo-GUID from pid + sequence (not RFC4122 random, but unique enough).
-    let seq = c
-        .dll_state
-        .entry("ole32.guid_seq".into())
-        .or_insert(1);
+    let seq = c.dll_state.entry("ole32.guid_seq".into()).or_insert(1);
     let s = *seq;
     *seq = seq.wrapping_add(1);
     let pid = c.pid;
     let _ = c.memory.write_u32(p, 0xA11C_E000u32.wrapping_add(s));
     let _ = c.memory.write_u16(p + 4, (pid & 0xFFFF) as u16);
-    let _ = c.memory.write_u16(p + 6, 0x4000 | ((s >> 16) as u16 & 0x0FFF)); // version 4-ish
+    let _ = c
+        .memory
+        .write_u16(p + 6, 0x4000 | ((s >> 16) as u16 & 0x0FFF)); // version 4-ish
     let _ = c.memory.write_u8(p + 8, 0x80); // variant
     let _ = c.memory.write_u8(p + 9, (s & 0xFF) as u8);
     let _ = c.memory.write_u16(p + 10, 0x5745); // "WE"

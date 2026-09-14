@@ -32,38 +32,114 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "RegisterClassW", register_class_w),
         ("user32.dll", "RegisterClassExA", register_class_ex_a),
         ("user32.dll", "RegisterClassExW", register_class_ex_w),
-        ("user32.dll", "GetClassInfoA", |c| get_class_info(c, false, false)),
-        ("user32.dll", "GetClassInfoW", |c| get_class_info(c, true, false)),
-        ("user32.dll", "GetClassInfoExA", |c| get_class_info(c, false, true)),
-        ("user32.dll", "GetClassInfoExW", |c| get_class_info(c, true, true)),
-        ("user32.dll", "UnregisterClassA", |c| unregister_class(c, false)),
-        ("user32.dll", "UnregisterClassW", |c| unregister_class(c, true)),
+        ("user32.dll", "GetClassInfoA", |c| {
+            get_class_info(c, false, false)
+        }),
+        ("user32.dll", "GetClassInfoW", |c| {
+            get_class_info(c, true, false)
+        }),
+        ("user32.dll", "GetClassInfoExA", |c| {
+            get_class_info(c, false, true)
+        }),
+        ("user32.dll", "GetClassInfoExW", |c| {
+            get_class_info(c, true, true)
+        }),
+        ("user32.dll", "UnregisterClassA", |c| {
+            unregister_class(c, false)
+        }),
+        ("user32.dll", "UnregisterClassW", |c| {
+            unregister_class(c, true)
+        }),
         ("user32.dll", "CreateWindowExA", create_window_ex_a),
         ("user32.dll", "CreateWindowExW", create_window_ex_w),
-        ("user32.dll", "CreateDialogParamA", |c| crate::dialog::create_dialog_param(c, false)),
-        ("user32.dll", "CreateDialogParamW", |c| crate::dialog::create_dialog_param(c, true)),
-        ("user32.dll", "CreateDialogIndirectParamA", |c| crate::dialog::create_dialog_indirect(c, false)),
-        ("user32.dll", "CreateDialogIndirectParamW", |c| crate::dialog::create_dialog_indirect(c, true)),
-        ("user32.dll", "DialogBoxParamA", |c| crate::dialog::dialog_box_param(c, false)),
-        ("user32.dll", "DialogBoxParamW", |c| crate::dialog::dialog_box_param(c, true)),
-        ("user32.dll", "DialogBoxIndirectParamA", |c| crate::dialog::dialog_box_indirect(c, false)),
-        ("user32.dll", "DialogBoxIndirectParamW", |c| crate::dialog::dialog_box_indirect(c, true)),
+        ("user32.dll", "CreateDialogParamA", |c| {
+            crate::dialog::create_dialog_param(c, false)
+        }),
+        ("user32.dll", "CreateDialogParamW", |c| {
+            crate::dialog::create_dialog_param(c, true)
+        }),
+        ("user32.dll", "CreateDialogIndirectParamA", |c| {
+            crate::dialog::create_dialog_indirect(c, false)
+        }),
+        ("user32.dll", "CreateDialogIndirectParamW", |c| {
+            crate::dialog::create_dialog_indirect(c, true)
+        }),
+        ("user32.dll", "DialogBoxParamA", |c| {
+            crate::dialog::dialog_box_param(c, false)
+        }),
+        ("user32.dll", "DialogBoxParamW", |c| {
+            crate::dialog::dialog_box_param(c, true)
+        }),
+        ("user32.dll", "DialogBoxIndirectParamA", |c| {
+            crate::dialog::dialog_box_indirect(c, false)
+        }),
+        ("user32.dll", "DialogBoxIndirectParamW", |c| {
+            crate::dialog::dialog_box_indirect(c, true)
+        }),
         ("user32.dll", "EndDialog", crate::dialog::end_dialog),
-        ("user32.dll", "IsDialogMessageA", crate::dialog::is_dialog_message),
-        ("user32.dll", "IsDialogMessageW", crate::dialog::is_dialog_message),
+        (
+            "user32.dll",
+            "IsDialogMessageA",
+            crate::dialog::is_dialog_message,
+        ),
+        (
+            "user32.dll",
+            "IsDialogMessageW",
+            crate::dialog::is_dialog_message,
+        ),
         ("user32.dll", "GetDlgItem", crate::dialog::get_dlg_item),
-        ("user32.dll", "SendDlgItemMessageA", crate::dialog::send_dlg_item_message),
-        ("user32.dll", "SendDlgItemMessageW", crate::dialog::send_dlg_item_message),
-        ("user32.dll", "SetDlgItemTextA", |c| crate::dialog::set_dlg_item_text(c, false)),
-        ("user32.dll", "SetDlgItemTextW", |c| crate::dialog::set_dlg_item_text(c, true)),
-        ("user32.dll", "GetDlgItemTextA", |c| crate::dialog::get_dlg_item_text(c, false)),
-        ("user32.dll", "GetDlgItemTextW", |c| crate::dialog::get_dlg_item_text(c, true)),
-        ("user32.dll", "CheckDlgButton", crate::dialog::check_dlg_button),
-        ("user32.dll", "IsDlgButtonChecked", crate::dialog::is_dlg_button_checked),
-        ("user32.dll", "MapDialogRect", crate::dialog::map_dialog_rect),
-        ("user32.dll", "GetDialogBaseUnits", crate::dialog::get_dialog_base_units),
-        ("user32.dll", "GetNextDlgTabItem", crate::dialog::get_next_dlg_tab_item),
-        ("user32.dll", "GetNextDlgGroupItem", crate::dialog::get_next_dlg_group_item),
+        (
+            "user32.dll",
+            "SendDlgItemMessageA",
+            crate::dialog::send_dlg_item_message,
+        ),
+        (
+            "user32.dll",
+            "SendDlgItemMessageW",
+            crate::dialog::send_dlg_item_message,
+        ),
+        ("user32.dll", "SetDlgItemTextA", |c| {
+            crate::dialog::set_dlg_item_text(c, false)
+        }),
+        ("user32.dll", "SetDlgItemTextW", |c| {
+            crate::dialog::set_dlg_item_text(c, true)
+        }),
+        ("user32.dll", "GetDlgItemTextA", |c| {
+            crate::dialog::get_dlg_item_text(c, false)
+        }),
+        ("user32.dll", "GetDlgItemTextW", |c| {
+            crate::dialog::get_dlg_item_text(c, true)
+        }),
+        (
+            "user32.dll",
+            "CheckDlgButton",
+            crate::dialog::check_dlg_button,
+        ),
+        (
+            "user32.dll",
+            "IsDlgButtonChecked",
+            crate::dialog::is_dlg_button_checked,
+        ),
+        (
+            "user32.dll",
+            "MapDialogRect",
+            crate::dialog::map_dialog_rect,
+        ),
+        (
+            "user32.dll",
+            "GetDialogBaseUnits",
+            crate::dialog::get_dialog_base_units,
+        ),
+        (
+            "user32.dll",
+            "GetNextDlgTabItem",
+            crate::dialog::get_next_dlg_tab_item,
+        ),
+        (
+            "user32.dll",
+            "GetNextDlgGroupItem",
+            crate::dialog::get_next_dlg_group_item,
+        ),
         ("user32.dll", "DefDlgProcA", crate::dialog::def_dlg_proc),
         ("user32.dll", "DefDlgProcW", crate::dialog::def_dlg_proc),
         ("user32.dll", "ShowWindow", show_window),
@@ -136,13 +212,36 @@ pub fn register(r: &mut WinApiRegistry) {
         ("user32.dll", "CharLowerW", char_lower_w),
         ("user32.dll", "DdeInitializeA", dde_initialize),
         ("user32.dll", "DdeInitializeW", dde_initialize),
-        ("user32.dll", "DdeUninitialize", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("user32.dll", "DdeCreateStringHandleA", dde_create_string_handle),
-        ("user32.dll", "DdeCreateStringHandleW", dde_create_string_handle),
-        ("user32.dll", "DdeFreeStringHandle", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "DdeKeepStringHandle", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "DdeNameService", |c| { c.ret_stdcall(1, 4); Handled::Ok }),
-        ("user32.dll", "DdeGetLastError", |c| { c.ret_stdcall(0, 1); Handled::Ok }),
+        ("user32.dll", "DdeUninitialize", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        (
+            "user32.dll",
+            "DdeCreateStringHandleA",
+            dde_create_string_handle,
+        ),
+        (
+            "user32.dll",
+            "DdeCreateStringHandleW",
+            dde_create_string_handle,
+        ),
+        ("user32.dll", "DdeFreeStringHandle", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "DdeKeepStringHandle", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "DdeNameService", |c| {
+            c.ret_stdcall(1, 4);
+            Handled::Ok
+        }),
+        ("user32.dll", "DdeGetLastError", |c| {
+            c.ret_stdcall(0, 1);
+            Handled::Ok
+        }),
         // common resource / paint stubs
         ("user32.dll", "LoadCursorA", |c| {
             c.ret_stdcall(1, 2);
@@ -160,24 +259,69 @@ pub fn register(r: &mut WinApiRegistry) {
             c.ret_stdcall(1, 2);
             Handled::Ok
         }),
-        ("user32.dll", "LoadAcceleratorsA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadAcceleratorsW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "TranslateAcceleratorA", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("user32.dll", "TranslateAcceleratorW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
+        ("user32.dll", "LoadAcceleratorsA", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadAcceleratorsW", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "TranslateAcceleratorA", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "TranslateAcceleratorW", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
         ("user32.dll", "LoadMenuA", load_menu),
         ("user32.dll", "LoadMenuW", load_menu),
         ("user32.dll", "GetSystemMenu", get_system_menu),
-        ("user32.dll", "SetCursor", |c| { c.ret_stdcall(1, 1); Handled::Ok }),
-        ("user32.dll", "SetWindowLongA", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("user32.dll", "SetWindowLongW", |c| { c.ret_stdcall(0, 3); Handled::Ok }),
-        ("user32.dll", "GetWindowLongA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "GetWindowLongW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "GetClassLongA", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "GetClassLongW", |c| { c.ret_stdcall(0, 2); Handled::Ok }),
-        ("user32.dll", "LoadBitmapA", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadBitmapW", |c| { c.ret_stdcall(1, 2); Handled::Ok }),
-        ("user32.dll", "LoadImageA", |c| { c.ret_stdcall(1, 6); Handled::Ok }),
-        ("user32.dll", "LoadImageW", |c| { c.ret_stdcall(1, 6); Handled::Ok }),
+        ("user32.dll", "SetCursor", |c| {
+            c.ret_stdcall(1, 1);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetWindowLongA", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "SetWindowLongW", |c| {
+            c.ret_stdcall(0, 3);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetWindowLongA", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetWindowLongW", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetClassLongA", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "GetClassLongW", |c| {
+            c.ret_stdcall(0, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadBitmapA", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadBitmapW", |c| {
+            c.ret_stdcall(1, 2);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadImageA", |c| {
+            c.ret_stdcall(1, 6);
+            Handled::Ok
+        }),
+        ("user32.dll", "LoadImageW", |c| {
+            c.ret_stdcall(1, 6);
+            Handled::Ok
+        }),
         ("user32.dll", "LoadStringA", load_string_a),
         ("user32.dll", "LoadStringW", load_string_w),
         ("user32.dll", "GetSystemMetrics", |c| {
@@ -323,14 +467,22 @@ pub fn register(r: &mut WinApiRegistry) {
 
 fn char_next_a(c: &mut ApiContext) -> Handled {
     let ptr = c.arg(0);
-    let next = if ptr != 0 && c.memory.read_u8(ptr).unwrap_or(0) != 0 { ptr + 1 } else { ptr };
+    let next = if ptr != 0 && c.memory.read_u8(ptr).unwrap_or(0) != 0 {
+        ptr + 1
+    } else {
+        ptr
+    };
     c.ret_stdcall(next, 1);
     Handled::Ok
 }
 
 fn char_next_w(c: &mut ApiContext) -> Handled {
     let ptr = c.arg(0);
-    let next = if ptr != 0 && c.memory.read_u16(ptr).unwrap_or(0) != 0 { ptr + 2 } else { ptr };
+    let next = if ptr != 0 && c.memory.read_u16(ptr).unwrap_or(0) != 0 {
+        ptr + 2
+    } else {
+        ptr
+    };
     c.ret_stdcall(next, 1);
     Handled::Ok
 }
@@ -345,24 +497,47 @@ fn char_prev_a(c: &mut ApiContext) -> Handled {
 fn char_prev_w(c: &mut ApiContext) -> Handled {
     let start = c.arg(0);
     let current = c.arg(1);
-    c.ret_stdcall(if current >= start + 2 { current - 2 } else { start }, 2);
+    c.ret_stdcall(
+        if current >= start + 2 {
+            current - 2
+        } else {
+            start
+        },
+        2,
+    );
     Handled::Ok
 }
 
-fn char_upper_a(c: &mut ApiContext) -> Handled { change_case_a(c, true) }
-fn char_lower_a(c: &mut ApiContext) -> Handled { change_case_a(c, false) }
-fn char_upper_w(c: &mut ApiContext) -> Handled { change_case_w(c, true) }
-fn char_lower_w(c: &mut ApiContext) -> Handled { change_case_w(c, false) }
+fn char_upper_a(c: &mut ApiContext) -> Handled {
+    change_case_a(c, true)
+}
+fn char_lower_a(c: &mut ApiContext) -> Handled {
+    change_case_a(c, false)
+}
+fn char_upper_w(c: &mut ApiContext) -> Handled {
+    change_case_w(c, true)
+}
+fn char_lower_w(c: &mut ApiContext) -> Handled {
+    change_case_w(c, false)
+}
 
 fn change_case_a(c: &mut ApiContext, upper: bool) -> Handled {
     let value = c.arg(0);
     if value <= 0xFFFF {
         let byte = value as u8;
-        let changed = if upper { byte.to_ascii_uppercase() } else { byte.to_ascii_lowercase() };
+        let changed = if upper {
+            byte.to_ascii_uppercase()
+        } else {
+            byte.to_ascii_lowercase()
+        };
         c.ret_stdcall(changed as u32, 1);
     } else {
         let original = c.cstr(value);
-        let changed = if upper { original.to_ascii_uppercase() } else { original.to_ascii_lowercase() };
+        let changed = if upper {
+            original.to_ascii_uppercase()
+        } else {
+            original.to_ascii_lowercase()
+        };
         let mut bytes = changed.into_bytes();
         bytes.push(0);
         let _ = c.memory.write_bytes(value, &bytes);
@@ -375,12 +550,20 @@ fn change_case_w(c: &mut ApiContext, upper: bool) -> Handled {
     let value = c.arg(0);
     if value <= 0xFFFF {
         let character = char::from_u32(value).unwrap_or('\0');
-        let changed = if upper { character.to_uppercase().next() } else { character.to_lowercase().next() }
-            .unwrap_or(character) as u32;
+        let changed = if upper {
+            character.to_uppercase().next()
+        } else {
+            character.to_lowercase().next()
+        }
+        .unwrap_or(character) as u32;
         c.ret_stdcall(changed, 1);
     } else {
         let original = c.wstr(value);
-        let changed = if upper { original.to_uppercase() } else { original.to_lowercase() };
+        let changed = if upper {
+            original.to_uppercase()
+        } else {
+            original.to_lowercase()
+        };
         for (index, unit) in changed.encode_utf16().chain(std::iter::once(0)).enumerate() {
             let _ = c.memory.write_u16(value + index as u32 * 2, unit);
         }
@@ -391,7 +574,9 @@ fn change_case_w(c: &mut ApiContext, upper: bool) -> Handled {
 
 fn dde_initialize(c: &mut ApiContext) -> Handled {
     let instance = c.arg(0);
-    if instance != 0 { let _ = c.memory.write_u32(instance, 1); }
+    if instance != 0 {
+        let _ = c.memory.write_u32(instance, 1);
+    }
     c.ret_stdcall(0, 4);
     Handled::Ok
 }
@@ -405,7 +590,12 @@ fn dde_create_string_handle(c: &mut ApiContext) -> Handled {
 fn load_string_a(c: &mut ApiContext) -> Handled {
     let id = c.arg(1);
     let value = c.strings.get(&id).cloned().unwrap_or_default();
-    c.logs.log(webwine_api::logs::LogLevel::Trace, "api", &format!("LoadStringA id={id} -> {value:?}"), Some(c.pid));
+    c.logs.log(
+        webwine_api::logs::LogLevel::Trace,
+        "api",
+        &format!("LoadStringA id={id} -> {value:?}"),
+        Some(c.pid),
+    );
     let out = c.arg(2);
     let max = c.arg(3) as usize;
     let count = value.len().min(max.saturating_sub(1));
@@ -420,7 +610,12 @@ fn load_string_a(c: &mut ApiContext) -> Handled {
 fn load_string_w(c: &mut ApiContext) -> Handled {
     let id = c.arg(1);
     let value = c.strings.get(&id).cloned().unwrap_or_default();
-    c.logs.log(webwine_api::logs::LogLevel::Trace, "api", &format!("LoadStringW id={id} -> {value:?}"), Some(c.pid));
+    c.logs.log(
+        webwine_api::logs::LogLevel::Trace,
+        "api",
+        &format!("LoadStringW id={id} -> {value:?}"),
+        Some(c.pid),
+    );
     let out = c.arg(2);
     let max = c.arg(3) as usize;
     let units: Vec<u16> = value.encode_utf16().take(max.saturating_sub(1)).collect();
@@ -493,14 +688,26 @@ fn msgbox_indirect_a(ctx: &mut ApiContext) -> Handled {
     let params = ctx.arg(0);
     let text = ctx.cstr(ctx.memory.read_u32(params + 12).unwrap_or(0));
     let title = ctx.cstr(ctx.memory.read_u32(params + 16).unwrap_or(0));
-    msgbox_common_n(ctx, title, text, ctx.memory.read_u32(params + 20).unwrap_or(0), 1)
+    msgbox_common_n(
+        ctx,
+        title,
+        text,
+        ctx.memory.read_u32(params + 20).unwrap_or(0),
+        1,
+    )
 }
 
 fn msgbox_indirect_w(ctx: &mut ApiContext) -> Handled {
     let params = ctx.arg(0);
     let text = ctx.wstr(ctx.memory.read_u32(params + 12).unwrap_or(0));
     let title = ctx.wstr(ctx.memory.read_u32(params + 16).unwrap_or(0));
-    msgbox_common_n(ctx, title, text, ctx.memory.read_u32(params + 20).unwrap_or(0), 1)
+    msgbox_common_n(
+        ctx,
+        title,
+        text,
+        ctx.memory.read_u32(params + 20).unwrap_or(0),
+        1,
+    )
 }
 
 /// MessageBox blocks the guest until the user clicks a button (modal). On the
@@ -510,7 +717,13 @@ fn msgbox_common(ctx: &mut ApiContext, title: String, text: String, style: u32) 
     msgbox_common_n(ctx, title, text, style, 4)
 }
 
-fn msgbox_common_n(ctx: &mut ApiContext, title: String, text: String, style: u32, nargs: u32) -> Handled {
+fn msgbox_common_n(
+    ctx: &mut ApiContext,
+    title: String,
+    text: String,
+    style: u32,
+    nargs: u32,
+) -> Handled {
     if let Some(reply) = ctx.gui.dialog_reply.take() {
         ctx.gui.dialog_pending = false;
         ctx.ret_stdcall(reply.button, nargs);
@@ -592,11 +805,7 @@ fn unregister_class(ctx: &mut ApiContext, wide: bool) -> Handled {
     // UnregisterClass(lpClassName, hInstance) — 2 args.
     let name = read_class_name(ctx, ctx.arg(0), wide);
     let key = class_lookup_key(&name);
-    let removed = ctx
-        .gui
-        .classes
-        .keys()
-        .any(|k| class_lookup_key(k) == key);
+    let removed = ctx.gui.classes.keys().any(|k| class_lookup_key(k) == key);
     if removed {
         ctx.gui.classes.retain(|k, _| class_lookup_key(k) != key);
         ctx.ret_stdcall(1, 2);
@@ -912,8 +1121,6 @@ fn destroy_menu(ctx: &mut ApiContext) -> Handled {
     Handled::Ok
 }
 
-
-
 fn norm_coord(v: u32, default: i32) -> i32 {
     if v == CW_USEDEFAULT {
         default
@@ -946,7 +1153,7 @@ fn show_window(ctx: &mut ApiContext) -> Handled {
 fn enable_window(ctx: &mut ApiContext) -> Handled {
     let hwnd = ctx.arg(0);
     let enabled = ctx.arg(1) != 0;
-    
+
     let prev_state = if let Some(w) = ctx.gui.windows.get_mut(&hwnd) {
         let prev = w.enabled;
         w.enabled = enabled;
@@ -1751,7 +1958,11 @@ pub(crate) fn set_dibits_to_device(ctx: &mut ApiContext) -> Handled {
 fn wsprintf(ctx: &mut ApiContext, wide: bool) -> Handled {
     let dst = ctx.arg(0);
     let fmt_ptr = ctx.arg(1);
-    let fmt = if wide { ctx.wstr(fmt_ptr) } else { ctx.cstr(fmt_ptr) };
+    let fmt = if wide {
+        ctx.wstr(fmt_ptr)
+    } else {
+        ctx.cstr(fmt_ptr)
+    };
 
     let mut out = String::new();
     let mut consumed = 0u32;
@@ -1822,7 +2033,10 @@ fn set_timer(ctx: &mut ApiContext) -> Handled {
     let id = if id_arg != 0 {
         id_arg
     } else {
-        let next = ctx.dll_state.entry("user32:next_timer_id".to_string()).or_insert(1);
+        let next = ctx
+            .dll_state
+            .entry("user32:next_timer_id".to_string())
+            .or_insert(1);
         let id = *next;
         *next += 1;
         id

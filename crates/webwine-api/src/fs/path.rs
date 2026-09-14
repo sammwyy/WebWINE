@@ -13,11 +13,7 @@ impl GuestPath {
 
         // Drive-rooted path: C:\...
         if s.len() >= 2 && s.chars().nth(1) == Some(':') {
-            let drive = s
-                .chars()
-                .next()
-                .unwrap()
-                .to_ascii_uppercase();
+            let drive = s.chars().next().unwrap().to_ascii_uppercase();
 
             if !drive.is_ascii_alphabetic() {
                 return Err(VmError::Path(format!("invalid drive letter in '{raw}'")));

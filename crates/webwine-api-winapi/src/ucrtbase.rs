@@ -8,7 +8,11 @@ pub fn register(r: &mut WinApiRegistry) {
         ("ucrtbase.dll", "free", crate::msvcrt::free_fn),
         ("ucrtbase.dll", "printf", crate::msvcrt::printf),
         ("ucrtbase.dll", "puts", crate::msvcrt::puts),
-        ("ucrtbase.dll", "__stdio_common_vfprintf", crate::msvcrt::stdio_vfprintf),
+        (
+            "ucrtbase.dll",
+            "__stdio_common_vfprintf",
+            crate::msvcrt::stdio_vfprintf,
+        ),
         ("ucrtbase.dll", "_initterm", crate::msvcrt::initterm),
         ("ucrtbase.dll", "_initterm_e", crate::msvcrt::initterm_e),
         ("ucrtbase.dll", "__acrt_iob_func", crate::msvcrt::acrt_iob),

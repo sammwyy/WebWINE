@@ -16,8 +16,16 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("dbghelp.dll", "SymGetSymFromAddr64", sym_get_sym_from_addr);
     r.add("dbghelp.dll", "SymFromAddr", sym_from_addr);
     r.add("dbghelp.dll", "SymFromAddrW", sym_from_addr);
-    r.add("dbghelp.dll", "SymGetLineFromAddr64", sym_get_line_from_addr64);
-    r.add("dbghelp.dll", "SymGetLineFromAddr", sym_get_line_from_addr64);
+    r.add(
+        "dbghelp.dll",
+        "SymGetLineFromAddr64",
+        sym_get_line_from_addr64,
+    );
+    r.add(
+        "dbghelp.dll",
+        "SymGetLineFromAddr",
+        sym_get_line_from_addr64,
+    );
     r.add("dbghelp.dll", "StackWalk64", stack_walk64);
     r.add("dbghelp.dll", "StackWalk", stack_walk64);
     r.add(
@@ -29,11 +37,19 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("dbghelp.dll", "SymGetModuleBase", sym_get_module_base64);
     r.add("dbghelp.dll", "MiniDumpWriteDump", mini_dump_write_dump);
     r.add("dbghelp.dll", "ImageNtHeader", image_nt_header);
-    r.add("dbghelp.dll", "ImageDirectoryEntryToData", image_directory_entry_to_data);
+    r.add(
+        "dbghelp.dll",
+        "ImageDirectoryEntryToData",
+        image_directory_entry_to_data,
+    );
     r.add("dbghelp.dll", "SymLoadModule64", sym_load_module64);
     r.add("dbghelp.dll", "SymLoadModuleEx", sym_load_module_ex);
     r.add("dbghelp.dll", "SymUnloadModule64", sym_unload_module64);
-    r.add("dbghelp.dll", "SymRefreshModuleList", sym_refresh_module_list);
+    r.add(
+        "dbghelp.dll",
+        "SymRefreshModuleList",
+        sym_refresh_module_list,
+    );
     r.add("dbghelp.dll", "SymSetSearchPath", sym_set_search_path);
     r.add("dbghelp.dll", "SymSetSearchPathW", sym_set_search_path);
     r.add("dbghelp.dll", "SymGetSearchPath", sym_get_search_path);

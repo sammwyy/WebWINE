@@ -8,8 +8,8 @@ use webwine_api::winapi::context::{ApiContext, Handled};
 use webwine_api::winapi::WinApiRegistry;
 
 use crate::{
-    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5, make_object_sized,
-    register_vtable, Vtable,
+    com_addref, com_qi, com_release, hr_ok_1, hr_ok_2, hr_ok_3, hr_ok_4, hr_ok_5,
+    make_object_sized, register_vtable, Vtable,
 };
 
 const S_OK: u32 = 0;
@@ -35,7 +35,10 @@ pub(crate) const IDIRECTSOUND8: Vtable = &[
     ("IDirectSound8::Release", com_release),
     ("IDirectSound8::CreateSoundBuffer", ds8_create_sound_buffer),
     ("IDirectSound8::GetCaps", ds8_get_caps),
-    ("IDirectSound8::DuplicateSoundBuffer", ds8_duplicate_sound_buffer),
+    (
+        "IDirectSound8::DuplicateSoundBuffer",
+        ds8_duplicate_sound_buffer,
+    ),
     ("IDirectSound8::SetCooperativeLevel", hr_ok_3),
     ("IDirectSound8::Compact", hr_ok_1),
     ("IDirectSound8::GetSpeakerConfig", ds8_get_speaker_config),
@@ -49,7 +52,10 @@ pub(crate) const IDIRECTSOUNDBUFFER8: Vtable = &[
     ("IDirectSoundBuffer8::AddRef", com_addref),
     ("IDirectSoundBuffer8::Release", com_release),
     ("IDirectSoundBuffer8::GetCaps", dsb_get_caps),
-    ("IDirectSoundBuffer8::GetCurrentPosition", dsb_get_current_position),
+    (
+        "IDirectSoundBuffer8::GetCurrentPosition",
+        dsb_get_current_position,
+    ),
     ("IDirectSoundBuffer8::GetFormat", dsb_get_format),
     ("IDirectSoundBuffer8::GetVolume", dsb_get_volume),
     ("IDirectSoundBuffer8::GetPan", dsb_get_pan),
@@ -58,7 +64,10 @@ pub(crate) const IDIRECTSOUNDBUFFER8: Vtable = &[
     ("IDirectSoundBuffer8::Initialize", hr_ok_3),
     ("IDirectSoundBuffer8::Lock", dsb_lock),
     ("IDirectSoundBuffer8::Play", dsb_play),
-    ("IDirectSoundBuffer8::SetCurrentPosition", dsb_set_current_position),
+    (
+        "IDirectSoundBuffer8::SetCurrentPosition",
+        dsb_set_current_position,
+    ),
     ("IDirectSoundBuffer8::SetFormat", hr_ok_2),
     ("IDirectSoundBuffer8::SetVolume", dsb_set_volume),
     ("IDirectSoundBuffer8::SetPan", dsb_set_pan),

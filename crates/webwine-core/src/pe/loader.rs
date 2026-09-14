@@ -125,9 +125,8 @@ pub fn extract_dialogs(pe: &PE, bytes: &[u8]) -> (HashMap<u32, Vec<u8>>, HashMap
     let rva_to_off = |rva: u32| -> Option<usize> {
         pe.sections.iter().find_map(|section| {
             let size = section.virtual_size.max(section.size_of_raw_data);
-            (rva >= section.virtual_address && rva < section.virtual_address + size).then_some(
-                (section.pointer_to_raw_data + rva - section.virtual_address) as usize,
-            )
+            (rva >= section.virtual_address && rva < section.virtual_address + size)
+                .then_some((section.pointer_to_raw_data + rva - section.virtual_address) as usize)
         })
     };
     let rd_u16 = |offset: usize| -> u16 {
@@ -222,9 +221,15 @@ pub fn extract_dialogs(pe: &PE, bytes: &[u8]) -> (HashMap<u32, Vec<u8>>, HashMap
 /// length-prefixed UTF-16 strings with ids (N-1)*16 through (N-1)*16+15.
 pub fn extract_string_table(pe: &PE, bytes: &[u8]) -> HashMap<u32, String> {
     let mut out = HashMap::new();
-    let Some(oh) = pe.header.optional_header else { return out };
-    let Some(res) = oh.data_directories.get_resource_table() else { return out };
-    if res.virtual_address == 0 { return out }
+    let Some(oh) = pe.header.optional_header else {
+        return out;
+    };
+    let Some(res) = oh.data_directories.get_resource_table() else {
+        return out;
+    };
+    if res.virtual_address == 0 {
+        return out;
+    }
     let rsrc_rva = res.virtual_address;
 
     let rva_to_off = |rva: u32| -> Option<usize> {
@@ -235,38 +240,63 @@ pub fn extract_string_table(pe: &PE, bytes: &[u8]) -> HashMap<u32, String> {
         })
     };
     let rd_u16 = |offset: usize| -> u16 {
-        bytes.get(offset..offset + 2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]])).unwrap_or(0)
+        bytes
+            .get(offset..offset + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .unwrap_or(0)
     };
     let rd_u32 = |offset: usize| -> u32 {
-        bytes.get(offset..offset + 4)
-            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).unwrap_or(0)
+        bytes
+            .get(offset..offset + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .unwrap_or(0)
     };
     let entries = |directory_rva: u32| -> Vec<(u32, u32, bool)> {
-        let Some(base) = rva_to_off(directory_rva) else { return Vec::new() };
+        let Some(base) = rva_to_off(directory_rva) else {
+            return Vec::new();
+        };
         let count = rd_u16(base + 12) as usize + rd_u16(base + 14) as usize;
-        (0..count).map(|index| {
-            let entry = base + 16 + index * 8;
-            let target = rd_u32(entry + 4);
-            (rd_u32(entry), target & 0x7FFF_FFFF, target & 0x8000_0000 != 0)
-        }).collect()
+        (0..count)
+            .map(|index| {
+                let entry = base + 16 + index * 8;
+                let target = rd_u32(entry + 4);
+                (
+                    rd_u32(entry),
+                    target & 0x7FFF_FFFF,
+                    target & 0x8000_0000 != 0,
+                )
+            })
+            .collect()
     };
 
     let Some((_, type_offset, true)) = entries(rsrc_rva).into_iter().find(|entry| entry.0 == 6)
-    else { return out };
+    else {
+        return out;
+    };
     for (block_id, block_offset, is_directory) in entries(rsrc_rva + type_offset) {
-        if !is_directory { continue }
+        if !is_directory {
+            continue;
+        }
         let Some((_, data_offset, false)) = entries(rsrc_rva + block_offset).into_iter().next()
-        else { continue };
-        let Some(data_entry) = rva_to_off(rsrc_rva + data_offset) else { continue };
-        let Some(mut cursor) = rva_to_off(rd_u32(data_entry)) else { continue };
+        else {
+            continue;
+        };
+        let Some(data_entry) = rva_to_off(rsrc_rva + data_offset) else {
+            continue;
+        };
+        let Some(mut cursor) = rva_to_off(rd_u32(data_entry)) else {
+            continue;
+        };
         for index in 0..16u32 {
             let length = rd_u16(cursor) as usize;
             cursor += 2;
             let units: Vec<u16> = (0..length).map(|i| rd_u16(cursor + i * 2)).collect();
             cursor += length * 2;
             if length != 0 {
-                out.insert((block_id.saturating_sub(1)) * 16 + index, String::from_utf16_lossy(&units));
+                out.insert(
+                    (block_id.saturating_sub(1)) * 16 + index,
+                    String::from_utf16_lossy(&units),
+                );
             }
         }
     }
@@ -1160,7 +1190,9 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../samples/vendored/Notepad/notepad-nt.exe"
         );
-        let Ok(bytes) = std::fs::read(path) else { return };
+        let Ok(bytes) = std::fs::read(path) else {
+            return;
+        };
         let pe = PE::parse(&bytes).expect("parse native notepad");
         let strings = extract_string_table(&pe, &bytes);
         assert!(!strings.is_empty(), "expected RT_STRING resources");

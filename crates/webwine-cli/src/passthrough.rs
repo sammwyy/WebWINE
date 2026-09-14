@@ -19,7 +19,10 @@ pub struct PassthroughStorageDriver {
 
 impl PassthroughStorageDriver {
     pub fn new(drive: char, root: impl Into<PathBuf>) -> Self {
-        PassthroughStorageDriver { drive: drive.to_ascii_uppercase(), root: root.into() }
+        PassthroughStorageDriver {
+            drive: drive.to_ascii_uppercase(),
+            root: root.into(),
+        }
     }
 
     /// Map a guest path (`X:\a\b`) to a host path under `root`. The drive letter
@@ -74,8 +77,8 @@ impl StorageDriver for PassthroughStorageDriver {
     fn list(&self, path: &str) -> Result<Vec<DirEntry>> {
         let h = self.host(path);
         let mut out = Vec::new();
-        let rd = fs::read_dir(&h)
-            .map_err(|e| VmError::NotFound(format!("{}: {e}", h.display())))?;
+        let rd =
+            fs::read_dir(&h).map_err(|e| VmError::NotFound(format!("{}: {e}", h.display())))?;
         for entry in rd.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let md = entry.metadata().ok();
@@ -83,7 +86,11 @@ impl StorageDriver for PassthroughStorageDriver {
             out.push(DirEntry {
                 name: name.clone(),
                 path: Self::child_guest_path(path, &name),
-                kind: if is_dir { EntryKind::Directory } else { EntryKind::File },
+                kind: if is_dir {
+                    EntryKind::Directory
+                } else {
+                    EntryKind::File
+                },
                 size: md.map(|m| m.len()).unwrap_or(0),
                 is_virtual: false,
             });
@@ -98,7 +105,11 @@ impl StorageDriver for PassthroughStorageDriver {
 
     fn delete(&mut self, path: &str) -> Result<()> {
         let h = self.host(path);
-        let r = if h.is_dir() { fs::remove_dir_all(&h) } else { fs::remove_file(&h) };
+        let r = if h.is_dir() {
+            fs::remove_dir_all(&h)
+        } else {
+            fs::remove_file(&h)
+        };
         r.map_err(|e| VmError::Internal(format!("delete {}: {e}", h.display())))
     }
 
@@ -117,12 +128,14 @@ impl StorageDriver for PassthroughStorageDriver {
 
     fn read_range(&self, path: &str, offset: usize, len: usize) -> Result<Vec<u8>> {
         let h = self.host(path);
-        let mut f = fs::File::open(&h)
-            .map_err(|e| VmError::NotFound(format!("{}: {e}", h.display())))?;
+        let mut f =
+            fs::File::open(&h).map_err(|e| VmError::NotFound(format!("{}: {e}", h.display())))?;
         f.seek(SeekFrom::Start(offset as u64))
             .map_err(|e| VmError::Internal(format!("seek {}: {e}", h.display())))?;
         let mut buf = vec![0u8; len];
-        let n = f.read(&mut buf).map_err(|e| VmError::Internal(format!("read {}: {e}", h.display())))?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| VmError::Internal(format!("read {}: {e}", h.display())))?;
         buf.truncate(n);
         Ok(buf)
     }

@@ -1702,26 +1702,50 @@ fn exec_shift(
     }
     let result = match op {
         ShiftOp::Shl => {
-            let carry = if cnt <= bits { (dst >> (bits - cnt)) & 1 } else { 0 };
+            let carry = if cnt <= bits {
+                (dst >> (bits - cnt)) & 1
+            } else {
+                0
+            };
             cpu.eflags = if cnt == 1 {
                 let overflow = ((dst >> (bits - 1)) ^ (dst >> (bits - 2))) & 1;
                 (cpu.eflags & !(CF | OF)) | carry | (overflow << 11)
             } else {
                 (cpu.eflags & !CF) | carry
             };
-            if cnt >= bits { 0 } else { (dst << cnt) & mask }
+            if cnt >= bits {
+                0
+            } else {
+                (dst << cnt) & mask
+            }
         }
         ShiftOp::Shr => {
-            let carry = if cnt <= bits { (dst >> (cnt - 1)) & 1 } else { 0 };
+            let carry = if cnt <= bits {
+                (dst >> (cnt - 1)) & 1
+            } else {
+                0
+            };
             cpu.eflags = (cpu.eflags & !CF) | carry;
-            if cnt >= bits { 0 } else { dst >> cnt }
+            if cnt >= bits {
+                0
+            } else {
+                dst >> cnt
+            }
         }
         ShiftOp::Sar => {
             let sign = (dst >> (bits - 1)) & 1;
-            let carry = if cnt <= bits { (dst >> (cnt - 1)) & 1 } else { sign };
+            let carry = if cnt <= bits {
+                (dst >> (cnt - 1)) & 1
+            } else {
+                sign
+            };
             cpu.eflags = (cpu.eflags & !CF) | carry;
             if cnt >= bits {
-                if sign != 0 { mask } else { 0 }
+                if sign != 0 {
+                    mask
+                } else {
+                    0
+                }
             } else {
                 match w {
                     1 => ((dst as i8) >> cnt) as u32 & mask,

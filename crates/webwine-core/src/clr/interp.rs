@@ -1,9 +1,11 @@
-﻿// A small CIL (Common Intermediate Language) interpreter. It executes the IL of
+// A small CIL (Common Intermediate Language) interpreter. It executes the IL of
 // managed methods on an evaluation stack, dispatching `call`s either to other
 // MethodDefs in the same assembly (interpreted recursively) or to BCL methods,
 // which are handled as internal calls in `webwine-api-net20`.
 
-use crate::clr::metadata::{decompress_uint, CodedKind, T_MEMBERREF, T_METHODDEF, T_STANDALONESIG, T_TYPEREF};
+use crate::clr::metadata::{
+    decompress_uint, CodedKind, T_MEMBERREF, T_METHODDEF, T_STANDALONESIG, T_TYPEREF,
+};
 use crate::clr::ClrImage;
 use crate::error::{Result, VmError};
 
@@ -15,8 +17,16 @@ use webwine_api_net20::{ManagedObject, Net20Runtime, Value};
 
 /// Resolved call target: either interpreted IL or a BCL internal call.
 pub enum CallTarget {
-    Method { row: u32, argc: usize, returns_value: bool },
-    Bcl { key: String, argc: usize, returns_value: bool },
+    Method {
+        row: u32,
+        argc: usize,
+        returns_value: bool,
+    },
+    Bcl {
+        key: String,
+        argc: usize,
+        returns_value: bool,
+    },
 }
 
 pub struct ClrRuntime<'a> {
@@ -62,7 +72,9 @@ impl<'a> ClrRuntime<'a> {
     /// on the stack at `ret`, if the method is non-void.
     pub fn run_method(&mut self, method_row: u32, mut args: Vec<Value>) -> Result<Option<Value>> {
         if self.call_depth > 200 {
-            return Err(VmError::Unsupported("CLR call stack overflow (depth > 200)".into()));
+            return Err(VmError::Unsupported(
+                "CLR call stack overflow (depth > 200)".into(),
+            ));
         }
         self.call_depth += 1;
 
@@ -92,9 +104,13 @@ impl<'a> ClrRuntime<'a> {
             let op = code[ip];
             ip += 1;
             match op {
-                0x00 => {}                                   // nop
-                0x01 => {}                                   // break
-                0x02..=0x05 => stack.push(args.get((op - 0x02) as usize).cloned().unwrap_or(Value::Null)), // ldarg.0..3
+                0x00 => {} // nop
+                0x01 => {} // break
+                0x02..=0x05 => stack.push(
+                    args.get((op - 0x02) as usize)
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ), // ldarg.0..3
                 0x06..=0x09 => stack.push(locals[(op - 0x06) as usize].clone()), // ldloc.0..3
                 0x0A..=0x0D => {
                     let v = stack.pop().unwrap_or(Value::Null);
@@ -102,18 +118,23 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x0E => {
                     // ldarg.s <u8>
-                    let i = code[ip] as usize; ip += 1;
+                    let i = code[ip] as usize;
+                    ip += 1;
                     stack.push(args.get(i).cloned().unwrap_or(Value::Null));
                 }
                 0x10 => {
                     // starg.s <u8>
-                    let i = code[ip] as usize; ip += 1;
+                    let i = code[ip] as usize;
+                    ip += 1;
                     let value = stack.pop().unwrap_or(Value::Null);
-                    if i < args.len() { args[i] = value; }
+                    if i < args.len() {
+                        args[i] = value;
+                    }
                 }
                 0x11 => {
                     // ldloc.s <u8>
-                    let i = code[ip] as usize; ip += 1;
+                    let i = code[ip] as usize;
+                    ip += 1;
                     stack.push(locals.get(i).cloned().unwrap_or(Value::Null));
                 }
                 0x12 => {
@@ -123,21 +144,26 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x13 => {
                     // stloc.s <u8>
-                    let i = code[ip] as usize; ip += 1;
+                    let i = code[ip] as usize;
+                    ip += 1;
                     let v = stack.pop().unwrap_or(Value::Null);
-                    if i < locals.len() { locals[i] = v; }
+                    if i < locals.len() {
+                        locals[i] = v;
+                    }
                 }
-                0x14 => stack.push(Value::Null),             // ldnull
-                0x15 => stack.push(Value::I4(-1)),           // ldc.i4.m1
+                0x14 => stack.push(Value::Null),   // ldnull
+                0x15 => stack.push(Value::I4(-1)), // ldc.i4.m1
                 0x16..=0x1E => stack.push(Value::I4((op as i32) - 0x16)), // ldc.i4.0..8
                 0x1F => {
                     // ldc.i4.s <i8>
-                    let v = code[ip] as i8 as i32; ip += 1;
+                    let v = code[ip] as i8 as i32;
+                    ip += 1;
                     stack.push(Value::I4(v));
                 }
                 0x20 => {
                     // ldc.i4 <i32>
-                    let v = i32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
+                    let v =
+                        i32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     stack.push(Value::I4(v));
                 }
@@ -150,7 +176,8 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x22 => {
                     // ldc.r4 <f32>
-                    let v = f32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
+                    let v =
+                        f32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     stack.push(Value::R8(v as f64));
                 }
@@ -171,7 +198,8 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x28 | 0x6F => {
                     // call (0x28) / callvirt (0x6F)
-                    let tok = u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
+                    let tok =
+                        u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     self.do_call(tok, &mut stack)?;
                 }
@@ -195,17 +223,23 @@ impl<'a> ClrRuntime<'a> {
                 }
                 0x72 => {
                     // ldstr <US token>
-                    let tok = u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
+                    let tok =
+                        u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     let s = self.img.meta.get_user_string(tok & 0x00FF_FFFF);
                     stack.push(Value::Str(s));
                 }
                 0x8D => {
                     // newarr <token>
-                    let _tok = u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
+                    let _tok =
+                        u32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
                     ip += 4;
                     let size = stack.pop().unwrap_or(Value::I4(0)).as_i4();
-                    stack.push(Value::Array(Rc::new(RefCell::new(vec![Value::Null; size.max(0) as usize]))));
+                    stack.push(Value::Array(Rc::new(RefCell::new(vec![
+                        Value::Null;
+                        size.max(0)
+                            as usize
+                    ]))));
                 }
                 0x8E => {
                     // ldlen
@@ -221,7 +255,9 @@ impl<'a> ClrRuntime<'a> {
                     let idx = stack.pop().unwrap_or(Value::I4(0)).as_i4();
                     let arr = stack.pop().unwrap_or(Value::Null);
                     let val = match arr {
-                        Value::Array(a) => a.borrow().get(idx as usize).cloned().unwrap_or(Value::Null),
+                        Value::Array(a) => {
+                            a.borrow().get(idx as usize).cloned().unwrap_or(Value::Null)
+                        }
                         _ => Value::Null,
                     };
                     stack.push(val);
@@ -242,11 +278,17 @@ impl<'a> ClrRuntime<'a> {
                 0x58 => bin_i4(&mut stack, |a, b| a.wrapping_add(b)), // add
                 0x59 => bin_i4(&mut stack, |a, b| a.wrapping_sub(b)), // sub
                 0x5A => bin_i4(&mut stack, |a, b| a.wrapping_mul(b)), // mul
-                0x5B => bin_i4(&mut stack, |a, b| if b != 0 { a.wrapping_div(b) } else { 0 }), // div
-                0x5D => bin_i4(&mut stack, |a, b| if b != 0 { a.wrapping_rem(b) } else { 0 }), // rem
-                0x5F => bin_i4(&mut stack, |a, b| a & b),            // and
-                0x60 => bin_i4(&mut stack, |a, b| a | b),            // or
-                0x61 => bin_i4(&mut stack, |a, b| a ^ b),            // xor
+                0x5B => bin_i4(
+                    &mut stack,
+                    |a, b| if b != 0 { a.wrapping_div(b) } else { 0 },
+                ), // div
+                0x5D => bin_i4(
+                    &mut stack,
+                    |a, b| if b != 0 { a.wrapping_rem(b) } else { 0 },
+                ), // rem
+                0x5F => bin_i4(&mut stack, |a, b| a & b),             // and
+                0x60 => bin_i4(&mut stack, |a, b| a | b),             // or
+                0x61 => bin_i4(&mut stack, |a, b| a ^ b),             // xor
                 0x62 => bin_i4(&mut stack, |a, b| a.wrapping_shl(b as u32)), // shl
                 0x63 => bin_i4(&mut stack, |a, b| a.wrapping_shr(b as u32)), // shr
                 0x65 => {
@@ -286,7 +328,12 @@ impl<'a> ClrRuntime<'a> {
                     ip += 4;
                     let object = stack.pop().unwrap_or(Value::Null);
                     let value = match object {
-                        Value::Object(object) => object.borrow().fields.get(&tok).cloned().unwrap_or(Value::Null),
+                        Value::Object(object) => object
+                            .borrow()
+                            .fields
+                            .get(&tok)
+                            .cloned()
+                            .unwrap_or(Value::Null),
                         _ => Value::Null,
                     };
                     stack.push(value);
@@ -321,14 +368,16 @@ impl<'a> ClrRuntime<'a> {
                 // comparisons (push 0/1)
                 0xFE => {
                     // two-byte opcodes
-                    let op2 = code[ip]; ip += 1;
+                    let op2 = code[ip];
+                    ip += 1;
                     match op2 {
-                        0x01 => cmp_i4(&mut stack, |a, b| a == b),  // ceq
-                        0x02 => cmp_i4(&mut stack, |a, b| a > b),   // cgt
-                        0x04 => cmp_i4(&mut stack, |a, b| a < b),   // clt
+                        0x01 => cmp_i4(&mut stack, |a, b| a == b), // ceq
+                        0x02 => cmp_i4(&mut stack, |a, b| a > b),  // cgt
+                        0x04 => cmp_i4(&mut stack, |a, b| a < b),  // clt
                         0x09 => {
                             // ldarg <u16>
-                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
+                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize;
+                            ip += 2;
                             stack.push(args.get(i).cloned().unwrap_or(Value::Null));
                         }
                         0x06 | 0x07 => {
@@ -340,46 +389,57 @@ impl<'a> ClrRuntime<'a> {
                         }
                         0x0B => {
                             // starg <u16>
-                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
+                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize;
+                            ip += 2;
                             let value = stack.pop().unwrap_or(Value::Null);
-                            if i < args.len() { args[i] = value; }
+                            if i < args.len() {
+                                args[i] = value;
+                            }
                         }
                         0x0C => {
                             // ldloc <u16>
-                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
+                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize;
+                            ip += 2;
                             stack.push(locals.get(i).cloned().unwrap_or(Value::Null));
                         }
                         0x0E => {
                             // stloc <u16>
-                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize; ip += 2;
+                            let i = u16::from_le_bytes([code[ip], code[ip + 1]]) as usize;
+                            ip += 2;
                             let v = stack.pop().unwrap_or(Value::Null);
-                            if i < locals.len() { locals[i] = v; }
+                            if i < locals.len() {
+                                locals[i] = v;
+                            }
                         }
                         0x15 => {
                             // initobj <token>
                             ip += 4;
                             stack.pop();
                         }
-                        _ => return Err(VmError::Unsupported(format!("unimplemented CIL opcode FE {op2:02X}"))),
+                        _ => {
+                            return Err(VmError::Unsupported(format!(
+                                "unimplemented CIL opcode FE {op2:02X}"
+                            )))
+                        }
                     }
                 }
                 // branches
-                0x2B => ip = branch_short(&code, ip, true),                  // br.s
-                0x2C => ip = branch_short(&code, ip, !pop_bool(&mut stack)),  // brfalse.s
-                0x2D => ip = branch_short(&code, ip, pop_bool(&mut stack)),  // brtrue.s
+                0x2B => ip = branch_short(&code, ip, true), // br.s
+                0x2C => ip = branch_short(&code, ip, !pop_bool(&mut stack)), // brfalse.s
+                0x2D => ip = branch_short(&code, ip, pop_bool(&mut stack)), // brtrue.s
                 0x2E => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a == b), // beq.s
                 0x2F => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a >= b), // bge.s
-                0x30 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a > b),  // bgt.s
+                0x30 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a > b), // bgt.s
                 0x31 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a <= b), // ble.s
-                0x32 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a < b),  // blt.s
+                0x32 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a < b), // blt.s
                 0x33 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| a != b), // bne.un.s
                 0x34 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) >= (b as u32)), // bge.un.s
-                0x35 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) > (b as u32)),  // bgt.un.s
+                0x35 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) > (b as u32)), // bgt.un.s
                 0x36 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) <= (b as u32)), // ble.un.s
-                0x37 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) < (b as u32)),  // blt.un.s
-                0x38 => ip = branch_long(&code, ip, true),                  // br
-                0x39 => ip = branch_long(&code, ip, !pop_bool(&mut stack)),   // brfalse
-                0x3A => ip = branch_long(&code, ip, pop_bool(&mut stack)),  // brtrue
+                0x37 => ip = branch_cmp_s(&code, ip, &mut stack, |a, b| (a as u32) < (b as u32)), // blt.un.s
+                0x38 => ip = branch_long(&code, ip, true), // br
+                0x39 => ip = branch_long(&code, ip, !pop_bool(&mut stack)), // brfalse
+                0x3A => ip = branch_long(&code, ip, pop_bool(&mut stack)), // brtrue
                 0x3B => ip = branch_cmp(&code, ip, &mut stack, |a, b| a == b), // beq
                 0x3C => ip = branch_cmp(&code, ip, &mut stack, |a, b| a >= b), // bge
                 0x3D => ip = branch_cmp(&code, ip, &mut stack, |a, b| a > b), // bgt
@@ -407,10 +467,14 @@ impl<'a> ClrRuntime<'a> {
                     ip += 4;
                     stack.push(Value::I4(tok as i32));
                 }
-                0xDC => {} // endfinally
-                0xDD => ip = branch_long(&code, ip, true), // leave
+                0xDC => {}                                  // endfinally
+                0xDD => ip = branch_long(&code, ip, true),  // leave
                 0xDE => ip = branch_short(&code, ip, true), // leave.s
-                _ => return Err(VmError::Unsupported(format!("unimplemented CIL opcode 0x{op:02X}"))),
+                _ => {
+                    return Err(VmError::Unsupported(format!(
+                        "unimplemented CIL opcode 0x{op:02X}"
+                    )))
+                }
             }
         }
         self.call_depth -= 1;
@@ -420,14 +484,22 @@ impl<'a> ClrRuntime<'a> {
     fn do_call(&mut self, tok: u32, stack: &mut Vec<Value>) -> Result<()> {
         let target = self.resolve_call(tok)?;
         match target {
-            CallTarget::Method { row, argc, returns_value } => {
+            CallTarget::Method {
+                row,
+                argc,
+                returns_value,
+            } => {
                 let args = pop_args(stack, argc);
                 let result = self.run_method(row, args)?;
                 if returns_value {
                     stack.push(result.unwrap_or(Value::Null));
                 }
             }
-            CallTarget::Bcl { key, argc, returns_value } => {
+            CallTarget::Bcl {
+                key,
+                argc,
+                returns_value,
+            } => {
                 let args = pop_args(stack, argc);
                 let result = webwine_api_net20::dispatch(&key, args, self);
                 if returns_value {
@@ -461,7 +533,11 @@ impl<'a> ClrRuntime<'a> {
             CallTarget::Bcl { key, argc, .. } => {
                 let explicit = pop_args(stack, argc.saturating_sub(1));
                 let object = Value::Object(Rc::new(RefCell::new(ManagedObject {
-                    type_name: key.split("::").next().unwrap_or("System.Object").to_string(),
+                    type_name: key
+                        .split("::")
+                        .next()
+                        .unwrap_or("System.Object")
+                        .to_string(),
                     fields: HashMap::new(),
                     text: String::new(),
                 })));
@@ -484,7 +560,11 @@ impl<'a> ClrRuntime<'a> {
             T_METHODDEF => {
                 let sig = m.get_blob(m.col(T_METHODDEF, row, 4));
                 let (argc, returns_value) = parse_method_sig(sig);
-                Ok(CallTarget::Method { row, argc, returns_value })
+                Ok(CallTarget::Method {
+                    row,
+                    argc,
+                    returns_value,
+                })
             }
             T_MEMBERREF => {
                 let (parent_table, parent_row) =
@@ -496,11 +576,19 @@ impl<'a> ClrRuntime<'a> {
                 let type_name = if parent_table == T_TYPEREF {
                     let tn = m.get_string(m.col(T_TYPEREF, parent_row, 1));
                     let ns = m.get_string(m.col(T_TYPEREF, parent_row, 2));
-                    if ns.is_empty() { tn } else { format!("{ns}.{tn}") }
+                    if ns.is_empty() {
+                        tn
+                    } else {
+                        format!("{ns}.{tn}")
+                    }
                 } else {
                     String::new()
                 };
-                Ok(CallTarget::Bcl { key: format!("{type_name}::{name}"), argc, returns_value })
+                Ok(CallTarget::Bcl {
+                    key: format!("{type_name}::{name}"),
+                    argc,
+                    returns_value,
+                })
             }
             _ => Err(VmError::Unsupported(format!(
                 "unsupported call token table 0x{table:02X}"
@@ -530,8 +618,7 @@ impl<'a> ClrRuntime<'a> {
                 .img
                 .rva_bytes(rva, 12)
                 .ok_or_else(|| VmError::Pe("fat method header out of range".into()))?;
-            let code_size =
-                u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
+            let code_size = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
             let locals_tok = u32::from_le_bytes([head[8], head[9], head[10], head[11]]);
             let local_count = self.local_count(locals_tok);
             let code = self
@@ -586,7 +673,8 @@ impl Net20Runtime for ClrRuntime<'_> {
             width: 800,
             height: 600,
         });
-        self.ui_events.push(UiEvent::ShowWindow { hwnd, show: true });
+        self.ui_events
+            .push(UiEvent::ShowWindow { hwnd, show: true });
         self.waiting_for_input = true;
     }
 }
@@ -638,22 +726,40 @@ fn pop_bool(stack: &mut Vec<Value>) -> bool {
 fn branch_short(code: &[u8], ip: usize, take: bool) -> usize {
     let off = code[ip] as i8 as i32;
     let next = ip + 1;
-    if take { (next as i32 + off) as usize } else { next }
+    if take {
+        (next as i32 + off) as usize
+    } else {
+        next
+    }
 }
 
 fn branch_long(code: &[u8], ip: usize, take: bool) -> usize {
     let off = i32::from_le_bytes([code[ip], code[ip + 1], code[ip + 2], code[ip + 3]]);
     let next = ip + 4;
-    if take { (next as i32 + off) as usize } else { next }
+    if take {
+        (next as i32 + off) as usize
+    } else {
+        next
+    }
 }
 
-fn branch_cmp_s(code: &[u8], ip: usize, stack: &mut Vec<Value>, f: impl Fn(i32, i32) -> bool) -> usize {
+fn branch_cmp_s(
+    code: &[u8],
+    ip: usize,
+    stack: &mut Vec<Value>,
+    f: impl Fn(i32, i32) -> bool,
+) -> usize {
     let b = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     let a = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     branch_short(code, ip, f(a, b))
 }
 
-fn branch_cmp(code: &[u8], ip: usize, stack: &mut Vec<Value>, f: impl Fn(i32, i32) -> bool) -> usize {
+fn branch_cmp(
+    code: &[u8],
+    ip: usize,
+    stack: &mut Vec<Value>,
+    f: impl Fn(i32, i32) -> bool,
+) -> usize {
     let b = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     let a = stack.pop().map(|v| v.as_i4()).unwrap_or(0);
     branch_long(code, ip, f(a, b))

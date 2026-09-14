@@ -55,8 +55,12 @@ pub fn register(r: &mut WinApiRegistry) {
         ("shell32.dll", "ShellExecuteW", shell_execute_w),
         ("shell32.dll", "ShellExecuteExA", shell_execute_ex),
         ("shell32.dll", "ShellExecuteExW", shell_execute_ex),
-        ("shell32.dll", "SHGetFolderPathA", |c| sh_get_folder_path(c, false)),
-        ("shell32.dll", "SHGetFolderPathW", |c| sh_get_folder_path(c, true)),
+        ("shell32.dll", "SHGetFolderPathA", |c| {
+            sh_get_folder_path(c, false)
+        }),
+        ("shell32.dll", "SHGetFolderPathW", |c| {
+            sh_get_folder_path(c, true)
+        }),
         ("shell32.dll", "SHGetFolderPathEx", sh_get_folder_path_ex),
         ("shell32.dll", "SHGetMalloc", sh_get_malloc),
         (
@@ -64,7 +68,11 @@ pub fn register(r: &mut WinApiRegistry) {
             "SHGetSpecialFolderLocation",
             sh_get_special_folder_location,
         ),
-        ("shell32.dll", "SHGetKnownFolderIDList", sh_get_known_folder_id_list),
+        (
+            "shell32.dll",
+            "SHGetKnownFolderIDList",
+            sh_get_known_folder_id_list,
+        ),
         ("shell32.dll", "CommandLineToArgvW", command_line_to_argv_w),
         (
             "shell32.dll",
@@ -88,8 +96,12 @@ pub fn register(r: &mut WinApiRegistry) {
         ("shell32.dll", "SHFileOperationW", sh_file_operation),
         ("shell32.dll", "SHBrowseForFolderA", sh_browse_for_folder),
         ("shell32.dll", "SHBrowseForFolderW", sh_browse_for_folder),
-        ("shell32.dll", "SHGetPathFromIDListA", |c| sh_get_path_from_id_list(c, false)),
-        ("shell32.dll", "SHGetPathFromIDListW", |c| sh_get_path_from_id_list(c, true)),
+        ("shell32.dll", "SHGetPathFromIDListA", |c| {
+            sh_get_path_from_id_list(c, false)
+        }),
+        ("shell32.dll", "SHGetPathFromIDListW", |c| {
+            sh_get_path_from_id_list(c, true)
+        }),
         ("shell32.dll", "ILFree", il_free),
         ("shell32.dll", "SHFree", sh_free),
     ];
@@ -462,7 +474,10 @@ fn sh_get_path_from_id_list(c: &mut ApiContext, wide: bool) -> Handled {
 
 fn write_path_buf(c: &mut ApiContext, out: u32, path: &str, wide: bool, max_chars: usize) {
     if wide {
-        let units: Vec<u16> = path.encode_utf16().take(max_chars.saturating_sub(1)).collect();
+        let units: Vec<u16> = path
+            .encode_utf16()
+            .take(max_chars.saturating_sub(1))
+            .collect();
         for (i, u) in units.iter().enumerate() {
             let _ = c.memory.write_u16(out + i as u32 * 2, *u);
         }

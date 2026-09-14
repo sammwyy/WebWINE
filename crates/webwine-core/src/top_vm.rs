@@ -265,7 +265,9 @@ impl WebWineVm {
                         let state = if rt.is_waiting_for_input() {
                             ProcessState::WaitingForInput
                         } else {
-                            ProcessState::Exited { exit_code: code as u32 }
+                            ProcessState::Exited {
+                                exit_code: code as u32,
+                            }
                         };
                         (rt.stdout, rt.ui_events, state)
                     }

@@ -48,8 +48,16 @@ pub trait StorageDriver: std::fmt::Debug + Send {
             return Err(crate::error::VmError::NotFound(path.to_string()));
         }
         let is_dir = self.is_dir(path);
-        let size = if is_dir { 0 } else { self.len(path).unwrap_or(0) as u64 };
-        Ok(FileStat { size, is_dir, is_virtual: false })
+        let size = if is_dir {
+            0
+        } else {
+            self.len(path).unwrap_or(0) as u64
+        };
+        Ok(FileStat {
+            size,
+            is_dir,
+            is_virtual: false,
+        })
     }
 
     /// File length. Default reads the whole file; override for efficiency.

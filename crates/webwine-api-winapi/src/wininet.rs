@@ -21,23 +21,47 @@ pub fn register(r: &mut WinApiRegistry) {
     r.add("wininet.dll", "InternetOpenA", |c| internet_open(c, false));
     r.add("wininet.dll", "InternetOpenW", |c| internet_open(c, true));
     r.add("wininet.dll", "InternetCloseHandle", internet_close_handle);
-    r.add("wininet.dll", "InternetOpenUrlA", |c| internet_open_url(c, false));
-    r.add("wininet.dll", "InternetOpenUrlW", |c| internet_open_url(c, true));
-    r.add("wininet.dll", "InternetConnectA", |c| internet_connect(c, false));
-    r.add("wininet.dll", "InternetConnectW", |c| internet_connect(c, true));
+    r.add("wininet.dll", "InternetOpenUrlA", |c| {
+        internet_open_url(c, false)
+    });
+    r.add("wininet.dll", "InternetOpenUrlW", |c| {
+        internet_open_url(c, true)
+    });
+    r.add("wininet.dll", "InternetConnectA", |c| {
+        internet_connect(c, false)
+    });
+    r.add("wininet.dll", "InternetConnectW", |c| {
+        internet_connect(c, true)
+    });
     r.add("wininet.dll", "InternetReadFile", internet_read_file);
     r.add("wininet.dll", "InternetWriteFile", internet_write_file);
-    r.add("wininet.dll", "InternetQueryDataAvailable", internet_query_data_available);
+    r.add(
+        "wininet.dll",
+        "InternetQueryDataAvailable",
+        internet_query_data_available,
+    );
     r.add("wininet.dll", "InternetSetOptionA", internet_set_option);
     r.add("wininet.dll", "InternetSetOptionW", internet_set_option);
     r.add("wininet.dll", "InternetQueryOptionA", internet_query_option);
     r.add("wininet.dll", "InternetQueryOptionW", internet_query_option);
-    r.add("wininet.dll", "HttpOpenRequestA", |c| http_open_request(c, false));
-    r.add("wininet.dll", "HttpOpenRequestW", |c| http_open_request(c, true));
-    r.add("wininet.dll", "HttpSendRequestA", |c| http_send_request(c, false));
-    r.add("wininet.dll", "HttpSendRequestW", |c| http_send_request(c, true));
-    r.add("wininet.dll", "HttpQueryInfoA", |c| http_query_info(c, false));
-    r.add("wininet.dll", "HttpQueryInfoW", |c| http_query_info(c, true));
+    r.add("wininet.dll", "HttpOpenRequestA", |c| {
+        http_open_request(c, false)
+    });
+    r.add("wininet.dll", "HttpOpenRequestW", |c| {
+        http_open_request(c, true)
+    });
+    r.add("wininet.dll", "HttpSendRequestA", |c| {
+        http_send_request(c, false)
+    });
+    r.add("wininet.dll", "HttpSendRequestW", |c| {
+        http_send_request(c, true)
+    });
+    r.add("wininet.dll", "HttpQueryInfoA", |c| {
+        http_query_info(c, false)
+    });
+    r.add("wininet.dll", "HttpQueryInfoW", |c| {
+        http_query_info(c, true)
+    });
     r.add(
         "wininet.dll",
         "InternetGetConnectedState",
@@ -53,13 +77,37 @@ pub fn register(r: &mut WinApiRegistry) {
         "InternetGetConnectedStateExW",
         internet_get_connected_state_ex,
     );
-    r.add("wininet.dll", "InternetCheckConnectionA", internet_check_connection);
-    r.add("wininet.dll", "InternetCheckConnectionW", internet_check_connection);
-    r.add("wininet.dll", "InternetCrackUrlA", |c| internet_crack_url(c, false));
-    r.add("wininet.dll", "InternetCrackUrlW", |c| internet_crack_url(c, true));
-    r.add("wininet.dll", "InternetSetStatusCallbackA", internet_set_status_callback);
-    r.add("wininet.dll", "InternetSetStatusCallbackW", internet_set_status_callback);
-    r.add("wininet.dll", "InternetSetStatusCallback", internet_set_status_callback);
+    r.add(
+        "wininet.dll",
+        "InternetCheckConnectionA",
+        internet_check_connection,
+    );
+    r.add(
+        "wininet.dll",
+        "InternetCheckConnectionW",
+        internet_check_connection,
+    );
+    r.add("wininet.dll", "InternetCrackUrlA", |c| {
+        internet_crack_url(c, false)
+    });
+    r.add("wininet.dll", "InternetCrackUrlW", |c| {
+        internet_crack_url(c, true)
+    });
+    r.add(
+        "wininet.dll",
+        "InternetSetStatusCallbackA",
+        internet_set_status_callback,
+    );
+    r.add(
+        "wininet.dll",
+        "InternetSetStatusCallbackW",
+        internet_set_status_callback,
+    );
+    r.add(
+        "wininet.dll",
+        "InternetSetStatusCallback",
+        internet_set_status_callback,
+    );
 }
 
 fn next_handle(c: &mut ApiContext, tag: u32) -> u32 {
@@ -80,11 +128,7 @@ fn internet_open(c: &mut ApiContext, wide: bool) -> Handled {
     let h = next_handle(c, TAG_SESSION);
     c.dll_state.insert(format!("wininet.h.{h}"), 1);
     if agent != 0 {
-        let name = if wide {
-            c.wstr(agent)
-        } else {
-            c.cstr(agent)
-        };
+        let name = if wide { c.wstr(agent) } else { c.cstr(agent) };
         c.logs.log(
             webwine_api::logs::LogLevel::Trace,
             "api",
@@ -132,7 +176,8 @@ fn internet_open_url(c: &mut ApiContext, wide: bool) -> Handled {
     // Offline: still hand back a handle so callers can Close it; ReadFile → EOF.
     let h = next_handle(c, TAG_URL);
     c.dll_state.insert(format!("wininet.h.{h}"), 1);
-    c.dll_state.insert(format!("wininet.url.{h}"), url.len() as u32);
+    c.dll_state
+        .insert(format!("wininet.url.{h}"), url.len() as u32);
     c.return_stdcall(h, 6);
     Handled::Ok
 }
@@ -151,11 +196,7 @@ fn internet_connect(c: &mut ApiContext, wide: bool) -> Handled {
         c.return_stdcall(0, 8);
         return Handled::Ok;
     }
-    let _host = if wide {
-        c.wstr(server)
-    } else {
-        c.cstr(server)
-    };
+    let _host = if wide { c.wstr(server) } else { c.cstr(server) };
     // No network: fail with CANNOT_CONNECT (apps often fall back to offline UI).
     c.cpu.last_error = ERROR_INTERNET_CANNOT_CONNECT;
     c.return_stdcall(0, 8);
@@ -311,11 +352,7 @@ fn internet_crack_url(c: &mut ApiContext, wide: bool) -> Handled {
         c.return_stdcall(0, 4);
         return Handled::Ok;
     }
-    let _s = if wide {
-        c.wstr(url)
-    } else {
-        c.cstr(url)
-    };
+    let _s = if wide { c.wstr(url) } else { c.cstr(url) };
     // Leave URL_COMPONENTS as-is (caller sets dwStructSize / buffer sizes).
     c.return_stdcall(1, 4);
     Handled::Ok

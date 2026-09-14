@@ -17,18 +17,42 @@ const SYNTH_LENGTH: u32 = 92;
 const SYNTH_BUF_SIZE: u32 = SYNTH_LENGTH * 2 + 4;
 
 pub fn register(r: &mut WinApiRegistry) {
-    r.add("version.dll", "GetFileVersionInfoSizeA", |c| get_file_version_info_size(c, false, false));
-    r.add("version.dll", "GetFileVersionInfoSizeW", |c| get_file_version_info_size(c, true, false));
-    r.add("version.dll", "GetFileVersionInfoSizeExA", |c| get_file_version_info_size(c, false, true));
-    r.add("version.dll", "GetFileVersionInfoSizeExW", |c| get_file_version_info_size(c, true, true));
-    r.add("version.dll", "GetFileVersionInfoA", |c| get_file_version_info(c, false, false));
-    r.add("version.dll", "GetFileVersionInfoW", |c| get_file_version_info(c, true, false));
-    r.add("version.dll", "GetFileVersionInfoExA", |c| get_file_version_info(c, false, true));
-    r.add("version.dll", "GetFileVersionInfoExW", |c| get_file_version_info(c, true, true));
-    r.add("version.dll", "VerQueryValueA", |c| ver_query_value(c, false));
-    r.add("version.dll", "VerQueryValueW", |c| ver_query_value(c, true));
-    r.add("version.dll", "VerLanguageNameA", |c| ver_language_name(c, false));
-    r.add("version.dll", "VerLanguageNameW", |c| ver_language_name(c, true));
+    r.add("version.dll", "GetFileVersionInfoSizeA", |c| {
+        get_file_version_info_size(c, false, false)
+    });
+    r.add("version.dll", "GetFileVersionInfoSizeW", |c| {
+        get_file_version_info_size(c, true, false)
+    });
+    r.add("version.dll", "GetFileVersionInfoSizeExA", |c| {
+        get_file_version_info_size(c, false, true)
+    });
+    r.add("version.dll", "GetFileVersionInfoSizeExW", |c| {
+        get_file_version_info_size(c, true, true)
+    });
+    r.add("version.dll", "GetFileVersionInfoA", |c| {
+        get_file_version_info(c, false, false)
+    });
+    r.add("version.dll", "GetFileVersionInfoW", |c| {
+        get_file_version_info(c, true, false)
+    });
+    r.add("version.dll", "GetFileVersionInfoExA", |c| {
+        get_file_version_info(c, false, true)
+    });
+    r.add("version.dll", "GetFileVersionInfoExW", |c| {
+        get_file_version_info(c, true, true)
+    });
+    r.add("version.dll", "VerQueryValueA", |c| {
+        ver_query_value(c, false)
+    });
+    r.add("version.dll", "VerQueryValueW", |c| {
+        ver_query_value(c, true)
+    });
+    r.add("version.dll", "VerLanguageNameA", |c| {
+        ver_language_name(c, false)
+    });
+    r.add("version.dll", "VerLanguageNameW", |c| {
+        ver_language_name(c, true)
+    });
 }
 
 fn read_path(c: &ApiContext, ptr: u32, wide: bool) -> String {
@@ -363,8 +387,11 @@ fn extract_version_resource(pe: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let data_rva = u32::from_le_bytes(res[data_entry_off..data_entry_off + 4].try_into().ok()?);
-    let data_size =
-        u32::from_le_bytes(res[data_entry_off + 4..data_entry_off + 8].try_into().ok()?) as usize;
+    let data_size = u32::from_le_bytes(
+        res[data_entry_off + 4..data_entry_off + 8]
+            .try_into()
+            .ok()?,
+    ) as usize;
     let data_file = rva_to_offset(pe, sections_off, num_sections, data_rva)?;
     if data_file + data_size > pe.len() {
         return None;
