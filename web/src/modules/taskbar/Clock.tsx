@@ -4,24 +4,34 @@
  */
 
 import { useState, useEffect } from "react";
+import { useSettingsStore } from "@/state/settingsStore";
 
-function getTimeString(): string {
+function getTimeString(seconds: boolean): string {
   return new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+    ...(seconds ? { second: "2-digit" } : {}),
   });
 }
 
 export function Clock() {
-  const [time, setTime] = useState(getTimeString);
+  const seconds = useSettingsStore((s) => s.clockSeconds);
+  const [time, setTime] = useState(() => getTimeString(seconds));
 
   useEffect(() => {
-    const id = setInterval(() => setTime(getTimeString()), 1000);
+    setTime(getTimeString(seconds));
+    const id = setInterval(() => setTime(getTimeString(seconds)), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [seconds]);
 
   return (
-    <div id="taskbar-clock" className="h-full px-3 flex items-center justify-center text-[12px] select-none min-w-[70px] whitespace-nowrap" aria-label="System clock" aria-live="polite">
+    <div
+      id="taskbar-clock"
+      className="ww-clock whitespace-nowrap"
+      title={new Date().toLocaleDateString([], { dateStyle: "full" })}
+      aria-label="System clock"
+      aria-live="polite"
+    >
       {time}
     </div>
   );

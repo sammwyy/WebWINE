@@ -20,6 +20,7 @@ import type { LogEvent, UiEvent } from "@/core/wasm/worker";
 import { handleUiEvents } from "../guest-window/GuestWindowApp";
 import { basename } from "@/shared/lib/utils";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
+import { iconUrl } from "@/shared/lib/personalization";
 
 export interface ConsoleOptions {
   debug?: boolean;
@@ -46,7 +47,7 @@ export async function openProcessConsole(
   );
   const icon =
     resolved?.src ||
-    `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
+    iconUrl("shell/default_executable");
 
   let winId = "";
   winId = useWindowStore.getState().openWindow({

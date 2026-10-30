@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftFilled, ArrowRightFilled, ArrowUpFilled } from "@fluentui/react-icons";
 
 import { useWindowStore } from "@/state/windowStore";
 import { useClipboardStore } from "@/state/clipboardStore";
@@ -13,7 +12,6 @@ import { openPeInspector } from "../pe-inspector/PeInspectorApp";
 import { openProperties } from "../properties/PropertiesApp";
 import { openTextReader } from "../text-reader/TextReaderApp";
 import { ContextMenu, SEPARATOR, type MenuItem } from "@/modules/desktop/ContextMenu";
-import { MenuBar, type MenuBarItem } from "@/shared/components/MenuBar";
 import {
   copyPayloadToDir,
   createShortcut,
@@ -25,6 +23,26 @@ import {
   toPayloadEntry,
 } from "@/shared/lib/clipboard";
 import { resolveIcon, ICON_PLACEHOLDER } from "@/shared/lib/icons/icon-resolver";
+import { showPrompt } from "../prompt/PromptDialog";
+import {
+  AddressBar,
+  Button,
+  Command,
+  CommandBar,
+  CommandSpacer,
+  DetailsPane,
+  DialogFooter,
+  Input,
+  NavButtons,
+  NavLink,
+  NavPane,
+  NavSection,
+  SearchBox,
+  Select,
+} from "@/shared/ui";
+import { SystemIcon } from "@/shared/icons";
+import { GlassPanel, WindowBody } from "@/modules/windows";
+import { iconUrl, useIconPack } from "@/shared/lib/personalization";
 
 const ROOT_PATH = "";
 const DRIVE_PATH = "C:\\";
@@ -61,9 +79,12 @@ export function openExplorer(initialPath = ROOT_PATH, runtime: RuntimeBridge) {
   const title = displayPath(normalizePath(initialPath));
   const id = useWindowStore.getState().openWindow({
     title,
-    icon: `${import.meta.env.BASE_URL}theme/icons/apps/explorer.webp`,
+    icon: iconUrl("apps/explorer"),
     width: 920,
     height: 560,
+    minWidth: 420,
+    minHeight: 280,
+    extendGlass: true,
     content: <div />,
   });
 
@@ -113,12 +134,12 @@ export function ExplorerApp({
   const [viewSize, setViewSize] = useState<ExplorerViewSize>("medium");
   const [showHidden, setShowHidden] = useState(false);
   const [hideExtensions, setHideExtensions] = useState(false);
-  const [renameEntry, setRenameEntry] = useState<DirectoryEntry | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [ctx, setCtx] = useState<{
     x: number;
     y: number;
     entry: DirectoryEntry | null;
+    /** explicit items (command bar drop-downs); otherwise the context menu for `entry` */
+    items?: MenuItem[];
   } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pickerName, setPickerName] = useState(picker?.defaultName ?? "");
@@ -133,27 +154,29 @@ export function ExplorerApp({
     picker?.onPick(/^[a-z]:\\/i.test(n) ? n : `${path.replace(/\\+$/g, "")}\\${n}`);
   };
 
+  const iconPack = useIconPack();
   const sections = useMemo<SidebarSection[]>(
     () => [
       {
         section: "Quick access",
         items: [
-          { label: "Your PC", path: ROOT_PATH, icon: `${import.meta.env.BASE_URL}theme/icons/places/thispc.webp` },
+          { label: "Your PC", path: ROOT_PATH, icon: iconUrl("places/thispc") },
           ...USER_FOLDERS.map((f) => ({
             label: f.label,
             path: f.path,
-            icon: `${import.meta.env.BASE_URL}theme/icons/places/${f.place}.webp`,
+            icon: iconUrl(`places/${f.place}`),
           })),
         ],
       },
       {
         section: "Drives",
         items: [
-          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: `${import.meta.env.BASE_URL}theme/icons/shell/drive_main.webp` },
+          { label: "Local Disk (C:)", path: DRIVE_PATH, icon: iconUrl("shell/drive_main") },
         ],
       },
     ],
-    [],
+    // recompute the icon URLs when the icon pack changes
+    [iconPack],
   );
 
   const commonDestinations = useMemo(
@@ -320,11 +343,30 @@ export function ExplorerApp({
     }
   }, [path, refreshCurrent, runtime, selectedEntries]);
 
+  /** Rename entry, or create a folder in the current directory when it has no path. */
+  const promptName = useCallback(
+    async (entry: DirectoryEntry, initial: string) => {
+      const name = await showPrompt({
+        title: entry.path ? "Rename" : "New Folder",
+        label: entry.path ? "New name:" : "Folder name:",
+        value: initial,
+      });
+      if (!runtime || !name) return;
+      try {
+        if (entry.path) await runtime.renameNode(entry.path, name);
+        else await runtime.createDirectory(`\\${name}`);
+        refreshCurrent();
+      } catch (err) {
+        log("fs", `rename failed: ${err}`, "error");
+      }
+    },
+    [path, refreshCurrent, runtime],
+  );
+
   const createNewDirectory = useCallback(async () => {
     if (!runtime || !canMutateCurrent) return;
-    setRenameEntry({ name: "", path: "", kind: "directory", size: 0 });
-    setRenameValue("New folder");
-  }, [canMutateCurrent, runtime]);
+    void promptName({ name: "", path: "", kind: "directory", size: 0 }, "New folder");
+  }, [canMutateCurrent, runtime, promptName]);
 
   const deleteSelection = useCallback(async () => {
     if (!runtime) return;
@@ -344,9 +386,8 @@ export function ExplorerApp({
   const startRenameSelection = useCallback(() => {
     const selected = selectedEntries();
     if (selected.length !== 1) return;
-    setRenameEntry(selected[0]);
-    setRenameValue(selected[0].name);
-  }, [selectedEntries]);
+    void promptName(selected[0], selected[0].name);
+  }, [selectedEntries, promptName]);
 
   const copySelectionTo = useCallback(
     async (destDir: string, move: boolean) => {
@@ -364,22 +405,6 @@ export function ExplorerApp({
     [refreshCurrent, runtime, selectedEntries],
   );
 
-  const confirmRename = useCallback(async () => {
-    if (!runtime || !renameEntry || !renameValue.trim()) return;
-    const name = renameValue.trim();
-    try {
-      if (renameEntry.path) {
-        await runtime.renameNode(renameEntry.path, name);
-      } else {
-        await runtime.createDirectory(`${path}\\${name}`);
-      }
-      setRenameEntry(null);
-      refreshCurrent();
-    } catch (err) {
-      log("fs", `rename failed: ${err}`, "error");
-    }
-  }, [path, refreshCurrent, renameEntry, renameValue, runtime]);
-
   const dropInto = useCallback(
     async (destDir: string, e: React.DragEvent) => {
       if (!runtime) return;
@@ -396,22 +421,6 @@ export function ExplorerApp({
       }
     },
     [refreshCurrent, runtime],
-  );
-
-  const buildFileMenu = useCallback(
-    (): MenuItem[] => [
-      {
-        label: "Upload file",
-        disabled: !runtime || !canMutateCurrent,
-        action: () => uploadHere(path, false),
-      },
-      {
-        label: "Upload directory",
-        disabled: !runtime || !canMutateCurrent,
-        action: () => uploadHere(path, true),
-      },
-    ],
-    [canMutateCurrent, path, runtime, uploadHere],
   );
 
   const buildDestinationMenu = useCallback(
@@ -532,15 +541,6 @@ export function ExplorerApp({
     [hideExtensions, showHidden, sortKey, viewSize],
   );
 
-  const menuBarItems = useMemo<MenuBarItem[]>(
-    () => [
-      { label: "File", items: buildFileMenu() },
-      { label: "Start", items: buildStartMenu() },
-      { label: "View", items: buildViewMenu() },
-    ],
-    [buildFileMenu, buildStartMenu, buildViewMenu],
-  );
-
   const buildContextMenu = useCallback(
     (entry: DirectoryEntry | null): MenuItem[] => {
       const isFolderTarget = entry?.kind === "directory";
@@ -647,8 +647,7 @@ export function ExplorerApp({
           label: "Rename",
           disabled: menuSelection.length !== 1,
           action: () => {
-            setRenameEntry(menuSelection[0]);
-            setRenameValue(menuSelection[0].name);
+            void promptName(menuSelection[0], menuSelection[0].name);
           },
         });
         items.push(SEPARATOR);
@@ -714,145 +713,139 @@ export function ExplorerApp({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [canMutateCurrent, copySelection, pasteInto, path, runtime]);
 
-  return (
+  const openCommandMenu = (e: React.MouseEvent<HTMLElement>, items: MenuItem[]) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCtx({ x: rect.left, y: rect.bottom, entry: null, items });
+  };
+
+  const details = selected.length === 1 ? selected[0] : null;
+  const showHeader = !(viewSize === "mosaic" || path === ROOT_PATH);
+  const pickerEntries = picker
+    ? visibleEntries.filter(
+        (e) => e.kind === "directory" || matchesPickerFilter(e.name, pickerFilters[pickerFilterIdx]?.pattern ?? "*.*"),
+      )
+    : visibleEntries;
+
+  const rowProps = (entry: DirectoryEntry) => ({
+    entry,
+    selected: selectedPaths.includes(entry.path),
+    selectedEntries: selected,
+    hideExtension: hideExtensions,
+    onNavigate: navigate,
+    runtime,
+    onOpenFile,
+    onDropInto: dropInto,
+    onSelect: (event: React.MouseEvent) => {
+      if (picker && entry.kind === "file") setPickerName(entry.name);
+      setSelectedPaths((current) => {
+        if (event.ctrlKey || event.metaKey) {
+          return current.includes(entry.path) ? current.filter((p) => p !== entry.path) : [...current, entry.path];
+        }
+        return [entry.path];
+      });
+    },
+    onContextMenu: (event: React.MouseEvent) => {
+      if (!selectedPaths.includes(entry.path)) setSelectedPaths([entry.path]);
+      setCtx({ x: event.clientX, y: event.clientY, entry });
+    },
+  });
+
+  const sortCol = (key: ExplorerSortKey, label: string, className = "") => (
     <div
-      ref={surfaceRef}
-      className="h-full min-h-0 flex flex-col text-[#f2f2f2] bg-[#111111]"
-      tabIndex={0}
+      className={`ww-listview-col ${sortKey === key ? "sorted" : ""} ${className}`}
+      onClick={() => setSortKey(key)}
     >
-      <MenuBar items={menuBarItems} />
+      {label}
+    </div>
+  );
 
-      <div className="flex-none flex items-center gap-1 px-2 py-1 border-b border-[var(--window-border)] bg-[#191919]">
-        <NavButton label={<ArrowLeftFilled />} disabled={!canGoBack} title="Back" onClick={goBack} />
-        <NavButton label={<ArrowRightFilled />} disabled={!canGoForward} title="Forward" onClick={goForward} />
-        <NavButton label={<ArrowUpFilled />} disabled={!parent} title="Up" onClick={() => parent && navigate(parent)} />
-
-        <form
-          className="flex-1 min-w-[220px]"
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate(address);
-            setAddressEditing(false);
-          }}
-        >
-          {addressEditing ? (
-            <input
-              className="w-full h-[30px] px-[9px] border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
-              value={address}
-              autoFocus
-              onBlur={() => setAddressEditing(false)}
-              onChange={(e) => setAddress(e.target.value)}
-              aria-label="Path"
-              spellCheck={false}
-            />
-          ) : (
-            <button
-              type="button"
-              className="w-full h-[30px] px-2 border border-[#4a4a4a] rounded-none bg-[#111111] hover:border-[#666] text-left flex items-center gap-2 overflow-hidden"
-              onClick={() => setAddressEditing(true)}
-            >
-              <img src={`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`} alt="" className="w-4 h-4 object-contain flex-none" draggable={false} />
-              <Breadcrumb path={path} onNavigate={navigate} />
-            </button>
-          )}
-        </form>
-
-        <input
-          className="w-[220px] max-[720px]:w-[140px] h-[30px] px-2 border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
+  return (
+    <div ref={surfaceRef} className="flex flex-col flex-1 min-h-0 outline-none" tabIndex={-1}>
+      <GlassPanel>
+        <NavButtons
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          canGoUp={!!parent}
+          onBack={goBack}
+          onForward={goForward}
+          onUp={() => parent !== null && navigate(parent)}
+        />
+        <AddressBar
+          icon={iconUrl("places/thispc")}
+          path={breadcrumbParts(path).map((part) => ({
+            label: part.label,
+            icon: iconUrl(part.path === ROOT_PATH ? "places/thispc" : part.path === DRIVE_PATH ? "shell/drive_main" : "shell/folder"),
+            onClick: () => navigate(part.path),
+          }))}
+          editValue={displayPath(path)}
+          onNavigate={navigate}
+          onRefresh={refreshCurrent}
+        />
+        <SearchBox
+          className="w-[200px] shrink-0 max-[720px]:w-[130px]"
+          placeholder={`Search ${currentFolderLabel}`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${currentFolderLabel}`}
-          aria-label="Search"
-          spellCheck={false}
         />
-      </div>
+      </GlassPanel>
 
-      <div className="flex-1 min-h-0 grid grid-cols-[208px_minmax(0,1fr)] max-[620px]:grid-cols-1">
-        <aside
-          className="min-w-0 min-h-0 py-2 px-0 overflow-y-auto border-r border-[#2b2b2b] bg-[#191919] max-[620px]:hidden"
-          aria-label="Explorer shortcuts">
-          {sections.map((section) => (
-            <div key={section.section} className="mt-3 first:mt-0">
-              <div className="px-3 pb-1.5 text-[#a6a6a6] text-[11px] font-normal">
-                {section.section}
-              </div>
-              {section.items.map((item) => {
-                const isActive = normalizePath(item.path) === path;
-                return (
-                  <button
+      <WindowBody>
+        <CommandBar>
+          <Command dropdown onClick={(e) => openCommandMenu(e, buildStartMenu())}>
+            Organize
+          </Command>
+          <Command dropdown icon={<SystemIcon name="view-list-details" />} onClick={(e) => openCommandMenu(e, buildViewMenu())}>
+            Views
+          </Command>
+          {canMutateCurrent && (
+            <>
+              <Command icon={iconUrl("shell/folder")} onClick={() => void createNewDirectory()}>
+                New folder
+              </Command>
+              <Command
+                icon={iconUrl("exts/default")}
+                dropdown
+                onClick={(e) =>
+                  openCommandMenu(e, [
+                    { label: "Upload files…", action: () => uploadHere(path, false) },
+                    { label: "Upload folder…", action: () => uploadHere(path, true) },
+                  ])
+                }
+              >
+                Upload
+              </Command>
+            </>
+          )}
+          {details && (
+            <Command icon={<SystemIcon name="document-properties" />} onClick={() => void openProperties(details, runtime)}>
+              Properties
+            </Command>
+          )}
+          <CommandSpacer />
+          <Command title="Refresh" icon={<SystemIcon name="view-refresh" />} onClick={refreshCurrent} />
+        </CommandBar>
+
+        <div className="flex flex-1 min-h-0">
+          <NavPane width={196} className="max-[620px]:hidden" footer={picker ? undefined : "Folders"}>
+            {sections.map((section) => (
+              <NavSection key={section.section} title={section.section}>
+                {section.items.map((item) => (
+                  <NavLink
                     key={item.label}
-                    type="button"
-                    className={[
-                      "w-full min-h-[32px] flex items-center gap-[9px]",
-                      "py-[5px] px-3 rounded-none cursor-default",
-                      "text-[12px] text-left text-[#f2f2f2]",
-                      "border border-transparent",
-                      "hover:bg-[rgba(255,255,255,0.09)]",
-                      isActive
-                        ? "bg-[rgba(255,255,255,0.13)] border-[rgba(255,255,255,0.08)]"
-                        : "bg-transparent",
-                    ].join(" ")}
-                    onClick={() => navigate(item.path)}>
-                    <img src={item.icon} alt="" className="w-5 h-5 object-contain flex-none" draggable={false} />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </aside>
-
-        <section className="min-w-0 min-h-0 flex flex-col bg-[var(--window-bg)]">
-          <div className="hidden">
-            <button
-              type="button"
-              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-              disabled={!canGoBack}
-              title="Back"
-              onClick={goBack}
-            >
-              ‹
-            </button>
-
-            <button
-              type="button"
-              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[18px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-              disabled={!canGoForward}
-              title="Forward"
-              onClick={goForward}
-            >
-              ›
-            </button>
-
-            <button
-              type="button"
-              className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[15px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-              disabled={!parent}
-              title="Up"
-              onClick={() => parent && navigate(parent)}
-            >
-              ↑
-            </button>
-
-            <form
-              className="flex-1 min-w-0 ml-1"
-              onSubmit={(e) => {
-                e.preventDefault();
-                navigate(address);
-              }}
-            >
-              <input
-                className="w-full h-[30px] px-[9px] border border-[#4a4a4a] rounded-none bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                aria-label="Path"
-                spellCheck={false}
-              />
-            </form>
-          </div>
+                    icon={item.icon}
+                    selected={normalizePath(item.path) === path}
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </NavSection>
+            ))}
+          </NavPane>
 
           <div
-            className={`flex-1 min-h-0 overflow-auto pb-2 ${dragOver ? "outline-2 outline-dashed outline-[var(--accent)] outline-offset-[-3px]" : ""}`}
+            className={`ww-listview ${dragOver ? "outline-2 outline-dashed outline-[var(--ww-accent)] outline-offset-[-3px]" : ""}`}
+            tabIndex={0}
             role="table"
             aria-label="Folder contents"
             onContextMenu={(e) => {
@@ -879,32 +872,26 @@ export function ExplorerApp({
               setSelectedPaths([]);
             }}
           >
-            {!(viewSize === "mosaic" || path === ROOT_PATH) && (
-              <div
-                className="sticky top-0 z-10 h-[30px] px-3 text-[#a6a6a6] border-b border-[#2b2b2b] bg-[#111111] text-[11px] grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px]"
-                role="row"
-              >
-                <span>Name</span>
-                <span className="max-[720px]:hidden">Date modified</span>
-                <span>Type</span>
-                <span className="text-right">Size</span>
+            {showHeader && (
+              <div className="ww-listview-header explorer-cols" role="row">
+                {sortCol("name", "Name")}
+                {sortCol("date", "Date modified", "max-[720px]:hidden")}
+                {sortCol("type", "Type")}
+                {sortCol("size", "Size", "justify-end")}
               </div>
             )}
 
-            {error && <div className="text-[#d13438] py-[18px] px-[14px] text-[12px]">Error: {error}</div>}
-            {!error && visibleEntries.length === 0 && (
-              <div className="text-[var(--shell-muted)] py-[18px] px-[14px] text-[12px]">
-                {search.trim() ? "No items match your search." : "This folder is empty."}
-              </div>
-            )}
+            <div className="ww-listview-body">
+              {error && <div className="px-3 py-4 text-[var(--ww-danger)]">Error: {error}</div>}
+              {!error && pickerEntries.length === 0 && (
+                <div className="px-3 py-4 ww-muted">
+                  {search.trim() ? "No items match your search." : "This folder is empty."}
+                </div>
+              )}
 
-            {!error && path === ROOT_PATH && (
-              <div className="flex flex-col p-2">
-                {[
-                  {
-                    title: "Folders",
-                    items: visibleEntries.filter((e) => USER_FOLDERS.some((f) => f.path === e.path)),
-                  },
+              {!error && path === ROOT_PATH &&
+                [
+                  { title: "Folders", items: visibleEntries.filter((e) => USER_FOLDERS.some((f) => f.path === e.path)) },
                   {
                     title: "Devices and drives",
                     items: visibleEntries.filter((e) => e.path === DRIVE_PATH || /^[a-zA-Z]:\\$/.test(e.path)),
@@ -921,232 +908,107 @@ export function ExplorerApp({
                 ]
                   .filter((group) => group.items.length > 0)
                   .map((group) => (
-                    <div key={group.title} className="mb-4">
-                      <div className="text-[13px] text-[#f2f2f2] font-semibold mb-2 px-1 border-b border-[rgba(255,255,255,0.1)] pb-1">
-                        {group.title} ({group.items.length})
+                    <div key={group.title}>
+                      <div className="ww-listview-group">
+                        <span>
+                          {group.title} ({group.items.length})
+                        </span>
                       </div>
-                      <div className="flex flex-wrap">
+                      <div className="ww-listview-tiles">
                         {group.items.map((entry) => (
-                          <ExplorerRow
-                            key={entry.path}
-                            entry={entry}
-                            selected={selectedPaths.includes(entry.path)}
-                            selectedEntries={selectedEntries()}
-                            hideExtension={hideExtensions}
-                            viewSize="mosaic"
-                            onNavigate={navigate}
-                            runtime={runtime}
-                            onOpenFile={onOpenFile}
-                            onSelect={(event) => {
-                              if (picker && entry.kind === "file") setPickerName(entry.name);
-                              setSelectedPaths((current) => {
-                                if (event.ctrlKey || event.metaKey) {
-                                  return current.includes(entry.path)
-                                    ? current.filter((p) => p !== entry.path)
-                                    : [...current, entry.path];
-                                }
-                                return [entry.path];
-                              });
-                            }}
-                            onContextMenu={(event) => {
-                              if (!selectedPaths.includes(entry.path)) setSelectedPaths([entry.path]);
-                              setCtx({ x: event.clientX, y: event.clientY, entry });
-                            }}
-                            onDropInto={dropInto}
-                          />
+                          <ExplorerRow key={entry.path} {...rowProps(entry)} viewSize="mosaic" />
                         ))}
                       </div>
                     </div>
                   ))}
-              </div>
-            )}
 
-            {!error && path !== ROOT_PATH && (
-              <div className={viewSize === "mosaic" ? "flex flex-wrap p-2" : ""}>
-                {(picker
-                  ? visibleEntries.filter(
-                    (e) =>
-                      e.kind === "directory" ||
-                      matchesPickerFilter(e.name, pickerFilters[pickerFilterIdx]?.pattern ?? "*.*"),
-                  )
-                  : visibleEntries
-                ).map((entry) => (
-                  <ExplorerRow
-                    key={entry.path}
-                    entry={entry}
-                    selected={selectedPaths.includes(entry.path)}
-                    selectedEntries={selectedEntries()}
-                    hideExtension={hideExtensions}
-                    viewSize={viewSize}
-                    onNavigate={navigate}
-                    runtime={runtime}
-                    onOpenFile={onOpenFile}
-                    onSelect={(event) => {
-                      if (picker && entry.kind === "file") setPickerName(entry.name);
-                      setSelectedPaths((current) => {
-                        if (event.ctrlKey || event.metaKey) {
-                          return current.includes(entry.path)
-                            ? current.filter((path) => path !== entry.path)
-                            : [...current, entry.path];
-                        }
-                        return [entry.path];
-                      });
-                    }}
-                    onContextMenu={(event) => {
-                      if (!selectedPaths.includes(entry.path)) {
-                        setSelectedPaths([entry.path]);
-                      }
-                      setCtx({ x: event.clientX, y: event.clientY, entry });
-                    }}
-                    onDropInto={dropInto}
-                  />
-                ))}
-              </div>
-            )}
+              {!error && path !== ROOT_PATH && (
+                <div className={viewSize === "mosaic" ? "ww-listview-tiles" : ""}>
+                  {pickerEntries.map((entry) => (
+                    <ExplorerRow key={entry.path} {...rowProps(entry)} viewSize={viewSize} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+
+        {!picker && (
+          <DetailsPane
+            icon={details ? <ExplorerEntryIcon entry={details} runtime={runtime} /> : iconUrl(path === ROOT_PATH ? "places/thispc" : "shell/folder")}
+            title={details ? details.name : currentFolderLabel}
+            properties={
+              details
+                ? [
+                    ["Type", entryType(details)],
+                    ...(details.kind === "file" ? [["Size", formatSize(details.size)] as [string, string]] : []),
+                    ["Location", parentPath(details.path) ? displayPath(parentPath(details.path)!) : "This PC"],
+                  ]
+                : [
+                    ["Items", String(visibleEntries.length)],
+                    ...(selected.length > 1 ? [["Selected", `${selected.length} items`] as [string, string]] : []),
+                  ]
+            }
+          />
+        )}
+
+        {picker && (
+          <DialogFooter className="flex-col !items-stretch">
+            <div className="flex items-center gap-2">
+              <span className="w-16">File name:</span>
+              <Input
+                className="flex-1"
+                value={pickerName}
+                autoFocus
+                onChange={(e) => setPickerName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitPicker()}
+              />
+              {pickerFilters.length > 0 && (
+                <Select
+                  className="max-w-[180px]"
+                  value={pickerFilterIdx}
+                  onChange={(e) => setPickerFilterIdx(Number(e.target.value))}
+                >
+                  {pickerFilters.map((f, i) => (
+                    <option key={i} value={i}>
+                      {f.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button isDefault onClick={submitPicker}>
+                {picker.save ? "Save" : "Open"}
+              </Button>
+              <Button onClick={() => picker.onPick(null)}>Cancel</Button>
+            </div>
+          </DialogFooter>
+        )}
+      </WindowBody>
+
       {ctx && (
         <ContextMenu
           x={ctx.x}
           y={ctx.y}
-          items={buildContextMenu(ctx.entry)}
+          items={ctx.items ?? buildContextMenu(ctx.entry)}
           onClose={() => setCtx(null)}
         />
       )}
-      {renameEntry !== null && (
-        <RenameDialog
-          value={renameValue}
-          onChange={setRenameValue}
-          onCancel={() => setRenameEntry(null)}
-          onConfirm={() => void confirmRename()}
-        />
-      )}
-      {picker && (
-        <div className="flex flex-col gap-2 px-3 py-2 border-t border-[rgba(127,127,127,0.25)] bg-[#1d1d1d] flex-none">
-          <div className="flex items-center gap-2">
-            <span className="w-16 text-[12px] opacity-70">File name</span>
-            <input
-              className="flex-1 bg-[#2b2b2b] border border-[rgba(127,127,127,0.3)] rounded px-2 py-1 text-[13px] outline-none"
-              value={pickerName}
-              autoFocus
-              onChange={(e) => setPickerName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitPicker()}
-            />
-            {pickerFilters.length > 0 && (
-              <select
-                className="bg-[#2b2b2b] border border-[rgba(127,127,127,0.3)] rounded px-2 py-1 text-[13px] outline-none max-w-[180px]"
-                value={pickerFilterIdx}
-                onChange={(e) => setPickerFilterIdx(Number(e.target.value))}
-              >
-                {pickerFilters.map((f, i) => (
-                  <option key={i} value={i}>{f.label}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button className="px-4 py-1 rounded bg-[#3a3a3a] hover:bg-[#454545] text-[13px]" onClick={() => picker.onPick(null)}>Cancel</button>
-            <button className="px-4 py-1 rounded bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-[13px]" onClick={submitPicker}>
-              {picker.save ? "Save" : "Open"}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-
-function NavButton({
-  label,
-  disabled,
-  title,
-  onClick,
-}: {
-  label: string | React.ReactNode;
-  disabled?: boolean;
-  title: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="w-8 h-8 grid place-items-center rounded-none border border-transparent bg-transparent text-[#f2f2f2] text-[15px] cursor-default hover:bg-[rgba(255,255,255,0.10)] disabled:opacity-35 disabled:hover:bg-transparent"
-      disabled={disabled}
-      title={title}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
+/** Large icon of an entry (details pane). */
+function ExplorerEntryIcon({ entry, runtime }: { entry: DirectoryEntry; runtime: RuntimeBridge }) {
+  const [src, setSrc] = useState(ICON_PLACEHOLDER);
+  useEffect(() => {
+    resolveIcon(entry, runtime)
+      .then((resolved) => setSrc(resolved.src))
+      .catch(() => {});
+  }, [entry, runtime]);
+  return <img src={src} alt="" draggable={false} />;
 }
-
-function Breadcrumb({
-  path,
-  onNavigate,
-}: {
-  path: string;
-  onNavigate: (path: string) => void;
-}) {
-  const parts = breadcrumbParts(path);
-  return (
-    <span className="min-w-0 flex items-center overflow-hidden text-[12px] text-[#f2f2f2]">
-      {parts.map((part, index) => (
-        <span key={`${part.path}-${index}`} className="min-w-0 flex items-center">
-          {index > 0 && <span className="px-1 text-[#a6a6a6]">&gt;</span>}
-          <span
-            role="button"
-            tabIndex={-1}
-            className="px-1 h-[22px] flex items-center hover:bg-[rgba(255,255,255,0.10)] overflow-hidden text-ellipsis whitespace-nowrap"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigate(part.path);
-            }}
-          >
-            {part.label}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function RenameDialog({
-  value,
-  onChange,
-  onCancel,
-  onConfirm,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div
-      className="fixed left-1/2 top-[40%] z-[9600] w-[320px] -translate-x-1/2 -translate-y-1/2 p-3 text-[#f2f2f2] border border-[rgba(255,255,255,0.1)] rounded-none shadow-[0_16px_42px_rgba(0,0,0,0.55)]"
-      style={{ background: "rgba(31,31,31,0.96)" }}
-    >
-      <input
-        className="block w-full mb-2 bg-[#1b1b1b] border border-[#5f5f5f] rounded-none text-white outline-none focus:border-[#0078d7] px-2 py-1 text-[13px]"
-        autoFocus
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onConfirm();
-          if (e.key === "Escape") onCancel();
-        }}
-      />
-      <div className="flex gap-2 justify-end">
-        <button className="bg-[#0078d7] border border-[#0078d7] rounded-none text-white px-4 py-1 text-[13px]" type="button" onClick={onConfirm}>OK</button>
-        <button className="bg-[#2d2d2d] border border-[#3f3f3f] rounded-none text-white px-4 py-1 text-[13px]" type="button" onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
 
 function ExplorerRow({
   entry,
@@ -1182,30 +1044,16 @@ function ExplorerRow({
   }, [entry, runtime]);
 
   const isDir = entry.kind === "directory";
-  const lowerName = entry.name.toLowerCase();
-  const type = isDir
-    ? entry.path === DRIVE_PATH
-      ? "Drive"
-      : lowerName.endsWith(".lnk")
-        ? "Shortcut"
-        : "File folder"
-    : lowerName.endsWith(".exe")
-      ? "Application"
-      : lowerName.endsWith(".lnk")
-        ? "Shortcut"
-        : lowerName.endsWith(".txt") || lowerName.endsWith(".log")
-          ? "Text document"
-          : "File";
+  const type = entryType(entry);
   const isMosaic = viewSize === "mosaic";
-  const iconSize = isMosaic ? 42 : viewSize === "large" ? 30 : viewSize === "small" ? 18 : 22;
-  const rowHeight = isMosaic ? 60 : viewSize === "large" ? 42 : viewSize === "small" ? 28 : 34;
+  const iconSize = isMosaic ? 40 : viewSize === "large" ? 32 : viewSize === "small" ? 16 : 20;
   const display = hideExtension && entry.kind === "file" ? nameWithoutExtension(entry.name) : entry.name;
 
   return (
-    <button
-      className={isMosaic ? `w-[240px] m-1 px-3 py-2 flex flex-row items-center gap-4 border rounded-[var(--row-radius)] text-inherit cursor-default text-[12px] text-left hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] outline-none ${selected ? "bg-[var(--icon-selected-bg)] border-[var(--icon-selected-border)]" : "bg-transparent border-transparent"}` : `w-[calc(100%-8px)] mx-1 my-px px-2 border rounded-[var(--row-radius)] text-inherit cursor-default text-[12px] text-left grid grid-cols-[minmax(220px,1fr)_140px_132px_90px] items-center gap-x-3 max-[720px]:grid-cols-[minmax(160px,1fr)_112px_76px] hover:bg-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.09)] outline-none ${selected ? "bg-[var(--icon-selected-bg)] border-[var(--icon-selected-border)]" : "bg-transparent border-transparent"}`}
-      style={{ minHeight: rowHeight }}
-      type="button"
+    <div
+      className={`${isMosaic ? "ww-listview-tile" : "ww-listview-row explorer-cols"} ${selected ? "selected" : ""}`}
+      style={isMosaic ? undefined : { height: "auto", minHeight: iconSize + 6 }}
+      role="row"
       data-explorer-row="true"
       draggable
       onClick={onSelect}
@@ -1249,22 +1097,24 @@ function ExplorerRow({
       {isMosaic ? (
         <>
           <img src={imgSrc || undefined} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
-          <div className="flex flex-col min-w-0">
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
-            <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
+          <div className="ww-tile-text">
+            <span className="truncate">{display}</span>
+            <span className="muted truncate">{type}</span>
+            {!isDir && <span className="muted truncate">{formatSize(entry.size)}</span>}
           </div>
         </>
       ) : (
         <>
-          <span className="min-w-0 flex items-center gap-[9px]">
+          <span className="ww-listview-cell flex items-center gap-[7px]">
             <img src={imgSrc || undefined} alt="" className="object-contain flex-none" style={{ width: iconSize, height: iconSize }} draggable={false} />
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{display}</span>
+            <span className="truncate">{display}</span>
           </span>
-          <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap max-[720px]:hidden"></span>
-          <span className="text-[var(--shell-muted)] text-[11px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{type}</span>
-          <span className="text-[var(--shell-muted)] text-[11px] text-right min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{isDir ? "" : formatSize(entry.size)}</span>
+          <span className="ww-listview-cell muted max-[720px]:hidden"></span>
+          <span className="ww-listview-cell muted">{type}</span>
+          <span className="ww-listview-cell muted text-right">{isDir ? "" : formatSize(entry.size)}</span>
         </>
-      )}    </button>
+      )}
+    </div>
   );
 }
 

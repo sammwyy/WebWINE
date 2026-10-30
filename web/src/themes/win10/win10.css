@@ -1,0 +1,622 @@
+/* Windows 10 theme — square, solid, accent-coloured */
+/* Everything is scoped to [data-theme~="win10"] (set on <html>). */
+
+@layer components {
+[data-theme~="win10"] {
+  --ww-taskbar-h: 40px;
+  --win10-accent: #0078d7;
+  --win10-accent-dark: #005a9e;
+  --win10-hover: #e5f3ff;
+  --win10-hover-border: #cce8ff;
+  --win10-selected: #cce8ff;
+  --win10-selected-border: #99d1ff;
+
+  /* desktop / shell */
+
+  .ww-desktop {
+    background:
+      radial-gradient(ellipse 70% 90% at 70% 45%, rgba(80, 170, 255, 0.55), transparent 70%),
+      linear-gradient(135deg, #00264d, #004c99 55%, #0063b1);
+  }
+
+  .ww-desktop-icon:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .ww-desktop-icon .label {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  }
+
+  .ww-taskbar {
+    gap: 0;
+    padding: 0;
+    background: rgba(16, 16, 16, 0.9);
+    backdrop-filter: blur(20px);
+  }
+
+  .ww-taskbar-items {
+    gap: 0;
+  }
+
+  .ww-taskbar-item {
+    height: 100%;
+    color: #fff;
+    border: 0;
+    border-bottom: 2px solid transparent;
+  }
+
+  .ww-taskbar-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .ww-taskbar-item.active {
+    background: rgba(255, 255, 255, 0.16);
+    border-bottom-color: #76b9ed;
+  }
+
+  .ww-taskbar-item:not(.minimized):not(.active) {
+    border-bottom-color: rgba(118, 185, 237, 0.55);
+  }
+
+  .ww-start-button {
+    width: 48px;
+    height: 100%;
+    border: 0;
+    background: transparent;
+  }
+
+  .ww-start-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .ww-start-logo {
+    color: #fff;
+  }
+
+  .ww-start-button:hover .ww-start-logo,
+  .ww-start-button.open .ww-start-logo {
+    color: #429ce3;
+  }
+
+  .ww-start-button.open {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .ww-clock {
+    color: #fff;
+  }
+
+  .ww-start-menu {
+    left: 0;
+    bottom: var(--ww-taskbar-h);
+    background: rgba(31, 31, 31, 0.94);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.45);
+  }
+
+  .ww-start-menu-right {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .ww-start-heading {
+    color: #a0a0a0;
+  }
+
+  .ww-start-item,
+  .ww-start-link {
+    color: #fff;
+  }
+
+  .ww-start-item:hover,
+  .ww-start-link:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .ww-start-item.all {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .ww-start-user {
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  /* window frame */
+
+  .ww-window {
+    --ww-frame: 0px;
+    --ww-caption: 31px;
+    color: #000;
+    background: #fff;
+    border: 1px solid var(--win10-accent);
+    box-shadow: 0 7px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .ww-window.inactive {
+    border-color: #aaa;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+
+  .ww-window.maximized {
+    --ww-frame: 0px;
+    border-width: 0;
+  }
+
+  .ww-window-caption {
+    padding-left: 8px;
+    gap: 7px;
+  }
+
+  .ww-window.inactive .ww-window-title > span {
+    color: #999;
+  }
+
+  .ww-caption-buttons {
+    align-self: stretch;
+  }
+
+  .ww-caption-btn {
+    width: 46px;
+    height: 100%;
+    color: #000;
+    transition: background-color 0.1s;
+  }
+
+  .ww-caption-btn:hover {
+    background: #e5e5e5;
+  }
+
+  .ww-caption-btn:active {
+    background: #cacaca;
+  }
+
+  .ww-caption-btn.close:hover {
+    color: #fff;
+    background: #e81123;
+  }
+
+  .ww-caption-btn.close:active {
+    color: #fff;
+    background: #f1707a;
+  }
+
+  .ww-window.inactive .ww-caption-btn {
+    color: #999;
+  }
+
+  .ww-body {
+    background: #fff;
+  }
+
+  .ww-body.face {
+    background: #f0f0f0;
+  }
+
+  .ww-glass-panel {
+    padding: 4px 8px 6px;
+  }
+
+  /* scrollbars */
+
+  * {
+    scrollbar-color: #c1c1c1 #f0f0f0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f0f0f0;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border: 3px solid #f0f0f0;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: #f0f0f0;
+  }
+
+  /* controls */
+
+  .ww-button {
+    color: #000;
+    border: 1px solid #adadad;
+    background: #e1e1e1;
+    transition: background-color 0.1s, border-color 0.1s;
+  }
+
+  .ww-button:hover:not(:disabled) {
+    border-color: var(--win10-accent);
+    background: #e5f1fb;
+  }
+
+  .ww-button:active:not(:disabled) {
+    border-color: var(--win10-accent-dark);
+    background: #cce4f7;
+  }
+
+  .ww-button.default,
+  .ww-button:focus-visible {
+    border-color: var(--win10-accent);
+    box-shadow: inset 0 0 0 1px var(--win10-accent);
+  }
+
+  .ww-button:disabled {
+    color: #838383;
+    border-color: #bfbfbf;
+    background: #ccc;
+  }
+
+  .ww-input {
+    color: #000;
+    background: #fff;
+    border: 1px solid #7a7a7a;
+  }
+
+  .ww-input:hover {
+    border-color: #000;
+  }
+
+  .ww-input:focus {
+    border-color: var(--win10-accent);
+  }
+
+  .ww-input::placeholder {
+    color: #767676;
+  }
+
+  .ww-input:disabled {
+    color: #6d6d6d;
+    background: #f0f0f0;
+    border-color: #ccc;
+  }
+
+  .ww-search-icon {
+    color: #333;
+  }
+
+  .ww-check {
+    color: #000;
+  }
+
+  .ww-checkbox,
+  .ww-radio {
+    border: 1px solid #333;
+    background: #fff center / 9px 9px no-repeat;
+  }
+
+  .ww-checkbox:hover,
+  .ww-radio:hover {
+    border-color: var(--win10-accent);
+  }
+
+  .ww-checkbox:checked {
+    border-color: var(--win10-accent);
+    background-color: var(--win10-accent);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath d='M1 4.6 3.4 7 8 1.6' fill='none' stroke='%23fff' stroke-width='1.4'/%3E%3C/svg%3E");
+  }
+
+  .ww-radio:checked {
+    background-image: radial-gradient(circle, #000 0 3px, transparent 3.5px);
+    background-size: auto;
+  }
+
+  .ww-radio:checked:hover {
+    background-image: radial-gradient(circle, var(--win10-accent) 0 3px, transparent 3.5px);
+  }
+
+  .ww-checkbox:disabled,
+  .ww-radio:disabled {
+    border-color: #ccc;
+    background-color: #f0f0f0;
+  }
+
+  .ww-select {
+    color: #000;
+    border: 1px solid #adadad;
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M.5.5 4 4 7.5.5' fill='none' stroke='%23000'/%3E%3C/svg%3E") no-repeat right 7px center,
+      #e1e1e1;
+  }
+
+  .ww-select:hover {
+    border-color: var(--win10-accent);
+    background-color: #e5f1fb;
+  }
+
+  .ww-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: #999;
+  }
+
+  .ww-slider::-moz-range-track {
+    height: 2px;
+    background: #999;
+  }
+
+  .ww-slider::-webkit-slider-thumb {
+    width: 8px;
+    height: 22px;
+    margin-top: -10px;
+    border-radius: 4px;
+    background: var(--win10-accent);
+  }
+
+  .ww-slider::-moz-range-thumb {
+    width: 8px;
+    height: 22px;
+    border: 0;
+    border-radius: 4px;
+    background: var(--win10-accent);
+  }
+
+  .ww-slider:hover::-webkit-slider-thumb {
+    background: #171717;
+  }
+
+  .ww-slider:active::-webkit-slider-thumb {
+    background: #ccc;
+  }
+
+  .ww-progress {
+    border: 1px solid #bcbcbc;
+    background: #e6e6e6;
+  }
+
+  .ww-progress-fill {
+    background: #06b025;
+  }
+
+  .ww-progress.blue .ww-progress-fill { background: #26a0da; }
+  .ww-progress.yellow .ww-progress-fill { background: #dadb00; }
+  .ww-progress.red .ww-progress-fill { background: #da2626; }
+
+  .ww-groupbox {
+    border: 1px solid #dcdcdc;
+  }
+
+  .ww-groupbox > legend {
+    color: #000;
+  }
+
+  .ww-tab {
+    margin-right: -1px;
+    color: #000;
+    border: 1px solid #d9d9d9;
+    border-bottom: 0;
+    background: #f0f0f0;
+  }
+
+  .ww-tab:hover:not(.selected) {
+    z-index: 1;
+    border-color: var(--win10-hover-border);
+    background: var(--win10-hover);
+  }
+
+  .ww-tab.selected {
+    height: 23px;
+    margin-bottom: -1px;
+    background: #fff;
+  }
+
+  .ww-tabpanel {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+  }
+
+  .ww-separator {
+    background: #e5e5e5;
+  }
+
+  .ww-link {
+    color: #0066cc;
+  }
+
+  .ww-page-title {
+    color: #1e3287;
+    font-weight: 300;
+    font-size: 20px;
+  }
+
+  .ww-muted {
+    color: #6d6d6d;
+  }
+
+  /* explorer chrome */
+
+  .ww-navbtn {
+    width: 28px;
+    border: 0;
+    color: #333;
+    background: transparent;
+  }
+
+  .ww-navbtn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .ww-navbtn:hover:not(:disabled) {
+    color: var(--win10-accent);
+    background: var(--win10-hover);
+  }
+
+  .ww-navbtn:disabled {
+    color: #bfbfbf;
+  }
+
+  .ww-navbtn-menu {
+    color: #333;
+  }
+
+  .ww-addressbar {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+  }
+
+  .ww-addressbar:hover {
+    border-color: #7eb4ea;
+  }
+
+  .ww-crumb > span {
+    color: #000;
+  }
+
+  .ww-crumb:hover {
+    border-color: var(--win10-hover-border);
+    background: var(--win10-hover);
+  }
+
+  .ww-crumb:hover > .chevron {
+    border-left-color: var(--win10-hover-border);
+  }
+
+  .ww-addressbar-dropdown:hover {
+    background: var(--win10-hover);
+  }
+
+  .ww-glass-btn:hover {
+    border-color: var(--win10-hover-border);
+    background: var(--win10-hover);
+  }
+
+  .ww-glass-panel .ww-search .ww-input {
+    height: 24px;
+    border-color: #d9d9d9;
+  }
+
+  .ww-glass-panel .ww-search .ww-input:hover {
+    border-color: #7eb4ea;
+  }
+
+  .ww-commandbar {
+    color: #000;
+    background: #f5f6f7;
+    border-top: 1px solid #e5e5e5;
+    border-bottom: 1px solid #dadbdc;
+  }
+
+  .ww-command:hover {
+    border-color: var(--win10-hover-border);
+    background: var(--win10-hover);
+  }
+
+  .ww-command:active {
+    border-color: var(--win10-selected-border);
+    background: var(--win10-selected);
+  }
+
+  .ww-navpane {
+    background: #fff;
+    border-right: 1px solid #f0f0f0;
+  }
+
+  .ww-navsection-title {
+    color: #6d6d6d;
+  }
+
+  .ww-navlink {
+    color: #000;
+  }
+
+  .ww-navlink:hover {
+    background: var(--win10-hover);
+  }
+
+  .ww-navlink.selected {
+    background: var(--win10-selected);
+  }
+
+  .ww-navpane-footer {
+    color: #000;
+    border-top: 1px solid #f0f0f0;
+  }
+
+  .ww-listview {
+    background: #fff;
+  }
+
+  .ww-listview-header {
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  .ww-listview-col {
+    color: #4c607a;
+    border-right: 1px solid #e5e5e5;
+  }
+
+  .ww-listview-col:hover {
+    background: #d9ebf9;
+  }
+
+  .ww-listview-group {
+    color: #1e3287;
+  }
+
+  .ww-listview-group::after {
+    background: #e2e2e2;
+  }
+
+  .ww-listview-group > .toggle {
+    color: #6d6d6d;
+  }
+
+  .ww-listview-group:hover {
+    background: var(--win10-hover);
+  }
+
+  .ww-listview-cell.muted,
+  .ww-tile-text .muted {
+    color: #6d6d6d;
+  }
+
+  .ww-listview-row:hover,
+  .ww-listview-tile:hover {
+    border-color: var(--win10-hover);
+    background: var(--win10-hover);
+  }
+
+  .ww-listview-row.selected,
+  .ww-listview-tile.selected {
+    border-color: var(--win10-selected-border);
+    background: var(--win10-selected);
+  }
+
+  .ww-listview:not(:focus-within) .ww-listview-row.selected,
+  .ww-listview:not(:focus-within) .ww-listview-tile.selected {
+    border-color: #d9d9d9;
+    background: #d9d9d9;
+  }
+
+  .ww-detailspane {
+    border-top: 1px solid #f0f0f0;
+    background: #fff;
+  }
+
+  .ww-detailspane-props dt {
+    color: #6d6d6d;
+  }
+
+  .ww-dialog-footer {
+    border-top: 1px solid #dfdfdf;
+    background: #f0f0f0;
+  }
+
+  .ww-statusbar {
+    color: #000;
+    border-top: 1px solid #f0f0f0;
+    background: #fff;
+  }
+}
+}

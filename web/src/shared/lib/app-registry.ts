@@ -62,7 +62,7 @@ AppRegistry.registerApp(
   {
     name: "File Explorer",
     exePath: "C:\\Windows\\System32\\WWExplorer.exe",
-    icon: "apps/explorer.webp",
+    icon: "apps/explorer",
     action: "explorer",
   },
   undefined,
@@ -72,7 +72,7 @@ AppRegistry.registerApp(
   {
     name: "Text Editor",
     exePath: "C:\\Windows\\System32\\WWEditor.exe",
-    icon: "apps/notepad.webp",
+    icon: "apps/notepad",
     action: "editor",
   },
   undefined,
@@ -82,7 +82,7 @@ AppRegistry.registerApp(
   {
     name: "Registry Editor",
     exePath: "C:\\Windows\\System32\\regedit.exe",
-    icon: "apps/regedit.webp",
+    icon: "apps/regedit",
     action: "regedit",
   },
   undefined,
@@ -92,7 +92,7 @@ AppRegistry.registerApp(
   {
     name: "Upload File",
     exePath: "C:\\Windows\\System32\\uploadfile.exe",
-    icon: "apps/upload-file.webp",
+    icon: "apps/upload-file",
     action: "upload-file",
   },
   undefined,
@@ -102,7 +102,7 @@ AppRegistry.registerApp(
   {
     name: "Upload Folder",
     exePath: "C:\\Windows\\System32\\uploadfolder.exe",
-    icon: "apps/upload-folder.webp",
+    icon: "apps/upload-folder",
     action: "upload-folder",
   },
   undefined,
@@ -112,7 +112,7 @@ AppRegistry.registerApp(
   {
     name: "Photo Viewer",
     exePath: "C:\\Windows\\System32\\WWPhotoViewer.exe",
-    icon: "apps/photoviewer.webp",
+    icon: "apps/photoviewer",
     action: "photo-viewer",
     extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"],
   },
@@ -123,7 +123,7 @@ AppRegistry.registerApp(
   {
     name: "Media Player",
     exePath: "C:\\Windows\\System32\\WWMediaPlayer.exe",
-    icon: "apps/mediaplayer.webp",
+    icon: "apps/mediaplayer",
     action: "media-player",
     extensions: ["mp3", "mp4", "webm", "ogg", "wav"],
   },
@@ -132,9 +132,19 @@ AppRegistry.registerApp(
 
 AppRegistry.registerApp(
   {
+    name: "Control Panel",
+    exePath: "C:\\Windows\\System32\\control.exe",
+    icon: "apps/controlpanel",
+    action: "control-panel",
+  },
+  undefined,
+);
+
+AppRegistry.registerApp(
+  {
     name: "Task Manager",
     exePath: "C:\\Windows\\System32\\Taskmgr.exe",
-    icon: "apps/taskmgr.webp",
+    icon: "apps/taskmgr",
     action: "task-manager",
   },
   undefined,

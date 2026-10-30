@@ -1,10 +1,13 @@
+/*
+ * Legacy design tokens (Windows 10 dark) used by app layouts that paint their
+ * own dark surfaces (console, media player, photo viewer, task manager…).
+ * Imported into `@layer base`, so themes (`@layer components`) always win.
+ */
 :root {
   /* Windows 10 Dark */
   --bg: #000000;
   --desktop-bg: #0f1014;
   --desktop-bg-fallback: #0f1014;
-
-  --system-font: "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
 
   /* Taskbar */
   --taskbar-height: 40px;
@@ -87,6 +90,67 @@
   --icon-size: 72px;
   --log-bg: #131313;
   --log-border: #2b2b2b;
+
+  /*
+   * Semantic colour tokens for app layouts. They follow the theme's colour
+   * scheme (`<html data-scheme="light|dark">`, set by the theme registry);
+   * themes may fine-tune them in their own stylesheet.
+   */
+  --ww-surface: #111111;
+  --ww-surface-alt: #191919;
+  --ww-control: #2b2b2b;
+  --ww-control-hover: #3f3f3f;
+  --ww-text: #f2f2f2;
+  --ww-text-muted: #a6a6a6;
+  --ww-border: #2b2b2b;
+  --ww-border-strong: #4a4a4a;
+  --ww-border-hover: #6b6b6b;
+  --ww-hover: rgba(255, 255, 255, 0.08);
+  --ww-active: rgba(255, 255, 255, 0.13);
+  --ww-stripe: rgba(255, 255, 255, 0.03);
+  --ww-accent: #0078d7;
+  --ww-danger: #ffb3bd;
+  --ww-danger-bg: #241414;
+  --ww-danger-border: #5c2b2b;
+  --ww-warn: #f9e2af;
+  --ww-warn-bg: #201a0d;
+  --ww-warn-border: #5c4a1f;
+  --ww-info: #8ecbff;
+  --ww-ok: #a6e3a1;
+}
+
+[data-scheme="light"] {
+  --ww-surface: #ffffff;
+  --ww-surface-alt: #f5f6f7;
+  --ww-control: #e1e1e1;
+  --ww-control-hover: #e5f1fb;
+  --ww-text: #000000;
+  --ww-text-muted: #6d6d6d;
+  --ww-border: #e5e5e5;
+  --ww-border-strong: #adadad;
+  --ww-border-hover: #0078d7;
+  --ww-hover: rgba(0, 120, 215, 0.08);
+  --ww-active: rgba(0, 120, 215, 0.16);
+  --ww-stripe: rgba(0, 0, 0, 0.025);
+  --ww-danger: #a4262c;
+  --ww-danger-bg: #fde7e9;
+  --ww-danger-border: #f1bbbc;
+  --ww-warn: #8a5a00;
+  --ww-warn-bg: #fff4ce;
+  --ww-warn-border: #f2d98b;
+  --ww-info: #005a9e;
+  --ww-ok: #107c10;
+
+  /* legacy tokens still read by some app layouts */
+  --text: var(--ww-text);
+  --text-muted: var(--ww-text-muted);
+  --shell-muted: var(--ww-text-muted);
+  --window-bg: var(--ww-surface);
+  --window-content-bg: var(--ww-surface);
+  --window-content-text: var(--ww-text);
+  --window-border: var(--ww-border);
+  --icon-selected-bg: #cce8ff;
+  --icon-selected-border: #99d1ff;
 }
 
 ::selection {
@@ -94,21 +158,21 @@
   background: #0078d7;
 }
 
-/* Windows 10 dark-ish scrollbars */
+/* fallback scrollbars — each theme repaints these under [data-theme] */
 ::-webkit-scrollbar {
-  width: 17px;
-  height: 17px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #171717;
+  background: #f0f0f0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #555555;
-  border: 4px solid #171717;
+  background: #c1c1c1;
+  border: 3px solid #f0f0f0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b6b6b;
+  background: #a8a8a8;
 }

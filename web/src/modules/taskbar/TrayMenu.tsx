@@ -1,9 +1,12 @@
 /**
- * TrayMenu — the floating panel that appears when the tray toggle is clicked.
- * Currently empty; reserved for future tray icons.
+ * TrayMenu — the flyout that appears when the tray toggle is clicked:
+ * a quick theme switcher plus shortcuts to the Control Panel.
  */
 
 import { useEffect, useRef } from "react";
+import { ThemeSwitcher } from "@/shared/ui";
+import { useRuntimeStore } from "@/state/runtimeStore";
+import { openControlPanel } from "@/apps/control-panel/ControlPanelApp";
 
 interface TrayMenuProps {
   onClose: () => void;
@@ -11,14 +14,12 @@ interface TrayMenuProps {
 
 export function TrayMenu({ onClose }: TrayMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const runtime = useRuntimeStore((s) => s.runtime);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (
-        !menuRef.current?.contains(target) &&
-        !target.closest("#tray-toggle")
-      ) {
+      if (!menuRef.current?.contains(target) && !target.closest("#tray-toggle")) {
         onClose();
       }
     };
@@ -27,6 +28,20 @@ export function TrayMenu({ onClose }: TrayMenuProps) {
   }, [onClose]);
 
   return (
-    <div id="tray-menu" className="fixed bottom-[44px] z-[9500] bg-[var(--menu-bg)] border border-[var(--menu-border)] rounded-[var(--menu-radius)] shadow-[0_12px_36px_rgba(0,0,0,0.35)] text-[var(--menu-text)] backdrop-blur-md right-[72px] w-[180px] h-[110px] p-2" ref={menuRef} role="menu" />
+    <div id="tray-menu" className="ww-tray-menu" ref={menuRef} role="menu">
+      <div className="ww-tray-menu-title">Theme</div>
+      <ThemeSwitcher />
+      {runtime && (
+        <span
+          className="ww-link self-end"
+          onClick={() => {
+            openControlPanel(runtime, "personalization");
+            onClose();
+          }}
+        >
+          More personalization settings…
+        </span>
+      )}
+    </div>
   );
 }

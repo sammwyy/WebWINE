@@ -28,7 +28,7 @@ export function MenuBar({ items }: { items: MenuBarItem[] }) {
 
   return (
     <div
-      className="h-[28px] flex items-center gap-0 px-1 bg-[#181818] border-b border-[#2b2b2b] select-none"
+      className="ww-menubar"
       role="menubar"
       onContextMenu={(e) => {
         e.preventDefault();
@@ -45,13 +45,7 @@ export function MenuBar({ items }: { items: MenuBarItem[] }) {
             aria-haspopup="menu"
             aria-expanded={active}
             disabled={item.disabled}
-            className={[
-              "h-[24px] px-3 rounded-none border border-transparent",
-              "bg-transparent text-[#f2f2f2] text-[12px] leading-none",
-              "cursor-default hover:bg-[rgba(255,255,255,0.10)]",
-              "disabled:text-[rgba(255,255,255,0.38)] disabled:pointer-events-none",
-              active ? "bg-[rgba(255,255,255,0.14)] border-[rgba(255,255,255,0.10)]" : "",
-            ].join(" ")}
+            className={`ww-menubar-item ${active ? "active" : ""}`}
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();

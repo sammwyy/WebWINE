@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useWindowStore } from "@/state/windowStore";
 
 import type { DirectoryEntry } from "@/core/wasm/worker";
@@ -6,8 +6,7 @@ import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import { formatSize } from "@/shared/lib/utils";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
 import { AppRegistry } from "@/shared/lib/app-registry";
-
-type PropertiesTab = "general" | "details";
+import { Button, Checkbox, DialogFooter, Input, ListView, Tabs } from "@/shared/ui";
 
 export async function openProperties(entry: DirectoryEntry, runtime: RuntimeBridge) {
   let winId = "";
@@ -24,7 +23,7 @@ export async function openProperties(entry: DirectoryEntry, runtime: RuntimeBrid
     title: `${entry.name} Properties`,
     icon: icon.src,
     variant: "dialog",
-    width: 420,
+    width: 400,
     height: 480,
     content: <PropertiesApp entry={entry} iconSrc={icon.src} onClose={close} />,
   });
@@ -39,39 +38,23 @@ function PropertiesApp({
   iconSrc: string;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<PropertiesTab>("general");
-
   return (
-    <div className="h-full min-h-0 flex flex-col bg-[#202020] text-[#f2f2f2] font-[var(--system-font)] text-[12px]">
-      <div className="px-3 pt-3 flex-1 min-h-0 overflow-hidden">
-        <div className="h-[30px] flex items-end gap-0">
-          <TabButton active={tab === "general"} onClick={() => setTab("general")}>
-            General
-          </TabButton>
-          <TabButton active={tab === "details"} onClick={() => setTab("details")}>
-            Details
-          </TabButton>
-        </div>
+    <div className="h-full min-h-0 flex flex-col">
+      <Tabs
+        className="flex-1 min-h-0 px-2 pt-2"
+        tabs={[
+          { id: "general", label: "General", content: <GeneralTab entry={entry} iconSrc={iconSrc} /> },
+          { id: "details", label: "Details", content: <DetailsTab entry={entry} /> },
+        ]}
+      />
 
-        <div className="border border-[#555] bg-[#202020] h-[calc(100%-30px)] overflow-auto px-4 pt-4 pb-3">
-          {tab === "general" && <GeneralTab entry={entry} iconSrc={iconSrc} />}
-          {tab === "details" && <DetailsTab entry={entry} />}
-        </div>
-      </div>
-
-      <div className="h-[52px] flex justify-end items-center gap-2 px-3 bg-[#202020]">
-        <DialogButton primary onClick={onClose}>
+      <DialogFooter>
+        <Button isDefault onClick={onClose}>
           OK
-        </DialogButton>
-
-        <DialogButton onClick={onClose}>
-          Cancel
-        </DialogButton>
-
-        <DialogButton disabled>
-          Apply
-        </DialogButton>
-      </div>
+        </Button>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button disabled>Apply</Button>
+      </DialogFooter>
     </div>
   );
 }
@@ -80,24 +63,13 @@ function GeneralTab({ entry, iconSrc }: { entry: DirectoryEntry; iconSrc: string
   const info = useMemo(() => getEntryInfo(entry), [entry]);
 
   return (
-    <div>
-      <div className="flex items-center gap-4 pb-4">
-        <img
-          src={iconSrc}
-          alt=""
-          className="w-8 h-8 object-contain flex-none"
-          draggable={false}
-        />
-
-        <input
-          className="h-[24px] flex-1 min-w-0 px-1 rounded-none border border-[#555] bg-[#111111] text-[#f2f2f2] text-[12px] outline-none focus:border-[#0078d7]"
-          value={entry.name}
-          readOnly
-          spellCheck={false}
-        />
+    <div className="flex flex-col">
+      <div className="flex items-center gap-4 pb-3">
+        <img src={iconSrc} alt="" className="w-8 h-8 object-contain flex-none" draggable={false} />
+        <Input className="flex-1 min-w-0" value={entry.name} readOnly spellCheck={false} />
       </div>
 
-      <Separator />
+      <div className="ww-separator my-3" />
 
       <PropertyGrid
         rows={[
@@ -106,7 +78,7 @@ function GeneralTab({ entry, iconSrc }: { entry: DirectoryEntry; iconSrc: string
         ]}
       />
 
-      <Separator />
+      <div className="ww-separator my-3" />
 
       <PropertyGrid
         rows={[
@@ -116,7 +88,7 @@ function GeneralTab({ entry, iconSrc }: { entry: DirectoryEntry; iconSrc: string
         ]}
       />
 
-      <Separator />
+      <div className="ww-separator my-3" />
 
       <PropertyGrid
         rows={[
@@ -126,14 +98,13 @@ function GeneralTab({ entry, iconSrc }: { entry: DirectoryEntry; iconSrc: string
         ]}
       />
 
-      <Separator />
+      <div className="ww-separator my-3" />
 
-      <div className="grid grid-cols-[86px_1fr] gap-x-2 items-start">
-        <div className="text-[#d6d6d6] pt-[3px]">Attributes:</div>
-
+      <div className="ww-propgrid items-center">
+        <span>Attributes:</span>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
-          <CheckBox label="Read-only" disabled />
-          <CheckBox label="Hidden" disabled />
+          <Checkbox label="Read-only" disabled />
+          <Checkbox label="Hidden" disabled />
         </div>
       </div>
     </div>
@@ -155,134 +126,29 @@ function DetailsTab({ entry }: { entry: DirectoryEntry }) {
   ].filter(([, value]) => value !== "");
 
   return (
-    <div>
-      <div className="border border-[#3a3a3a]">
-        <div className="grid grid-cols-[130px_1fr] h-[26px] bg-[#191919] border-b border-[#3a3a3a] text-[#a6a6a6]">
-          <div className="px-2 flex items-center border-r border-[#3a3a3a]">
-            Property
-          </div>
-          <div className="px-2 flex items-center">
-            Value
-          </div>
-        </div>
-
-        {rows.map(([label, value]) => (
-          <div
-            key={label}
-            className="grid grid-cols-[130px_1fr] min-h-[26px] border-b border-[#2b2b2b] last:border-b-0 hover:bg-[rgba(255,255,255,0.06)]"
-          >
-            <div className="px-2 py-[5px] text-[#d6d6d6] border-r border-[#2b2b2b]">
-              {label}
-            </div>
-
-            <div className="px-2 py-[5px] text-[#f2f2f2] break-all">
-              {value}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="flex h-full min-h-[260px] -m-[10px]">
+      <ListView
+        items={rows}
+        getKey={([label]) => label}
+        columns={[
+          { key: "prop", label: "Property", width: 120, render: ([label]) => label },
+          { key: "value", label: "Value", width: 230, render: ([, value]) => <span title={value}>{value}</span> },
+        ]}
+      />
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={[
-        "h-[30px] px-4 rounded-none border text-[12px] cursor-default",
-        "border-b-0",
-        active
-          ? "bg-[#202020] border-[#555] text-[#ffffff] relative z-10"
-          : "bg-[#191919] border-[#3a3a3a] text-[#d6d6d6] hover:bg-[#242424]",
-      ].join(" ")}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-function DialogButton({
-  children,
-  onClick,
-  primary,
-  disabled,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  primary?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      className={[
-        "min-w-[76px] h-[26px] px-3",
-        "rounded-none border text-[12px] font-normal",
-        "cursor-default outline-none",
-        "bg-[#333333] text-[#f2f2f2] border-[#555555]",
-        "hover:bg-[#3f3f3f] hover:border-[#6b6b6b]",
-        "active:bg-[#2b2b2b]",
-        "focus:border-[#0078d7] focus:shadow-[inset_0_0_0_1px_#0078d7]",
-        "disabled:opacity-50 disabled:pointer-events-none",
-        primary ? "border-[#0078d7] shadow-[inset_0_0_0_1px_#0078d7]" : "",
-      ].join(" ")}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }
 
 function PropertyGrid({ rows }: { rows: Array<[string, string]> }) {
   return (
-    <div className="grid grid-cols-[86px_1fr] gap-x-2 gap-y-[7px]">
+    <div className="ww-propgrid">
       {rows.map(([label, value]) => (
-        <PropertyRow key={label} label={label} value={value} />
+        <div key={label} className="contents">
+          <span>{label}</span>
+          <span>{value}</span>
+        </div>
       ))}
     </div>
-  );
-}
-
-function PropertyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <div className="text-[#d6d6d6]">{label}</div>
-      <div className="text-[#f2f2f2] break-all">{value}</div>
-    </>
-  );
-}
-
-function Separator() {
-  return <div className="h-px bg-[#3a3a3a] my-3" />;
-}
-
-function CheckBox({
-  label,
-  disabled,
-}: {
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="inline-flex items-center gap-2 text-[#f2f2f2]">
-      <input
-        type="checkbox"
-        disabled={disabled}
-        className="w-[13px] h-[13px] rounded-none accent-[#0078d7] disabled:opacity-60"
-      />
-      <span>{label}</span>
-    </label>
   );
 }
 

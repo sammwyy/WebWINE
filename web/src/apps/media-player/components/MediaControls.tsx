@@ -1,113 +1,139 @@
 import {
-  PlayRegular,
-  PauseRegular,
-  Speaker2Regular,
-  SpeakerMuteRegular,
+  PlayFilled,
+  PauseFilled,
+  StopFilled,
+  PreviousFilled,
+  NextFilled,
+  ArrowShuffleFilled,
+  ArrowRepeatAllFilled,
+  Speaker2Filled,
+  SpeakerMuteFilled,
   FullScreenMaximizeRegular,
-  FullScreenMinimizeRegular,
+  GridRegular,
+  MoviesAndTvRegular,
 } from "@fluentui/react-icons";
 import { formatTime } from "../lib/utils";
 
 interface MediaControlsProps {
-  controlsVisible: boolean;
+  title: string;
+  subtitle?: string;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
   volume: number;
   isMuted: boolean;
+  shuffle: boolean;
+  repeat: boolean;
+  hasMedia: boolean;
+  canPlay: boolean;
+  nowPlaying: boolean;
+  /** show the Library / Now Playing switch in the bar (WMP 12 Now Playing has it top-right instead) */
+  showViewToggle: boolean;
   isFullscreen: boolean;
   onPlayToggle: () => void;
+  onStop: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onShuffle: () => void;
+  onRepeat: () => void;
   onMuteToggle: () => void;
-  onFullscreenToggle: () => void;
-  onSeek: (time: number) => void;
   onVolumeChange: (vol: number) => void;
+  onSeek: (time: number) => void;
+  onToggleView: () => void;
+  onFullscreenToggle: () => void;
 }
 
-export function MediaControls({
-  controlsVisible,
-  isPlaying,
-  currentTime,
-  duration,
-  volume,
-  isMuted,
-  isFullscreen,
-  onPlayToggle,
-  onMuteToggle,
-  onFullscreenToggle,
-  onSeek,
-  onVolumeChange,
-}: MediaControlsProps) {
+/** The glossy black Windows Media Player 12 transport bar. */
+export function MediaControls(p: MediaControlsProps) {
+  const pct = p.duration > 0 ? (p.currentTime / p.duration) * 100 : 0;
+  const vol = p.isMuted ? 0 : p.volume;
+
   return (
-    <div
-      className={`absolute bottom-0 left-0 right-0 p-4 pt-12 bg-gradient-to-t from-[rgba(0,0,0,0.8)] to-transparent transition-opacity duration-300 flex flex-col gap-2 ${
-        controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
-      }`}
-    >
-      {/* Progress Bar */}
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] font-medium min-w-[35px] text-right">
-          {formatTime(currentTime)}
-        </span>
-        <input
-          type="range"
-          min="0"
-          max={duration || 0}
-          value={currentTime}
-          onChange={(e) => onSeek(Number(e.target.value))}
-          className="flex-1 h-1.5 bg-[#444] rounded-full appearance-none cursor-pointer accent-[#60cdff] hover:accent-[#28c3ff]"
-        />
-        <span className="text-[11px] font-medium min-w-[35px]">
-          {formatTime(duration)}
-        </span>
-      </div>
+    <div className="wmp-bar">
+      <input
+        className="wmp-seek"
+        type="range"
+        min={0}
+        max={p.duration || 0}
+        step={0.1}
+        value={p.currentTime}
+        disabled={!p.hasMedia}
+        style={{ "--pct": `${pct}%` } as React.CSSProperties}
+        onChange={(e) => p.onSeek(Number(e.target.value))}
+      />
 
-      {/* Bottom Controls */}
-      <div className="flex items-center gap-2 mt-1">
-        <button
-          onClick={onPlayToggle}
-          className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[rgba(255,255,255,0.1)] transition-colors"
-        >
-          {isPlaying ? (
-            <PauseRegular fontSize={24} />
-          ) : (
-            <PlayRegular fontSize={24} />
-          )}
-        </button>
+      <div className="wmp-bar-row">
+        <div className="wmp-bar-info">
+          {p.hasMedia ? (
+            <>
+              <span className="truncate">{p.title}</span>
+              <span className="wmp-bar-time">
+                {formatTime(p.currentTime)}
+                {p.subtitle ? ` · ${p.subtitle}` : ""}
+              </span>
+            </>
+          ) : null}
+        </div>
 
-        <div className="flex items-center gap-2 group/volume relative">
+        <div className="wmp-transport">
+          <button type="button" className={`wmp-btn ${p.shuffle ? "on" : ""}`} title="Turn shuffle on" onClick={p.onShuffle}>
+            <ArrowShuffleFilled />
+          </button>
+          <button type="button" className={`wmp-btn ${p.repeat ? "on" : ""}`} title="Turn repeat on" onClick={p.onRepeat}>
+            <ArrowRepeatAllFilled />
+          </button>
+          <span className="wmp-divider" />
+          <button type="button" className="wmp-btn" title="Stop" disabled={!p.hasMedia} onClick={p.onStop}>
+            <StopFilled />
+          </button>
+          <button type="button" className="wmp-btn" title="Previous" disabled={!p.hasMedia} onClick={p.onPrev}>
+            <PreviousFilled />
+          </button>
           <button
-            onClick={onMuteToggle}
-            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[rgba(255,255,255,0.1)] transition-colors"
+            type="button"
+            className="wmp-play"
+            title={p.isPlaying ? "Pause" : "Play"}
+            disabled={!p.canPlay}
+            onClick={p.onPlayToggle}
           >
-            {isMuted || volume === 0 ? (
-              <SpeakerMuteRegular fontSize={20} />
-            ) : (
-              <Speaker2Regular fontSize={20} />
-            )}
+            {p.isPlaying ? <PauseFilled /> : <PlayFilled />}
+          </button>
+          <button type="button" className="wmp-btn" title="Next" disabled={!p.hasMedia} onClick={p.onNext}>
+            <NextFilled />
+          </button>
+          <span className="wmp-divider" />
+          <button type="button" className="wmp-btn" title={p.isMuted ? "Sound" : "Mute"} onClick={p.onMuteToggle}>
+            {vol === 0 ? <SpeakerMuteFilled /> : <Speaker2Filled />}
           </button>
           <input
+            className="wmp-volume"
             type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={isMuted ? 0 : volume}
-            onChange={(e) => onVolumeChange(Number(e.target.value))}
-            className="w-0 opacity-0 group-hover/volume:w-20 group-hover/volume:opacity-100 transition-all duration-300 h-1.5 bg-[#444] rounded-full appearance-none cursor-pointer accent-[#60cdff]"
+            min={0}
+            max={1}
+            step={0.05}
+            value={vol}
+            style={{ "--pct": `${vol * 100}%` } as React.CSSProperties}
+            onChange={(e) => p.onVolumeChange(Number(e.target.value))}
           />
         </div>
 
-        <div className="flex-1"></div>
-
-        <button
-          onClick={onFullscreenToggle}
-          className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[rgba(255,255,255,0.1)] transition-colors"
-        >
-          {isFullscreen ? (
-            <FullScreenMinimizeRegular fontSize={20} />
-          ) : (
-            <FullScreenMaximizeRegular fontSize={20} />
+        <div className="wmp-bar-right">
+          {p.nowPlaying && (
+            <button type="button" className="wmp-btn" title="View full screen" disabled={!p.hasMedia} onClick={p.onFullscreenToggle}>
+              <FullScreenMaximizeRegular />
+            </button>
           )}
-        </button>
+          {p.showViewToggle && (
+            <button
+              type="button"
+              className="wmp-btn"
+              title={p.nowPlaying ? "Switch to Library" : "Switch to Now Playing"}
+              onClick={p.onToggleView}
+            >
+              {p.nowPlaying ? <GridRegular /> : <MoviesAndTvRegular />}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

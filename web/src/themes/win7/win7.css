@@ -1,0 +1,166 @@
+/* Windows 7 (Aero) — on top of the shared aero family */
+/* (src/themes/aero/aero.css). Scoped to [data-theme~="win7"]. */
+
+@layer components {
+[data-theme~="win7"] {
+  --ww-taskbar-h: 40px;
+
+  /* desktop ("Harmony"-like) */
+
+  .ww-desktop {
+    background:
+      radial-gradient(ellipse 55% 45% at 50% 42%, rgba(120, 210, 255, 0.55), transparent 70%),
+      radial-gradient(ellipse at 50% 40%, #2b8ad8 0%, #135fb4 35%, #0a3d86 70%, #052456 100%);
+  }
+
+  .ww-desktop::before {
+    background:
+      linear-gradient(160deg, transparent 30%, rgba(255, 255, 255, 0.1) 45%, transparent 55%),
+      linear-gradient(20deg, transparent 40%, rgba(170, 230, 255, 0.12) 52%, transparent 62%),
+      radial-gradient(ellipse 80% 30% at 50% 108%, rgba(120, 220, 255, 0.35), transparent 70%);
+  }
+
+  /* superbar */
+
+  .ww-taskbar {
+    gap: 2px;
+    padding: 0 0 0 2px;
+    background:
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0) 50%),
+      rgba(22, 46, 80, 0.55);
+    backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 -1px 0 rgba(0, 0, 0, 0.55);
+  }
+
+  .ww-taskbar-items {
+    gap: 2px;
+    padding-left: 4px;
+  }
+
+  .ww-taskbar-item {
+    justify-content: center;
+    min-width: 0;
+    width: 60px;
+    height: 38px;
+    padding: 0;
+    border-radius: 3px;
+    border-color: rgba(255, 255, 255, 0.3);
+    background:
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.1)),
+      rgba(255, 255, 255, 0.04);
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+      0 0 0 1px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.2s;
+  }
+
+  /* superbar shows icons only */
+  .ww-taskbar-item > span:last-child {
+    display: none;
+  }
+
+  .ww-taskbar-item:hover {
+    background:
+      radial-gradient(ellipse 80% 70% at 50% 100%, rgba(140, 215, 255, 0.65), transparent 75%),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.04) 50%, rgba(255, 255, 255, 0.14));
+  }
+
+  .ww-taskbar-item.active {
+    border-color: rgba(255, 255, 255, 0.5);
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 100%, rgba(140, 215, 255, 0.4), transparent 75%),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.18) 50%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.25));
+  }
+
+  .ww-taskbar-item .ww-icon {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  }
+
+  .ww-start-button {
+    width: 44px;
+    height: 44px;
+    margin: -6px 0 0 2px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+  }
+
+  .ww-clock {
+    padding: 0 10px;
+  }
+
+  .ww-show-desktop {
+    display: block;
+    width: 15px;
+    border-left: 1px solid rgba(0, 0, 0, 0.45);
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.3);
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+  }
+
+  .ww-show-desktop:hover {
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.18));
+  }
+
+  /* window glass ("Sky" colour) */
+
+  .ww-window {
+    --aero-glass: rgba(108, 172, 234, 0.32);
+    --aero-glass-highlight: rgba(255, 255, 255, 0.28);
+    border-radius: 6px 6px 5px 5px;
+  }
+
+  .ww-window.inactive {
+    --aero-glass: rgba(170, 200, 230, 0.2);
+  }
+
+  .ww-window.maximized {
+    border-radius: 0;
+  }
+
+  /* explorer: light command bar & panes */
+
+  .ww-commandbar {
+    color: #1e395b;
+    background: linear-gradient(to bottom, #fcfdfe, #f2f6fb 50%, #e8eff8 50%, #dde7f4);
+    border-bottom: 1px solid #a0afc3;
+    box-shadow: inset 0 1px 0 #fff;
+  }
+
+  .ww-command {
+    border-radius: 3px;
+  }
+
+  .ww-command:hover {
+    border-color: #a6bfdd;
+    background: linear-gradient(to bottom, #fbfdff, #ebf3fd 50%, #dbe8f8 50%, #d4e4f8);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  }
+
+  .ww-command:active {
+    border-color: #7f9ec4;
+    background: linear-gradient(to bottom, #d7e5f6, #c4d8f2);
+    box-shadow: inset 0 1px 2px rgba(0, 30, 80, 0.25);
+  }
+
+  .ww-navpane {
+    background: #fff;
+    border-right: 1px solid #d6e5f5;
+  }
+
+  .ww-navsection-title {
+    color: #1e395b;
+  }
+
+  .ww-navpane-footer {
+    border-top-color: #d6e5f5;
+    background: linear-gradient(to bottom, #fff, #f1f5fb);
+  }
+
+  .ww-detailspane {
+    border-top: 1px solid #c5d4e7;
+    background: linear-gradient(to bottom, #f6f9fd, #e1eaf6);
+  }
+}
+}

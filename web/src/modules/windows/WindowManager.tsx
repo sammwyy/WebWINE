@@ -1,43 +1,29 @@
 /**
- * WindowLayer — renders all open windows from the window store.
+ * WindowLayer — the window composer: renders all open windows from the store.
  *
- * This div is absolutely positioned over the desktop. Each window is an
- * independent WindowFrame component; pointer events only reach children.
+ * This div is absolutely positioned over the desktop (it never covers the
+ * taskbar). Each window is an independent, memoised `AppWindow`; pointer
+ * events only reach the windows themselves.
  */
 
 import { memo } from "react";
 import { useWindowStore } from "@/state/windowStore";
-import type { WindowRecord } from "@/state/windowStore";
-import { WindowFrame } from "./WindowFrame";
+import { AppWindow } from "./AppWindow";
 
-const MemoWindowFrame = memo(WindowFrame, (prev, next) => {
-  const a = prev.record;
-  const b = next.record;
-  return (
-    a === b ||
-    (a.id === b.id &&
-      a.title === b.title &&
-      a.icon === b.icon &&
-      a.minimized === b.minimized &&
-      a.maximized === b.maximized &&
-      a.zIndex === b.zIndex &&
-      a.hideTitlebar === b.hideTitlebar &&
-      a.content === b.content &&
-      a.style === b.style)
-  );
-});
+const MemoAppWindow = memo(AppWindow);
 
 export function WindowLayer() {
   const windows = useWindowStore((s) => s.windows);
+  const activeId = useWindowStore((s) => s.activeId);
 
   return (
-    <div
-      id="window-layer"
-      className="absolute inset-0 pointer-events-none"
-      aria-label="Open windows"
-    >
-      {windows.map((record: WindowRecord) => (
-        <MemoWindowFrame key={record.id} record={record} />
+    <div id="window-layer" className="ww-window-layer" aria-label="Open windows">
+      {windows.map((record) => (
+        <MemoAppWindow
+          key={record.id}
+          win={record}
+          focused={record.id === activeId && !record.minimized}
+        />
       ))}
     </div>
   );

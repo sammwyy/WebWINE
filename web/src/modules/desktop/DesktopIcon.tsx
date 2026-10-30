@@ -257,18 +257,14 @@ export function DesktopIcon({
       <div
 
         className={[
+          "ww-desktop-icon desktop-icon",
+          selected ? "selected" : "",
           "absolute",
           "w-[var(--desktop-icon-cell-w,82px)] h-[var(--desktop-icon-cell-h,92px)]",
           "flex flex-col items-center justify-start",
           "pt-[6px] px-[3px] pb-[4px] gap-[4px]",
-          "box-border rounded-none border border-transparent",
-          "cursor-default select-none text-center overflow-hidden",
-          "text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]",
+          "box-border cursor-default select-none text-center overflow-hidden",
           "transition-colors duration-75",
-          "hover:bg-[rgba(255,255,255,0.105)] hover:border-[rgba(255,255,255,0.18)]",
-          selected
-            ? "bg-[rgba(0,120,215,0.34)] border-[rgba(0,120,215,0.95)] hover:bg-[rgba(0,120,215,0.42)]"
-            : "",
           dragging ? "opacity-80 z-[5] !transition-none" : "",
           clipEntry?.path === path && clipEntry.op === "cut" ? "opacity-45" : "",
         ].join(" ")}
@@ -380,7 +376,7 @@ export function DesktopIcon({
           setCtx({ x: e.clientX, y: e.clientY });
         }}
       >
-        <div className="relative w-[var(--icon-size)] h-[var(--icon-size)] flex-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]">
+        <div className="ww-desktop-icon-img relative w-[var(--icon-size)] h-[var(--icon-size)] flex-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]">
           <img
             src={imgSrc || undefined}
             alt=""
@@ -397,7 +393,7 @@ export function DesktopIcon({
             />
           )}
         </div>
-        <div className="max-w-[74px] text-center break-words text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] text-[12px] leading-[15px] line-clamp-2">
+        <div className="label max-w-[90px] px-[2px] text-center break-words text-[12px] leading-[15px] line-clamp-2">
           {displayName(entry.name)}
         </div>
       </div>

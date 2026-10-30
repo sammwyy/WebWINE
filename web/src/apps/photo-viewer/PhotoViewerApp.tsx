@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useWindowStore } from "@/state/windowStore";
-import { WindowTitlebar } from "@/modules/windows/WindowTitlebar";
+import { Command, CommandBar, CommandSpacer } from "@/shared/ui";
+import { launchGuestPath } from "@/shared/lib/guest-launch";
+import { showMessageBox } from "../message-box/MessageBoxApp";
 import type {
   RuntimeBridge,
   DirectoryEntry,
@@ -14,11 +16,14 @@ import {
   ArrowRotateCounterclockwiseRegular,
   ArrowRotateClockwiseRegular,
   DeleteRegular,
-  ChevronLeftFilled,
-  ChevronRightFilled,
+  PreviousRegular,
+  NextRegular,
+  PlayRegular,
+  PauseRegular,
   FullScreenMaximizeRegular,
   FullScreenMinimizeRegular,
 } from "@fluentui/react-icons";
+import { iconUrl } from "@/shared/lib/personalization";
 
 const IMAGE_EXTENSIONS = [
   ".png",
@@ -52,7 +57,7 @@ export async function openPhotoViewer(path: string, runtime: RuntimeBridge) {
 
   const icon =
     resolved?.src ||
-    `${import.meta.env.BASE_URL}theme/icons/places/pictures.webp`;
+    iconUrl("places/pictures");
 
   let winId = "";
 
@@ -61,7 +66,9 @@ export async function openPhotoViewer(path: string, runtime: RuntimeBridge) {
     icon,
     width: 800,
     height: 600,
-    hideTitlebar: true,
+    minWidth: 420,
+    minHeight: 300,
+    surface: "none",
     content: (
       <PhotoViewerApp
         initialPath={path}
@@ -92,6 +99,7 @@ export function PhotoViewerApp({
   const [rotation, setRotation] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [slideShow, setSlideShow] = useState(false);
   const isDragging = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
@@ -214,12 +222,22 @@ export function PhotoViewerApp({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // only the focused viewer reacts to the arrow keys
+      if (!containerRef.current?.closest(".ww-window.active")) return;
       if (e.key === "ArrowLeft") prev();
       else if (e.key === "ArrowRight") next();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [images]);
+
+  useEffect(() => {
+    if (!slideShow || images.length < 2) return;
+    const id = window.setInterval(() => setCurrentIndex((i) => (i + 1) % images.length), 3000);
+    return () => window.clearInterval(id);
+  }, [slideShow, images.length]);
+
+  const toggleSlideShow = () => setSlideShow((v) => !v);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -264,8 +282,13 @@ export function PhotoViewerApp({
 
   const deleteCurrentImage = async () => {
     if (!currentImage) return;
-    if (!confirm(`Are you sure you want to delete ${currentImage.name}?`))
-      return;
+    const answer = await showMessageBox({
+      kind: "message_box",
+      title: "Delete File",
+      text: `Are you sure you want to permanently delete "${currentImage.name}"?`,
+      style: 0x04 | 0x30, // MB_YESNO | MB_ICONEXCLAMATION
+    });
+    if (answer !== "yes") return;
     try {
       await runtime.deleteNode(currentImage.path);
       setImages((imgs) => imgs.filter((img) => img.path !== currentImage.path));
@@ -275,160 +298,101 @@ export function PhotoViewerApp({
         setCurrentIndex(images.length - 2);
       }
     } catch (err) {
-      alert(`Failed to delete file: ${err}`);
+      setError(`Failed to delete file: ${err}`);
     }
   };
 
+  const resetView = () => {
+    setZoom(1);
+    setRotation(0);
+    setPan({ x: 0, y: 0 });
+  };
+
   return (
-    <div
-      ref={containerRef}
-      className="flex flex-col w-full h-full bg-[#111111] select-none font-[var(--system-font)] text-[#f2f2f2] overflow-hidden group"
-    >
-      {/* Top Title/Toolbar Area - Custom WindowTitlebar */}
-      <WindowTitlebar
-        windowId={winId?.() || ""}
-        className="!bg-[#111111] !border-[#222222] !border-b !h-12 !px-2 z-10"
-      >
-        <div className="flex items-center gap-1 window-controls">
-          <button
-            onClick={() => setRotation((r) => r - 90)}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Rotate Left"
-          >
-            <ArrowRotateCounterclockwiseRegular fontSize={18} />
-          </button>
-          <button
-            onClick={() => setRotation((r) => r + 90)}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Rotate Right"
-          >
-            <ArrowRotateClockwiseRegular fontSize={18} />
-          </button>
-          <div className="w-px h-5 bg-[#333333] mx-1" />
-          <button
-            onClick={() => setZoom((z) => Math.min(z + 0.25, 5))}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Zoom In"
-          >
-            <ZoomInRegular fontSize={18} />
-          </button>
-          <button
-            onClick={() => setZoom((z) => Math.max(z - 0.25, 0.1))}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Zoom Out"
-          >
-            <ZoomOutRegular fontSize={18} />
-          </button>
-          <button
-            onClick={() => {
-              setZoom(1);
-              setRotation(0);
-              setPan({ x: 0, y: 0 });
-            }}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Fit to window"
-          >
-            <MaximizeRegular fontSize={18} />
-          </button>
-          <div className="w-px h-5 bg-[#333333] mx-1" />
-          <button
-            onClick={toggleFullscreen}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#2b2b2b] text-[#f2f2f2] transition-colors"
-            title="Fullscreen"
-          >
-            {isFullscreen ? (
-              <FullScreenMinimizeRegular fontSize={18} />
-            ) : (
-              <FullScreenMaximizeRegular fontSize={18} />
-            )}
-          </button>
-          <button
-            onClick={deleteCurrentImage}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-[#ff4444] text-[#f2f2f2] hover:text-white transition-colors"
-            title="Delete"
-          >
-            <DeleteRegular fontSize={18} />
-          </button>
-        </div>
+    <div ref={containerRef} className="flex flex-col w-full h-full select-none overflow-hidden">
+      <CommandBar>
+        <Command
+          icon={iconUrl("apps/explorer")}
+          onClick={() => void launchGuestPath(currentImage ? dirname(currentImage.path) : "C:\\Users\\guest\\Pictures", runtime)}
+        >
+          Open folder
+        </Command>
+        <Command icon={<DeleteRegular />} disabled={!currentImage} onClick={() => void deleteCurrentImage()}>
+          Delete
+        </Command>
+        <CommandSpacer />
+        <Command
+          icon={isFullscreen ? <FullScreenMinimizeRegular /> : <FullScreenMaximizeRegular />}
+          onClick={toggleFullscreen}
+        >
+          {isFullscreen ? "Exit full screen" : "Full screen"}
+        </Command>
+      </CommandBar>
 
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-none">
-          <span className="truncate max-w-[300px] text-[13px] font-semibold text-[#f2f2f2]">
-            {currentImage?.name || "Photos"}
-          </span>
-        </div>
-      </WindowTitlebar>
-
-      {/* Main Image Area */}
       <div
-        className="flex-1 relative overflow-hidden bg-[#1a1a1a]"
+        className="pv-stage flex-1 relative overflow-hidden"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ cursor: isDragging.current ? "grabbing" : "grab" }}
+        onDoubleClick={resetView}
+        style={{ cursor: zoom > 1 ? "grab" : "default" }}
       >
-        {loading && !currentUrl && (
-          <div className="absolute inset-0 flex items-center justify-center text-[#888888]">
-            Loading...
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-[#ff6b6b] text-center p-4">
-            {error}
-          </div>
-        )}
+        {loading && !currentUrl && <div className="absolute inset-0 grid place-items-center ww-muted">Loading…</div>}
+        {error && <div className="absolute inset-0 grid place-items-center p-4 text-center text-[var(--ww-danger)]">{error}</div>}
         {!loading && !error && images.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-[#888888]">
-            We didn't find any pictures.
-          </div>
+          <div className="absolute inset-0 grid place-items-center ww-muted">There are no pictures in this folder.</div>
         )}
         {currentUrl && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center p-3">
             <img
               src={currentUrl}
               alt={currentImage?.name}
               draggable={false}
+              className="pv-image"
               style={{
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                transition: isDragging.current
-                  ? "none"
-                  : "transform 0.1s ease-out",
-                maxHeight: "100%",
-                maxWidth: "100%",
-                objectFit: "contain",
+                transition: isDragging.current ? "none" : "transform 0.1s ease-out",
               }}
             />
           </div>
         )}
-
-        {/* Floating Navigation Controls */}
-        {images.length > 1 && (
-          <>
-            <button
-              onClick={prev}
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
-              title="Previous"
-            >
-              <ChevronLeftFilled fontSize={24} />
-            </button>
-            <button
-              onClick={next}
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
-              title="Next"
-            >
-              <ChevronRightFilled fontSize={24} />
-            </button>
-          </>
-        )}
       </div>
 
-      {/* Bottom Filmstrip (optional placeholder for Win10 look) */}
-      {images.length > 1 && (
-        <div className="h-16 flex-none flex items-center justify-center bg-[#111111] px-4 gap-2 text-[12px] text-[#888888]">
-          {currentIndex + 1} of {images.length}
-        </div>
-      )}
+      <div className="ww-mediabar justify-center">
+        <span className="ww-mediabar-info">{images.length > 0 ? `${currentIndex + 1} of ${images.length}` : ""}</span>
+        <button type="button" className="ww-media-btn" title="Zoom in" onClick={() => setZoom((z) => Math.min(z + 0.25, 5))}>
+          <ZoomInRegular />
+        </button>
+        <button type="button" className="ww-media-btn" title="Zoom out" onClick={() => setZoom((z) => Math.max(z - 0.25, 0.1))}>
+          <ZoomOutRegular />
+        </button>
+        <button type="button" className="ww-media-btn" title="Actual size / fit" onClick={resetView}>
+          <MaximizeRegular />
+        </button>
+        <span className="ww-mediabar-sep" />
+        <button type="button" className="ww-media-btn" title="Previous (Left arrow)" disabled={images.length < 2} onClick={prev}>
+          <PreviousRegular />
+        </button>
+        <button type="button" className="ww-media-btn main" title="Play slide show" disabled={images.length < 2} onClick={toggleSlideShow}>
+          {slideShow ? <PauseRegular /> : <PlayRegular />}
+        </button>
+        <button type="button" className="ww-media-btn" title="Next (Right arrow)" disabled={images.length < 2} onClick={next}>
+          <NextRegular />
+        </button>
+        <span className="ww-mediabar-sep" />
+        <button type="button" className="ww-media-btn" title="Rotate counterclockwise" onClick={() => setRotation((r) => r - 90)}>
+          <ArrowRotateCounterclockwiseRegular />
+        </button>
+        <button type="button" className="ww-media-btn" title="Rotate clockwise" onClick={() => setRotation((r) => r + 90)}>
+          <ArrowRotateClockwiseRegular />
+        </button>
+        <button type="button" className="ww-media-btn" title="Delete" disabled={!currentImage} onClick={() => void deleteCurrentImage()}>
+          <DeleteRegular />
+        </button>
+        <span className="ww-mediabar-info text-right">{Math.round(zoom * 100)}%</span>
+      </div>
     </div>
   );
 }

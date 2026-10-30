@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
-import { Button } from "@fluentui/react-components";
 import { useRuntimeStore } from "./state/runtimeStore";
 import { useLogStore } from "./state/logStore";
+import { useSettingsStore } from "./state/settingsStore";
 import { Desktop } from "./modules/desktop/Desktop";
 import { Taskbar } from "./modules/taskbar/Taskbar";
 
 export function App() {
   const { ready, init } = useRuntimeStore();
+  const showLogPanel = useSettingsStore((s) => s.showLogPanel);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -22,13 +23,14 @@ export function App() {
     <>
       <Desktop fileInputRef={fileInputRef} folderInputRef={folderInputRef} />
       <Taskbar fileInputRef={fileInputRef} folderInputRef={folderInputRef} />
-      <LogPanel />
+      {showLogPanel && <LogPanel />}
     </>
   );
 }
 
 function LogPanel() {
   const { entries, clear } = useLogStore();
+  const setSettings = useSettingsStore((s) => s.set);
   const outputRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll on new logs
@@ -42,9 +44,12 @@ function LogPanel() {
     <div id="log-panel">
       <div id="log-panel-header">
         <span>System Log</span>
-        <Button id="log-clear-btn" appearance="subtle" type="button" onClick={clear}>
+        <button type="button" onClick={clear}>
           Clear
-        </Button>
+        </button>
+        <button type="button" title="Hide (re-enable it in Control Panel)" onClick={() => setSettings({ showLogPanel: false })}>
+          Hide
+        </button>
       </div>
       <div id="log-output" ref={outputRef}>
         {entries.map((entry) => (

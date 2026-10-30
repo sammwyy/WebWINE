@@ -4,13 +4,14 @@ import { useWindowStore } from "@/state/windowStore";
 import { showMessageBox, type MessageBoxResult } from "../message-box/MessageBoxApp";
 import { showFileDialog } from "../file-dialog/FileDialogApp";
 import { GuestMenuBar } from "./GuestMenuBar";
-import type { MenuItemData } from "@/core/wasm/worker";
+import type { DialogControlData, MenuItemData } from "@/core/wasm/worker";
 
 const WM_COMMAND = 0x0111;
 import { beep } from "@/shared/lib/beep";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { UiEvent } from "@/core/wasm/worker";
 import { WebGLVideoDriver, type GpuCommand } from "@/core/gpu/video-driver";
+import { iconUrl } from "@/shared/lib/personalization";
 
 const WM_CLOSE = 0x0010;
 
@@ -106,6 +107,8 @@ export function handleUiEvents(
         if (g) {
           g.dialogControls = ev.controls;
           g.setDialogControls?.([...ev.controls]);
+          // A window with dialog controls gets the dialog face background.
+          useWindowStore.getState().updateWindow(g.winId, { surface: "face" });
         }
         break;
       }
@@ -261,10 +264,11 @@ function createGuestWindow(
 
   const winId = useWindowStore.getState().openWindow({
     title: ev.title || "Window",
-    icon: `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`,
+    icon: iconUrl("shell/default_executable"),
     variant: "window",
     width: Math.max(ev.width, 200),
     height: Math.max(ev.height, 120) + 30,
+    clientSize: { width: ev.width, height: ev.height },
     content: <GuestWindowApp pid={pid} hwnd={ev.hwnd} ev={ev} runtime={runtime} />,
   });
 
@@ -325,10 +329,8 @@ function GuestWindowApp({
     };
   }, [pid, hwnd, runtime]);
 
-  const bg = controls.length > 0 ? "#f0f0f0" : "var(--window-bg,#fff)";
-
   return (
-    <div className="flex flex-col w-full h-full" style={{ backgroundColor: bg }}>
+    <div className="flex flex-col w-full h-full">
       <GuestMenuBar items={menu} onCommand={(id) => runtime.postWindowMessage(pid, hwnd, WM_COMMAND, id, 0)} />
       <div className="relative flex-1 overflow-hidden">
         <canvas
@@ -337,51 +339,77 @@ function GuestWindowApp({
           width={ev.width}
           height={ev.height}
         />
-        {controls.map(c => {
-          const cls = c.class_name.toLowerCase();
-          const isBtn = cls === "button";
-          const type = c.style & 0x0F;
-          const isChk = isBtn && (type === 2 || type === 3);
-          const isRad = isBtn && (type === 4 || type === 9);
-          const isGrp = isBtn && type === 7;
-          const isPush = isBtn && !isChk && !isRad && !isGrp;
-          const isEdit = cls === "edit";
-          
-          return (
-          <div
+        {controls.map((c) => (
+          <GuestControl
             key={c.hwnd}
-            onClick={() => {
-              if (isBtn) runtime.postWindowMessage(pid, hwnd, WM_COMMAND, c.id, c.hwnd);
-            }}
-            style={{
-              position: "absolute",
-              left: c.x,
-              top: c.y,
-              width: c.w,
-              height: c.h,
-              display: c.visible ? "flex" : "none",
-              alignItems: isGrp ? "flex-start" : "center",
-              justifyContent: isPush ? "center" : "flex-start",
-              border: isPush ? "2px outset #dfdfdf" : isEdit ? "2px inset #dfdfdf" : isGrp ? "1px solid #a0a0a0" : "none",
-              background: isPush ? "#e0e0e0" : isEdit ? "#fff" : "transparent",
-              cursor: isBtn ? "pointer" : "default",
-              userSelect: "none",
-              padding: "2px",
-              fontFamily: "'Segoe UI', system-ui, sans-serif",
-              fontSize: "13px",
-              color: "#000",
-              boxSizing: "border-box",
-              opacity: c.enabled ? 1 : 0.5,
-              pointerEvents: c.enabled ? "auto" : "none",
-            }}
-          >
-            {isChk && <input type="checkbox" checked={c.checked} readOnly className="mr-1" />}
-            {isRad && <input type="radio" checked={c.checked} readOnly className="mr-1" />}
-            {isGrp && <div style={{position:"absolute", top:-8, left:8, background:bg, padding:"0 4px"}}>{c.text.replace(/&/g, '')}</div>}
-            {!isGrp && <span className="truncate" style={{width:"100%", textAlign: isPush ? "center" : "left"}}>{c.text.replace(/&/g, '')}</span>}
-          </div>
-        )})}
+            control={c}
+            onCommand={() => runtime.postWindowMessage(pid, hwnd, WM_COMMAND, c.id, c.hwnd)}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+const BS_TYPE_MASK = 0x0f;
+const BS_CHECKBOX = 2;
+const BS_AUTOCHECKBOX = 3;
+const BS_RADIOBUTTON = 4;
+const BS_GROUPBOX = 7;
+const BS_AUTORADIOBUTTON = 9;
+
+/** One Win32 dialog control, drawn with the theme's native-looking controls. */
+function GuestControl({ control: c, onCommand }: { control: DialogControlData; onCommand: () => void }) {
+  const cls = c.class_name.toLowerCase();
+  const type = c.style & BS_TYPE_MASK;
+  const text = c.text.replace(/&/g, ""); // strip Win32 accelerator markers
+  const style: React.CSSProperties = {
+    position: "absolute",
+    left: c.x,
+    top: c.y,
+    width: c.w,
+    height: c.h,
+    display: c.visible ? undefined : "none",
+  };
+
+  if (cls === "button") {
+    if (type === BS_GROUPBOX) {
+      return (
+        <fieldset className="ww-groupbox pointer-events-none" style={style}>
+          <legend>{text}</legend>
+        </fieldset>
+      );
+    }
+    const isCheck = type === BS_CHECKBOX || type === BS_AUTOCHECKBOX;
+    const isRadio = type === BS_RADIOBUTTON || type === BS_AUTORADIOBUTTON;
+    if (isCheck || isRadio) {
+      return (
+        <label className="ww-check" style={style}>
+          <input
+            type={isCheck ? "checkbox" : "radio"}
+            className={isCheck ? "ww-checkbox" : "ww-radio"}
+            checked={c.checked}
+            disabled={!c.enabled}
+            onChange={onCommand}
+          />
+          <span className="truncate">{text}</span>
+        </label>
+      );
+    }
+    return (
+      <button type="button" className="ww-button !min-w-0" style={style} disabled={!c.enabled} onClick={onCommand}>
+        <span className="truncate">{text}</span>
+      </button>
+    );
+  }
+
+  if (cls === "edit") {
+    return <input className="ww-input" style={style} value={text} disabled={!c.enabled} readOnly />;
+  }
+
+  return (
+    <span className="flex items-center truncate select-none" style={{ ...style, opacity: c.enabled ? 1 : 0.5 }}>
+      {text}
+    </span>
   );
 }

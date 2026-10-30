@@ -6,6 +6,7 @@ import type { PeInfo, PeSection, PeImportModule } from "@/core/wasm/worker";
 import { basename, formatSize } from "@/shared/lib/utils";
 import { log } from "@/state/logStore";
 import { resolveIcon } from "@/shared/lib/icons/icon-resolver";
+import { iconUrl } from "@/shared/lib/personalization";
 
 export async function openPeInspector(path: string, runtime: RuntimeBridge) {
   const name = basename(path);
@@ -15,7 +16,7 @@ export async function openPeInspector(path: string, runtime: RuntimeBridge) {
     runtime,
   );
 
-  const icon = resolved?.src || `${import.meta.env.BASE_URL}theme/icons/shell/default_executable.webp`;
+  const icon = resolved?.src || iconUrl("shell/default_executable");
 
   let winId = "";
 
@@ -99,7 +100,7 @@ function PeInspectorApp({
 
   if (error) {
     return (
-      <div className="h-full flex flex-col bg-[#111111] text-[#f2f2f2] font-[var(--system-font)]">
+      <div className="h-full flex flex-col bg-[var(--ww-surface)] text-[var(--ww-text)] font-[var(--system-font)]">
         <InspectorToolbar
           name={name}
           path={path}
@@ -107,7 +108,7 @@ function PeInspectorApp({
           onReload={() => setReloadKey((v) => v + 1)}
         />
 
-        <div className="m-4 border border-[#5c2b2b] bg-[#241414] text-[#ffb3bd] p-4 text-[12px] leading-[18px]">
+        <div className="m-4 border border-[var(--ww-danger-border)] bg-[var(--ww-danger-bg)] text-[var(--ww-danger)] p-4 text-[12px] leading-[18px]">
           <div className="font-semibold mb-1">Failed to parse PE</div>
           <div className="font-[Cascadia_Code,Consolas,monospace] whitespace-pre-wrap break-words">
             {error}
@@ -119,7 +120,7 @@ function PeInspectorApp({
 
   if (!info) {
     return (
-      <div className="h-full flex flex-col bg-[#111111] text-[#f2f2f2] font-[var(--system-font)]">
+      <div className="h-full flex flex-col bg-[var(--ww-surface)] text-[var(--ww-text)] font-[var(--system-font)]">
         <InspectorToolbar
           name={name}
           path={path}
@@ -127,7 +128,7 @@ function PeInspectorApp({
           onReload={() => setReloadKey((v) => v + 1)}
         />
 
-        <div className="flex-1 grid place-items-center text-[12px] text-[#a6a6a6]">
+        <div className="flex-1 grid place-items-center text-[12px] text-[var(--ww-text-muted)]">
           Parsing PE headers…
         </div>
       </div>
@@ -137,7 +138,7 @@ function PeInspectorApp({
   const warnings = getWarnings(info);
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-[#111111] text-[#f2f2f2] font-[var(--system-font)]">
+    <div className="h-full min-h-0 flex flex-col bg-[var(--ww-surface)] text-[var(--ww-text)] font-[var(--system-font)]">
       <InspectorToolbar
         name={name}
         path={path}
@@ -147,7 +148,7 @@ function PeInspectorApp({
 
       <SummaryStrip info={info} warnings={warnings} />
 
-      <div className="h-[34px] flex items-end gap-0 px-2 bg-[#191919] border-b border-[#2b2b2b]">
+      <div className="h-[34px] flex items-end gap-0 px-2 bg-[var(--ww-surface-alt)] border-b border-[var(--ww-border)]">
         <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
           Overview
         </TabButton>
@@ -180,7 +181,7 @@ function InspectorToolbar({
   onReload: () => void;
 }) {
   return (
-    <div className="h-[58px] flex items-center gap-3 px-3 bg-[#202020] border-b border-[#2b2b2b]">
+    <div className="h-[58px] flex items-center gap-3 px-3 bg-[var(--ww-surface-alt)] border-b border-[var(--ww-border)]">
       <img
         src={icon}
         alt=""
@@ -189,15 +190,15 @@ function InspectorToolbar({
       />
 
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] text-[#f2f2f2] truncate">{name}</div>
-        <div className="mt-[2px] text-[11px] text-[#a6a6a6] font-[Cascadia_Code,Consolas,monospace] truncate">
+        <div className="text-[13px] text-[var(--ww-text)] truncate">{name}</div>
+        <div className="mt-[2px] text-[11px] text-[var(--ww-text-muted)] font-[Cascadia_Code,Consolas,monospace] truncate">
           {path}
         </div>
       </div>
 
       <button
         type="button"
-        className="h-[28px] min-w-[78px] px-3 rounded-none border border-[#555] bg-[#333] text-[#f2f2f2] text-[12px] cursor-default hover:bg-[#3f3f3f] hover:border-[#6b6b6b] active:bg-[#2b2b2b] focus:outline-none focus:border-[#0078d7]"
+        className="h-[28px] min-w-[78px] px-3 rounded-none border border-[var(--ww-border-strong)] bg-[var(--ww-control)] text-[var(--ww-text)] text-[12px] cursor-default hover:bg-[var(--ww-control-hover)] hover:border-[var(--ww-border-hover)] active:bg-[var(--ww-control)] focus:outline-none focus:border-[#0078d7]"
         onClick={() => {
           void navigator.clipboard?.writeText(path).catch(() => { });
         }}
@@ -207,7 +208,7 @@ function InspectorToolbar({
 
       <button
         type="button"
-        className="h-[28px] min-w-[70px] px-3 rounded-none border border-[#555] bg-[#333] text-[#f2f2f2] text-[12px] cursor-default hover:bg-[#3f3f3f] hover:border-[#6b6b6b] active:bg-[#2b2b2b] focus:outline-none focus:border-[#0078d7]"
+        className="h-[28px] min-w-[70px] px-3 rounded-none border border-[var(--ww-border-strong)] bg-[var(--ww-control)] text-[var(--ww-text)] text-[12px] cursor-default hover:bg-[var(--ww-control-hover)] hover:border-[var(--ww-border-hover)] active:bg-[var(--ww-control)] focus:outline-none focus:border-[#0078d7]"
         onClick={onReload}
       >
         Refresh
@@ -224,7 +225,7 @@ function SummaryStrip({
   warnings: string[];
 }) {
   return (
-    <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] max-[680px]:grid-cols-2 border-b border-[#2b2b2b] bg-[#151515]">
+    <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] max-[680px]:grid-cols-2 border-b border-[var(--ww-border)] bg-[var(--ww-surface-alt)]">
       <SummaryItem label="Type" value={info.is_dll ? "DLL" : info.is_pe32 ? "PE32" : "PE32+"} />
       <SummaryItem label="Machine" value={info.machine} />
       <SummaryItem label="Subsystem" value={info.subsystem} />
@@ -247,14 +248,14 @@ function SummaryItem({
   danger?: boolean;
 }) {
   return (
-    <div className="min-w-0 px-3 py-2 border-r border-[#2b2b2b] last:border-r-0">
-      <div className="text-[10px] uppercase tracking-[0.05em] text-[#a6a6a6]">
+    <div className="min-w-0 px-3 py-2 border-r border-[var(--ww-border)] last:border-r-0">
+      <div className="text-[10px] uppercase tracking-[0.05em] text-[var(--ww-text-muted)]">
         {label}
       </div>
       <div
         className={[
           "mt-[2px] text-[12px] font-[Cascadia_Code,Consolas,monospace] truncate",
-          danger ? "text-[#ffb3bd]" : "text-[#f2f2f2]",
+          danger ? "text-[var(--ww-danger)]" : "text-[var(--ww-text)]",
         ].join(" ")}
       >
         {value}
@@ -279,8 +280,8 @@ function TabButton({
         "h-[30px] px-4 rounded-none border border-transparent border-b-0",
         "text-[12px] cursor-default",
         active
-          ? "bg-[#111111] border-[#2b2b2b] text-[#ffffff]"
-          : "bg-transparent text-[#d6d6d6] hover:bg-[rgba(255,255,255,0.08)]",
+          ? "bg-[var(--ww-surface)] border-[var(--ww-border)] text-[var(--ww-text)]"
+          : "bg-transparent text-[var(--ww-text)] hover:bg-[var(--ww-hover)]",
       ].join(" ")}
       onClick={onClick}
     >
@@ -314,13 +315,13 @@ function Overview({ info, path }: { info: PeInfo; path: string }) {
     <div className="p-3">
       <PanelTitle>PE Headers</PanelTitle>
 
-      <div className="grid grid-cols-[140px_1fr] border border-[#2b2b2b] bg-[#151515]">
+      <div className="grid grid-cols-[140px_1fr] border border-[var(--ww-border)] bg-[var(--ww-surface-alt)]">
         {fields.map(([k, v]) => (
           <React.Fragment key={k}>
-            <div className="px-3 py-[6px] text-[11px] text-[#a6a6a6] border-b border-[#2b2b2b] bg-[#191919]">
+            <div className="px-3 py-[6px] text-[11px] text-[var(--ww-text-muted)] border-b border-[var(--ww-border)] bg-[var(--ww-surface-alt)]">
               {k}
             </div>
-            <div className="px-3 py-[6px] text-[11px] text-[#f2f2f2] border-b border-[#2b2b2b] font-[Cascadia_Code,Consolas,monospace] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+            <div className="px-3 py-[6px] text-[11px] text-[var(--ww-text)] border-b border-[var(--ww-border)] font-[Cascadia_Code,Consolas,monospace] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
               {v}
             </div>
           </React.Fragment>
@@ -331,11 +332,11 @@ function Overview({ info, path }: { info: PeInfo; path: string }) {
         <>
           <PanelTitle className="mt-4">Warnings</PanelTitle>
 
-          <div className="border border-[#5c4a1f] bg-[#201a0d]">
+          <div className="border border-[var(--ww-warn-border)] bg-[var(--ww-warn-bg)]">
             {warnings.map((warning) => (
               <div
                 key={warning}
-                className="px-3 py-2 text-[12px] text-[#f9e2af] border-b border-[#5c4a1f] last:border-b-0"
+                className="px-3 py-2 text-[12px] text-[var(--ww-warn)] border-b border-[var(--ww-warn-border)] last:border-b-0"
               >
                 {warning}
               </div>
@@ -352,10 +353,10 @@ function Sections({ sections }: { sections: PeSection[] }) {
     <div className="p-3">
       <PanelTitle>Sections ({sections.length})</PanelTitle>
 
-      <div className="border border-[#2b2b2b] overflow-auto">
+      <div className="border border-[var(--ww-border)] overflow-auto">
         <table className="w-full border-collapse text-[11px]">
-          <thead className="sticky top-0 z-10 bg-[#191919]">
-            <tr className="[&_th]:h-[28px] [&_th]:px-2 [&_th]:border-b [&_th]:border-[#2b2b2b] [&_th]:text-left [&_th]:font-normal [&_th]:text-[#a6a6a6]">
+          <thead className="sticky top-0 z-10 bg-[var(--ww-surface-alt)]">
+            <tr className="[&_th]:h-[28px] [&_th]:px-2 [&_th]:border-b [&_th]:border-[var(--ww-border)] [&_th]:text-left [&_th]:font-normal [&_th]:text-[var(--ww-text-muted)]">
               <th>Name</th>
               <th>Virtual Address</th>
               <th>Virtual Size</th>
@@ -373,18 +374,18 @@ function Sections({ sections }: { sections: PeSection[] }) {
               return (
                 <tr
                   key={`${s.name}-${i}`}
-                  className="border-b border-[#242424] hover:bg-[rgba(255,255,255,0.06)]"
+                  className="border-b border-[var(--ww-border)] hover:bg-[var(--ww-hover)]"
                 >
-                  <td className="h-[30px] px-2 text-[#f2f2f2] font-[Cascadia_Code,Consolas,monospace]">
+                  <td className="h-[30px] px-2 text-[var(--ww-text)] font-[Cascadia_Code,Consolas,monospace]">
                     {s.name}
                   </td>
-                  <td className="px-2 text-[#d6d6d6] font-[Cascadia_Code,Consolas,monospace]">
+                  <td className="px-2 text-[var(--ww-text)] font-[Cascadia_Code,Consolas,monospace]">
                     {hex(s.virtual_address, 8)}
                   </td>
-                  <td className="px-2 text-[#d6d6d6] font-[Cascadia_Code,Consolas,monospace]">
+                  <td className="px-2 text-[var(--ww-text)] font-[Cascadia_Code,Consolas,monospace]">
                     {hex(s.virtual_size, 8)}
                   </td>
-                  <td className="px-2 text-[#d6d6d6] font-[Cascadia_Code,Consolas,monospace]">
+                  <td className="px-2 text-[var(--ww-text)] font-[Cascadia_Code,Consolas,monospace]">
                     {hex(s.raw_size, 8)}
                   </td>
                   <td className={`px-2 font-[Cascadia_Code,Consolas,monospace] tracking-[0.12em] ${flagsClass(flags)}`}>
@@ -392,13 +393,13 @@ function Sections({ sections }: { sections: PeSection[] }) {
                   </td>
                   <td className="px-2 text-[11px]">
                     {risky ? (
-                      <span className="text-[#ffb3bd]">RWX section</span>
+                      <span className="text-[var(--ww-danger)]">RWX section</span>
                     ) : s.executable && s.writable ? (
-                      <span className="text-[#ffb3bd]">Writable code</span>
+                      <span className="text-[var(--ww-danger)]">Writable code</span>
                     ) : s.raw_size === 0 ? (
-                      <span className="text-[#a6a6a6]">No raw data</span>
+                      <span className="text-[var(--ww-text-muted)]">No raw data</span>
                     ) : (
-                      <span className="text-[#666]">—</span>
+                      <span className="text-[var(--ww-text-muted)]">—</span>
                     )}
                   </td>
                 </tr>
@@ -446,7 +447,7 @@ function Imports({ imports }: { imports: PeImportModule[] }) {
         </PanelTitle>
 
         <input
-          className="w-[220px] h-[28px] px-2 rounded-none border border-[#4a4a4a] bg-[#111111] text-[#f2f2f2] text-[12px] outline-none hover:border-[#666] focus:border-[#0078d7]"
+          className="w-[220px] h-[28px] px-2 rounded-none border border-[var(--ww-border-strong)] bg-[var(--ww-surface)] text-[var(--ww-text)] text-[12px] outline-none hover:border-[var(--ww-border-hover)] focus:border-[#0078d7]"
           placeholder="Search imports"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -454,34 +455,34 @@ function Imports({ imports }: { imports: PeImportModule[] }) {
         />
       </div>
 
-      <div className="border border-[#2b2b2b] bg-[#151515]">
+      <div className="border border-[var(--ww-border)] bg-[var(--ww-surface-alt)]">
         {filtered.length === 0 && (
-          <div className="px-3 py-4 text-[12px] text-[#a6a6a6]">
+          <div className="px-3 py-4 text-[12px] text-[var(--ww-text-muted)]">
             No imports matched your search.
           </div>
         )}
 
         {filtered.map((mod, i) => (
-          <details key={`${mod.dll}-${i}`} className="group border-b border-[#242424] last:border-b-0">
-            <summary className="h-[32px] px-3 cursor-default list-none flex items-center gap-[7px] text-[12px] text-[#f2f2f2] hover:bg-[rgba(255,255,255,0.07)] [&::-webkit-details-marker]:hidden">
-              <span className="w-3 text-[10px] text-[#a6a6a6] transition-transform group-open:rotate-90">
+          <details key={`${mod.dll}-${i}`} className="group border-b border-[var(--ww-border)] last:border-b-0">
+            <summary className="h-[32px] px-3 cursor-default list-none flex items-center gap-[7px] text-[12px] text-[var(--ww-text)] hover:bg-[var(--ww-hover)] [&::-webkit-details-marker]:hidden">
+              <span className="w-3 text-[10px] text-[var(--ww-text-muted)] transition-transform group-open:rotate-90">
                 ▶
               </span>
 
-              <span className="font-[Cascadia_Code,Consolas,monospace] text-[#8ecbff]">
+              <span className="font-[Cascadia_Code,Consolas,monospace] text-[var(--ww-info)]">
                 {mod.dll}
               </span>
 
-              <span className="text-[#a6a6a6]">
+              <span className="text-[var(--ww-text-muted)]">
                 {mod.functions.length}
               </span>
             </summary>
 
-            <ul className="list-none m-0 px-0 py-1 bg-[#111111] columns-2 max-[680px]:columns-1">
+            <ul className="list-none m-0 px-0 py-1 bg-[var(--ww-surface)] columns-2 max-[680px]:columns-1">
               {mod.functions.map((fn, j) => (
                 <li
                   key={`${fn}-${j}`}
-                  className="break-inside-avoid px-8 py-[2px] text-[11px] text-[#d6d6d6] font-[Cascadia_Code,Consolas,monospace] hover:bg-[rgba(255,255,255,0.06)]"
+                  className="break-inside-avoid px-8 py-[2px] text-[11px] text-[var(--ww-text)] font-[Cascadia_Code,Consolas,monospace] hover:bg-[var(--ww-hover)]"
                 >
                   {fn}
                 </li>
@@ -502,7 +503,7 @@ function PanelTitle({
   className?: string;
 }) {
   return (
-    <div className={`mb-2 text-[11px] uppercase tracking-[0.06em] text-[#a6a6a6] ${className}`}>
+    <div className={`mb-2 text-[11px] uppercase tracking-[0.06em] text-[var(--ww-text-muted)] ${className}`}>
       {children}
     </div>
   );
@@ -557,15 +558,15 @@ function sectionFlags(section: PeSection): string {
 function flagsClass(flags: string): string {
   switch (flags) {
     case "RWX":
-      return "text-[#ffb3bd]";
+      return "text-[var(--ww-danger)]";
     case "R--":
-      return "text-[#a6e3a1]";
+      return "text-[var(--ww-ok)]";
     case "R-X":
-      return "text-[#f9e2af]";
+      return "text-[var(--ww-warn)]";
     case "RW-":
-      return "text-[#8ecbff]";
+      return "text-[var(--ww-info)]";
     default:
-      return "text-[#a6a6a6]";
+      return "text-[var(--ww-text-muted)]";
   }
 }
 

@@ -1,0 +1,1510 @@
+/* Structural, theme-agnostic styles. */
+/* Layout only: colours, borders, gradients and shadows live in the */
+/* themes (src/themes/<id>/*.css, scoped to [data-theme="<id>"]). */
+/* Metrics a theme can override: */
+/* --ww-frame      side/bottom frame thickness of a window */
+/* --ww-caption    title bar height */
+/* --ww-taskbar-h  taskbar height (set on the theme root) */
+/* --sans, --ww-font-size  UI font (set on the theme root) */
+
+:root {
+  --sans: 'Segoe UI', Tahoma, system-ui, sans-serif;
+  --ww-font-size: 12px;
+  --ww-taskbar-h: 36px;
+}
+
+/* desktop / shell */
+
+.ww-desktop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ww-desktop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ww-desktop-icons {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ww-desktop-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+  padding: 6px 2px;
+  border: 1px solid transparent;
+  cursor: default;
+  user-select: none;
+}
+
+.ww-desktop-icon .label {
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ww-taskbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ww-taskbar-h);
+  padding: 0 8px;
+}
+
+.ww-taskbar-items {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 6px;
+  height: 100%;
+  overflow-x: auto;
+}
+
+.ww-taskbar-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 56px;
+  max-width: 180px;
+  padding: 0 10px;
+  font-size: var(--ww-font-size);
+  border: 1px solid transparent;
+  background: none;
+  cursor: default;
+  user-select: none;
+}
+
+.ww-taskbar-item > span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-start-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.ww-start-logo {
+  width: 16px;
+  height: 16px;
+}
+
+.ww-show-desktop {
+  display: none;
+  align-self: stretch;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+.ww-clock {
+  padding: 0 12px;
+  font-size: var(--ww-font-size);
+  user-select: none;
+}
+
+.ww-start-menu {
+  position: absolute;
+  left: 8px;
+  bottom: calc(var(--ww-taskbar-h) + 4px);
+  display: flex;
+  width: 420px;
+  overflow: hidden;
+}
+
+.ww-start-menu-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 8px 0;
+}
+
+.ww-start-menu-right {
+  display: flex;
+  flex-direction: column;
+  width: 176px;
+  padding: 8px 0;
+}
+
+.ww-start-heading {
+  padding: 0 12px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ww-start-item,
+.ww-start-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: default;
+  user-select: none;
+}
+
+.ww-start-item {
+  padding: 8px 14px;
+}
+
+.ww-start-link {
+  padding: 6px 16px;
+}
+
+.ww-start-link .ww-icon,
+.ww-start-footer {
+  display: none;
+}
+
+.ww-start-power {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  font: var(--ww-font-size) var(--sans);
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  cursor: default;
+}
+
+.ww-start-user {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin: 8px auto;
+}
+
+/* window frame */
+
+.ww-window {
+  --ww-frame: 8px;
+  --ww-caption: 29px;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--ww-frame) var(--ww-frame);
+  font: var(--ww-font-size)/1.35 var(--sans);
+}
+
+.ww-window.maximized {
+  --ww-frame: 0px;
+}
+
+.ww-window-caption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  height: var(--ww-caption);
+  margin: 0 calc(-1 * var(--ww-frame));
+  padding-left: calc(var(--ww-frame) + 1px);
+  user-select: none;
+  cursor: default;
+}
+
+.ww-window-title {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+.ww-window-title > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-caption-buttons {
+  display: flex;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-left: auto;
+}
+
+.ww-caption-btn {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: default;
+}
+
+.ww-window-client {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.ww-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ww-body.scroll {
+  display: block;
+  overflow: auto;
+}
+
+.ww-glass-panel {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 2px 0 6px;
+}
+
+.ww-resize {
+  position: absolute;
+  z-index: 2;
+}
+.ww-resize.n  { top: -4px; left: 8px; right: 8px; height: 7px; cursor: ns-resize; }
+.ww-resize.s  { bottom: -4px; left: 8px; right: 8px; height: 7px; cursor: ns-resize; }
+.ww-resize.e  { right: -4px; top: 8px; bottom: 8px; width: 7px; cursor: ew-resize; }
+.ww-resize.w  { left: -4px; top: 8px; bottom: 8px; width: 7px; cursor: ew-resize; }
+.ww-resize.nw { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.ww-resize.se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.ww-resize.ne { top: -4px; right: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.ww-resize.sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+
+.ww-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.ww-icon > svg,
+.ww-icon > img {
+  width: 100%;
+  height: 100%;
+}
+
+/* controls */
+
+.ww-button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 75px;
+  height: 23px;
+  padding: 0 10px;
+  font: var(--ww-font-size) var(--sans);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  outline: none;
+}
+
+.ww-input {
+  height: 23px;
+  padding: 0 4px;
+  font: var(--ww-font-size) var(--sans);
+  outline: none;
+}
+
+textarea.ww-input {
+  height: auto;
+  padding: 3px 4px;
+  resize: none;
+}
+
+.ww-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ww-search .ww-input {
+  width: 100%;
+  padding-right: 22px;
+}
+
+.ww-search-icon {
+  position: absolute;
+  right: 5px;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.ww-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ww-font-size);
+  user-select: none;
+  cursor: default;
+}
+
+.ww-checkbox,
+.ww-radio {
+  appearance: none;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  outline: none;
+  cursor: default;
+}
+
+.ww-radio {
+  border-radius: 50%;
+}
+
+.ww-select {
+  appearance: none;
+  height: 23px;
+  min-width: 90px;
+  padding: 0 22px 0 6px;
+  font: var(--ww-font-size) var(--sans);
+  outline: none;
+  cursor: default;
+}
+
+.ww-slider {
+  appearance: none;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  outline: none;
+}
+
+.ww-slider::-webkit-slider-thumb {
+  appearance: none;
+}
+
+.ww-progress {
+  position: relative;
+  height: 15px;
+  overflow: hidden;
+}
+
+.ww-progress.thin {
+  height: 13px;
+}
+
+.ww-progress-fill {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  transition: width 0.3s;
+}
+
+.ww-progress.indeterminate .ww-progress-fill {
+  width: 30% !important;
+  animation: ww-progress-marquee 1.8s linear infinite;
+}
+
+@keyframes ww-progress-marquee {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(340%); }
+}
+
+.ww-groupbox {
+  margin: 0;
+  padding: 4px 10px 10px;
+}
+
+.ww-groupbox > legend {
+  padding: 0 3px;
+  font-size: var(--ww-font-size);
+}
+
+.ww-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ww-tablist {
+  display: flex;
+  align-items: flex-end;
+  height: 23px;
+  padding-left: 2px;
+}
+
+.ww-tab {
+  position: relative;
+  height: 21px;
+  padding: 0 8px;
+  font: var(--ww-font-size) var(--sans);
+  cursor: default;
+  user-select: none;
+}
+
+.ww-tab.selected {
+  z-index: 2;
+}
+
+.ww-tabpanel {
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+.ww-separator {
+  height: 1px;
+}
+
+.ww-link {
+  cursor: pointer;
+}
+
+.ww-page-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: normal;
+}
+
+.ww-link:hover {
+  text-decoration: underline;
+}
+
+/* explorer chrome */
+
+.ww-navbuttons {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ww-navbtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  cursor: default;
+}
+
+.ww-navbtn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ww-navbtn-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 22px;
+}
+
+.ww-addressbar {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+}
+
+.ww-addressbar-icon {
+  display: flex;
+  align-items: center;
+  padding: 0 3px 0 4px;
+}
+
+.ww-crumbs {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ww-crumb {
+  display: flex;
+  align-items: stretch;
+  margin: 1px 0;
+  border: 1px solid transparent;
+}
+
+.ww-crumb > span {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: var(--ww-font-size);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.ww-crumb > .chevron {
+  border-left: 1px solid transparent;
+}
+
+.ww-addressbar-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  border-left: 1px solid transparent;
+}
+
+.ww-glass-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: default;
+}
+
+.ww-commandbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 1px;
+  height: 32px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.ww-command {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 25px;
+  padding: 0 7px;
+  font: var(--ww-font-size) var(--sans);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+
+.ww-command-caret {
+  margin-left: 1px;
+}
+
+.ww-commandbar-spacer {
+  flex: 1;
+}
+
+.ww-command-help {
+  width: 25px;
+  padding: 0;
+  justify-content: center;
+}
+
+.ww-navpane {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  user-select: none;
+}
+
+.ww-navpane-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+}
+
+.ww-navsection {
+  margin-bottom: 8px;
+}
+
+.ww-navsection-title {
+  padding: 2px 14px 6px;
+  font-size: var(--ww-font-size);
+}
+
+.ww-navlink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px;
+  padding: 3px 10px;
+  font-size: var(--ww-font-size);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.ww-navpane-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 10px 0 14px;
+  font-size: var(--ww-font-size);
+}
+
+.ww-listview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  user-select: none;
+  outline: none;
+}
+
+.ww-listview-header {
+  display: flex;
+  flex-shrink: 0;
+  height: 25px;
+}
+
+.ww-listview-col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 6px;
+  font-size: var(--ww-font-size);
+  cursor: default;
+}
+
+.ww-listview-col.sorted::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  translate: -50% 0;
+  border: 3.5px solid transparent;
+  border-bottom-color: currentColor;
+  border-top: 0;
+  opacity: 0.5;
+}
+
+.ww-listview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 2px 6px;
+}
+
+.ww-listview-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 3px 8px;
+  font-size: var(--ww-font-size);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.ww-listview-group::after {
+  content: '';
+  order: 1;
+  flex: 1;
+  height: 1px;
+}
+
+.ww-listview-group > .toggle {
+  order: 2;
+}
+
+.ww-listview-row {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  font-size: var(--ww-font-size);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.ww-listview-cell {
+  flex-shrink: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-listview-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 4px;
+}
+
+.ww-listview-tile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 260px;
+  padding: 4px;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.ww-tile-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--ww-font-size);
+}
+
+.ww-detailspane {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12px;
+  min-height: 64px;
+  padding: 6px 14px;
+  font-size: var(--ww-font-size);
+}
+
+.ww-detailspane-title {
+  font-size: 14px;
+}
+
+.ww-detailspane-props {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 8px;
+}
+
+.ww-detailspane-props dt {
+  text-align: right;
+}
+
+.ww-detailspane-props dd {
+  margin: 0;
+}
+
+.ww-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.ww-statusbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 12px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--ww-font-size);
+}
+
+/* theme thumbnail (Control Panel) */
+
+.ww-theme-thumb {
+  position: relative;
+  width: 160px;
+  height: 100px;
+  overflow: hidden;
+}
+
+.ww-theme-thumb-window {
+  position: absolute;
+  left: 11%;
+  top: 14%;
+  width: 69%;
+  height: 64%;
+  display: flex;
+  flex-direction: column;
+  padding: 0 3px 3px;
+}
+
+.ww-theme-thumb-title {
+  height: 12px;
+  font-size: 7px;
+  line-height: 12px;
+  padding-left: 2px;
+}
+
+.ww-theme-thumb-body {
+  flex: 1;
+}
+
+.ww-theme-thumb-taskbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 9px;
+}
+
+/* WebWINE shell additions (layout only — colours live in the themes) */
+
+.ww-window-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ww-window-layer > .ww-window {
+  pointer-events: auto;
+}
+
+/* custom-chrome windows: the content draws its own title bar */
+.ww-window.frameless {
+  --ww-frame: 0px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ww-body.none {
+  background: transparent;
+}
+
+/* while dragging/resizing, guest canvases must not eat pointer events */
+body.ww-dragging canvas,
+body.ww-dragging iframe {
+  pointer-events: none;
+}
+
+/* wallpaper layer above the theme's own desktop background (visible if the image is missing) */
+.ww-wallpaper {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ww-desktop.has-wallpaper::before {
+  display: none;
+}
+
+.ww-desktop-icon.selected .label {
+  text-shadow: none;
+}
+
+/* taskbar extras */
+
+.ww-tray {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.ww-tray-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-width: 22px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: default;
+}
+
+.ww-taskbar .ww-taskbar-item.icon-only {
+  justify-content: center;
+  width: auto;
+  min-width: 44px;
+  padding: 0 10px;
+}
+
+.ww-tray-menu {
+  position: absolute;
+  right: 4px;
+  bottom: calc(var(--ww-taskbar-h) + 4px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 260px;
+  padding: 10px;
+  font: var(--ww-font-size) var(--sans);
+}
+
+.ww-tray-menu-title {
+  font-weight: 600;
+}
+
+.ww-theme-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.ww-theme-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.ww-theme-chip .ww-theme-thumb {
+  width: 100%;
+  height: 62px;
+}
+
+.ww-theme-chip > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-theme-chip.selected {
+  border-color: currentColor;
+}
+
+/* classic (XP / Vista / 7) start menu extras */
+
+.ww-start-list {
+  flex: 1;
+  min-height: 0;
+  max-height: min(440px, calc(100vh - 200px));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ww-start-item > img,
+.ww-start-link > img {
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.ww-start-item .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-start-item .chevron {
+  flex-shrink: 0;
+  font-size: 9px;
+  transition: transform 0.12s;
+}
+
+.ww-start-item.open .chevron {
+  transform: rotate(90deg);
+}
+
+.ww-start-item.sub {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.ww-start-item.empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.ww-start-separator {
+  height: 1px;
+  margin: 4px 10px;
+}
+
+.ww-start-menu.classic .ww-start-menu-right .ww-start-user {
+  flex-shrink: 0;
+}
+
+/* context menus / drop-down menus */
+
+.ww-menu {
+  position: relative;
+  min-width: 200px;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  font: var(--ww-font-size) var(--sans);
+  user-select: none;
+}
+
+.ww-menu-entry {
+  position: relative;
+}
+
+.ww-menu-item {
+  display: grid;
+  grid-template-columns: 26px 1fr auto 16px;
+  align-items: center;
+  width: 100%;
+  min-height: 22px;
+  padding: 0 4px 0 0;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.ww-menu-item:disabled {
+  pointer-events: none;
+}
+
+.ww-menu-check,
+.ww-menu-arrow {
+  display: grid;
+  place-items: center;
+}
+
+.ww-menu-label {
+  min-width: 0;
+  padding-left: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ww-menu-sep {
+  height: 1px;
+  margin: 3px 2px 3px 30px;
+}
+
+.ww-menubar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 2px;
+  user-select: none;
+}
+
+.ww-menubar-item {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: var(--ww-font-size) var(--sans);
+  cursor: default;
+}
+
+/* command bar extras */
+
+.ww-command:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.ww-command.active {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.ww-command-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: currentColor;
+  opacity: 0.25;
+}
+
+/* media bars (Photo Viewer / Media Player) */
+
+.ww-mediabar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 10px;
+  color: var(--ww-text);
+  background: var(--ww-surface-alt);
+  border-top: 1px solid var(--ww-border);
+}
+
+.ww-mediabar-info {
+  width: 90px;
+  font-size: 11px;
+  color: var(--ww-text-muted);
+  white-space: nowrap;
+}
+
+.ww-mediabar-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: var(--ww-border-strong);
+}
+
+.ww-media-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: default;
+}
+
+.ww-media-btn:hover:not(:disabled) {
+  border-color: var(--ww-border-strong);
+  background: var(--ww-hover);
+}
+
+.ww-media-btn:active:not(:disabled) {
+  background: var(--ww-active);
+}
+
+.ww-media-btn:disabled {
+  opacity: 0.4;
+}
+
+.ww-media-btn.main {
+  width: 40px;
+  height: 40px;
+  font-size: 22px;
+  color: #fff;
+  border-color: rgba(0, 0, 0, 0.35);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 25%, rgba(255, 255, 255, 0.55), transparent 70%),
+    var(--ww-accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.ww-media-btn.main:hover:not(:disabled) {
+  filter: brightness(1.15);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 25%, rgba(255, 255, 255, 0.6), transparent 70%),
+    var(--ww-accent);
+}
+
+/* the picture / video stage */
+.pv-stage {
+  background: var(--ww-surface);
+}
+
+.pv-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mp-stage > :first-child {
+  background: #000;
+}
+
+.mp-stage:fullscreen > :first-child,
+.mp-stage:fullscreen {
+  background: #000;
+}
+
+/* text editor */
+
+.ww-editor {
+  background: var(--ww-surface);
+  color: var(--ww-text);
+}
+
+/* Task Manager */
+
+.tm-tabs {
+  flex-shrink: 0;
+  padding: 4px 6px 0;
+}
+
+.ww-listview .tm-proc-cols {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 120px 110px 110px;
+}
+
+.ww-listview .tm-detail-cols {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 60px 100px 100px 90px 90px 70px;
+}
+
+.ww-listview .tm-proc-cols > *,
+.ww-listview .tm-detail-cols > * {
+  min-width: 0;
+}
+
+.ww-listview-header.tm-tall-header {
+  height: 40px;
+}
+
+.tm-metric {
+  flex-direction: column;
+  align-items: flex-end !important;
+  justify-content: center;
+  line-height: 1.15;
+}
+
+.tm-metric b {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.tm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.tm-chevron {
+  display: inline-block;
+  transform: rotate(180deg);
+}
+
+.tm-chevron.up {
+  transform: none;
+}
+
+.tm-perf-list {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 210px;
+  padding: 6px 0;
+  overflow: auto;
+  border-right: 1px solid var(--ww-border);
+}
+
+.tm-perf-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.tm-perf-item .tm-graph {
+  flex-shrink: 0;
+  width: 70px;
+  height: 44px;
+}
+
+.tm-perf-item:hover {
+  background: var(--ww-hover);
+}
+
+.tm-perf-item.selected {
+  background: var(--ww-active);
+}
+
+.tm-graph {
+  display: block;
+  width: 100%;
+  height: 180px;
+  border: 1px solid;
+  background: var(--ww-surface);
+}
+
+.tm-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px 18px;
+  margin-top: 8px;
+}
+
+.tm-stats > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.tm-stats b {
+  font-size: 16px;
+  font-weight: 400;
+}
+
+/* Explorer */
+
+.ww-listview .explorer-cols {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 140px 130px 90px;
+}
+
+@media (max-width: 720px) {
+  .ww-listview .explorer-cols {
+    grid-template-columns: minmax(160px, 1fr) 110px 76px;
+  }
+}
+
+.ww-listview .explorer-cols > * {
+  min-width: 0;
+}
+
+.ww-addressbar-edit {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: var(--ww-font-size) var(--sans);
+}
+
+/* Control Panel */
+
+.cp-theme-grid {
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 8px;
+}
+
+.cp-theme-grid .ww-theme-thumb {
+  height: 100px;
+}
+
+.cp-monitor {
+  flex-shrink: 0;
+  width: 240px;
+  height: 150px;
+  border: 10px solid #2b2b2b;
+  border-bottom-width: 14px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.cp-monitor-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.cp-section {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cp-wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.cp-wallpaper,
+.cp-iconpack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.cp-wallpaper-frame {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: rgba(128, 128, 128, 0.25);
+}
+
+.cp-wallpaper-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cp-iconpack {
+  gap: 8px;
+  padding: 8px;
+}
+
+.cp-wallpaper.selected,
+.cp-iconpack.selected,
+.cp-wallpaper:hover,
+.cp-iconpack:hover {
+  border-color: currentColor;
+}
+
+.cp-swatch {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  outline: 1px solid rgba(128, 128, 128, 0.5);
+  cursor: default;
+}
+
+.cp-swatch.selected {
+  border-color: currentColor;
+}
+
+/* misc. dialog helpers */
+
+.ww-propgrid {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 7px 8px;
+}
+
+.ww-propgrid > :nth-child(odd) {
+  white-space: nowrap;
+}
+
+.ww-propgrid > :nth-child(even) {
+  word-break: break-all;
+}

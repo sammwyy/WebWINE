@@ -29,6 +29,12 @@ import {
 import { DesktopIcon, isDesktopIconDragActive } from "./DesktopIcon";
 import { ContextMenu, SEPARATOR, type MenuItem } from "./ContextMenu";
 import { WindowLayer } from "../windows/WindowManager";
+import { useSettingsStore } from "@/state/settingsStore";
+import { useCurrentTheme } from "@/shared/lib/theme-registry";
+import { wallpaperStyle } from "@/shared/lib/personalization";
+import { showPrompt } from "@/apps/prompt/PromptDialog";
+import { openControlPanel } from "@/apps/control-panel/ControlPanelApp";
+import type { DirectoryEntry } from "@/core/wasm/worker";
 
 function isInternalDesktopDrag(dt: DataTransfer): boolean {
   if (isDesktopIconDragActive()) return true;
@@ -64,8 +70,10 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
-  const [renameEntry, setRenameEntry] = useState<import("@/core/wasm/worker").DirectoryEntry | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  const theme = useCurrentTheme();
+  const settings = useSettingsStore();
+  const { showDesktopIcons } = settings;
+  const wallpaper = wallpaperStyle(settings, theme);
 
   const doRefresh = useCallback(() => {
     if (runtime) refresh(runtime, DESKTOP_PATH);
@@ -89,11 +97,11 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     "--icon-size": `${layout.iconSize}px`,
     "--desktop-icon-cell-w": `${layout.cellWidth}px`,
     "--desktop-icon-cell-h": `${layout.cellHeight}px`,
+    bottom: "var(--ww-taskbar-h)",
   } as React.CSSProperties;
 
   // Initial load and event-based refreshes.
   useEffect(() => {
-    document.documentElement.style.setProperty("--desktop-wallpaper", `url('${import.meta.env.BASE_URL}theme/wallpaper.webp')`);
     doRefresh();
   }, [doRefresh]);
 
@@ -132,6 +140,28 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           kind: entry.kind,
         })),
     [entries, selectedIds],
+  );
+
+  /** Rename `entry`, or create it on the desktop when it has no path yet. */
+  const promptName = useCallback(
+    async (entry: DirectoryEntry, initial: string) => {
+      const title = entry.path ? "Rename" : entry.kind === "directory" ? "New Folder" : "New Text Document";
+      const name = await showPrompt({ title, label: entry.path ? "New name:" : "Name:", value: initial });
+      if (!runtime || !name) return;
+      try {
+        if (entry.path) {
+          await runtime.renameNode(entry.path, name);
+        } else if (entry.kind === "directory") {
+          await runtime.createDirectory(`${DESKTOP_PATH}\\${name}`);
+        } else {
+          await runtime.mountFile(`${DESKTOP_PATH}\\${name}`, new ArrayBuffer(0));
+        }
+        doRefresh();
+      } catch (err) {
+        log("fs", `operation failed: ${err}`, "error");
+      }
+    },
+    [runtime, doRefresh],
   );
 
   const buildDesktopMenu = useCallback((): MenuItem[] => {
@@ -195,8 +225,8 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           SEPARATOR,
           {
             label: "Show desktop icons",
-            checked: true,
-            disabled: true,
+            checked: showDesktopIcons,
+            action: () => useSettingsStore.getState().set({ showDesktopIcons: !showDesktopIcons }),
           },
         ],
       },
@@ -254,16 +284,7 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           {
             label: "Folder",
             disabled: !runtime,
-            action: () => {
-              setRenameEntry({
-                name: "",
-                path: "",
-                kind: "directory",
-                size: 0,
-              });
-
-              setRenameValue("New Folder");
-            },
+            action: () => void promptName({ name: "", path: "", kind: "directory", size: 0 }, "New Folder"),
           },
           {
             label: "Shortcut",
@@ -273,27 +294,21 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           {
             label: "Text Document",
             disabled: !runtime,
-            action: () => {
-              setRenameEntry({
-                name: "",
-                path: "",
-                kind: "file",
-                size: 0,
-              });
-
-              setRenameValue("New Text Document.txt");
-            },
+            action: () =>
+              void promptName({ name: "", path: "", kind: "file", size: 0 }, "New Text Document.txt"),
           },
         ],
       },
       SEPARATOR,
       {
         label: "Display settings",
-        disabled: true,
+        disabled: !runtime,
+        action: () => runtime && openControlPanel(runtime, "desktop"),
       },
       {
         label: "Personalize",
-        disabled: true,
+        disabled: !runtime,
+        action: () => runtime && openControlPanel(runtime, "personalization"),
       },
     ];
   }, [
@@ -304,6 +319,8 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     setIconSize,
     fileInputRef,
     folderInputRef,
+    promptName,
+    showDesktopIcons,
   ]);
 
   useEffect(() => {
@@ -343,28 +360,10 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [clipboard, doRefresh, runtime, selectedClipboardEntries]);
 
-  const confirmRename = useCallback(async () => {
-    if (!runtime || !renameEntry || !renameValue.trim()) return;
-    const name = renameValue.trim();
-    try {
-      if (renameEntry.path) {
-        await runtime.renameNode(renameEntry.path, name);
-      } else if (renameEntry.kind === "directory") {
-        await runtime.createDirectory(`${DESKTOP_PATH}\\${name}`);
-      } else {
-        await runtime.mountFile(`${DESKTOP_PATH}\\${name}`, new ArrayBuffer(0));
-      }
-      doRefresh();
-    } catch (err) {
-      log("fs", `operation failed: ${err}`, "error");
-    }
-    setRenameEntry(null);
-  }, [runtime, renameEntry, renameValue, doRefresh]);
-
   return (
     <div
       id="desktop"
-      className={`fixed inset-[0_0_40px_0] overflow-hidden ${dragOver ? "outline-2 outline-dashed outline-[var(--accent)] outline-offset-[-4px]" : ""}`}
+      className={`ww-desktop ${wallpaper ? "has-wallpaper" : ""} !fixed top-0 left-0 right-0 !h-auto overflow-hidden ${dragOver ? "outline-2 outline-dashed outline-[var(--accent)] outline-offset-[-4px]" : ""}`}
       style={desktopStyle}
       onClick={(e) => {
         if (e.target === e.currentTarget || (e.target as HTMLElement).id === "icon-grid") {
@@ -509,20 +508,20 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
         if (files) await handleFilesUploaded(Array.from(files));
       }}
     >
+      {wallpaper && <div className="ww-wallpaper" style={wallpaper} aria-hidden="true" />}
+
       <div id="icon-grid" className="absolute inset-0" ref={gridRef}>
-        {entries.map((entry) => (
-          <DesktopIcon
-            key={entry.path}
-            entry={entry}
-            position={positions[entry.path] ?? { col: 0, row: 0 }}
-            gridEl={gridRef.current}
-            onRefresh={doRefresh}
-            onRename={(e) => {
-              setRenameEntry(e);
-              setRenameValue(e.name);
-            }}
-          />
-        ))}
+        {showDesktopIcons &&
+          entries.map((entry) => (
+            <DesktopIcon
+              key={entry.path}
+              entry={entry}
+              position={positions[entry.path] ?? { col: 0, row: 0 }}
+              gridEl={gridRef.current}
+              onRefresh={doRefresh}
+              onRename={(e) => void promptName(e, e.name)}
+            />
+          ))}
       </div>
 
       <WindowLayer />
@@ -565,29 +564,6 @@ export function Desktop({ fileInputRef, folderInputRef }: DesktopProps) {
           e.target.value = "";
         }}
       />
-
-      {/* Inline rename / new file dialog */}
-      {renameEntry !== null && (
-        <div
-          className="fixed left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 p-3 text-[#f2f2f2] border border-[rgba(255,255,255,0.1)] rounded-none shadow-[0_16px_42px_rgba(0,0,0,0.55)] backdrop-blur-[28px] backdrop-saturate-[1.35] z-[9600]"
-          style={{ background: "linear-gradient(rgba(255,255,255,0.035), rgba(255,255,255,0.015)), rgba(31,31,31,0.88)" }}
-        >
-          <input
-            className="block w-full mb-2 bg-[#1b1b1b] border border-[#5f5f5f] rounded-none text-white shadow-none outline-none hover:border-[#8a8a8a] focus:border-[#0078d7] focus:shadow-[inset_0_-2px_0_#0078d7] px-2 py-1 text-[13px]"
-            autoFocus
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void confirmRename();
-              if (e.key === "Escape") setRenameEntry(null);
-            }}
-          />
-          <div className="flex gap-2 justify-end">
-            <button className="bg-[#0078d7] border border-[#0078d7] rounded-none text-white shadow-none hover:bg-[#006cc1] hover:border-[#006cc1] active:bg-[#006cc1] px-4 py-1 text-[13px] cursor-pointer" type="button" onClick={confirmRename}>OK</button>
-            <button className="bg-[#2d2d2d] border border-[#3f3f3f] rounded-none text-white shadow-none hover:bg-[#3a3a3a] hover:border-[#545454] active:bg-[#242424] px-4 py-1 text-[13px] cursor-pointer" type="button" onClick={() => setRenameEntry(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

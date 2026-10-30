@@ -1,5 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChevronRightGlyph } from "@/shared/icons";
+
+function CheckGlyph() {
+  return (
+    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+      <path d="M1.5 5.2 4 7.6 8.6 2.4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 export interface MenuItem {
   label: string;
@@ -148,14 +157,7 @@ function ContextMenuLevel({
   return (
     <ul
       ref={menuRef}
-      className={[
-        "relative m-0 list-none rounded-none",
-        "min-w-[214px] py-[3px] px-0",
-        "bg-[rgba(43,43,43,0.98)]",
-        "border border-[rgba(255,255,255,0.18)]",
-        "shadow-[0_4px_16px_rgba(0,0,0,0.45)]",
-        "text-[#f2f2f2] font-[var(--system-font)] text-[12px]",
-      ].join(" ")}
+      className="ww-menu"
       role="menu"
       onMouseLeave={() => {
         if (depth > 0) return;
@@ -163,13 +165,7 @@ function ContextMenuLevel({
     >
       {items.map((item, index) => {
         if (item.label === "---") {
-          return (
-            <li
-              key={`separator-${index}`}
-              className="h-px my-[3px] mx-[28px] bg-[rgba(255,255,255,0.16)]"
-              role="separator"
-            />
-          );
+          return <li key={`separator-${index}`} className="ww-menu-sep" role="separator" />;
         }
 
         const hasChildren = Boolean(item.children?.length);
@@ -178,7 +174,7 @@ function ContextMenuLevel({
         return (
           <li
             key={`${item.label}-${index}`}
-            className="relative mx-[2px]"
+            className="ww-menu-entry"
             onMouseEnter={(e) => openSubmenu(index, e.currentTarget)}
             onMouseLeave={() => {
               if (!hasChildren) closeSubmenu();
@@ -191,21 +187,7 @@ function ContextMenuLevel({
               aria-expanded={hasChildren ? isOpen : undefined}
               aria-disabled={item.disabled}
               disabled={item.disabled}
-              className={[
-                "relative w-full min-h-[26px]",
-                "grid grid-cols-[24px_1fr_18px] items-center",
-                "gap-0 rounded-none border-0 bg-transparent",
-                "pl-0 pr-[6px] py-0",
-                "text-left text-[12px] leading-none font-normal",
-                "text-[#f2f2f2] cursor-default",
-                "disabled:text-[rgba(255,255,255,0.38)] disabled:pointer-events-none",
-                "hover:bg-[rgba(255,255,255,0.13)]",
-                "focus-visible:outline focus-visible:outline-1 focus-visible:outline-white focus-visible:-outline-offset-[2px]",
-                item.danger
-                  ? "text-[#ffb3bd] hover:bg-[rgba(232,17,35,0.22)]"
-                  : "",
-                isOpen ? "bg-[rgba(255,255,255,0.13)]" : "",
-              ].join(" ")}
+              className={["ww-menu-item", item.danger && "danger", isOpen && "open"].filter(Boolean).join(" ")}
               onMouseDown={(e) => {
                 e.stopPropagation();
 
@@ -222,21 +204,15 @@ function ContextMenuLevel({
                 item.action();
               }}
             >
-              <span className="w-6 h-[26px] grid place-items-center text-[#f2f2f2]">
-                {item.checked ? (
-                  <span className="text-[13px] leading-none">✓</span>
-                ) : item.icon ? (
-                  item.icon
-                ) : null}
+              <span className="ww-menu-check">
+                {item.checked ? <CheckGlyph /> : item.icon ? item.icon : null}
               </span>
 
-              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                {item.label}
-              </span>
+              <span className="ww-menu-label">{item.label}</span>
 
-              <span className="w-[18px] h-[26px] grid place-items-center text-[15px] text-[#f2f2f2]">
-                {hasChildren ? "›" : null}
-              </span>
+              <span />
+
+              <span className="ww-menu-arrow">{hasChildren ? <ChevronRightGlyph /> : null}</span>
             </button>
 
             {hasChildren && isOpen && (

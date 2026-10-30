@@ -1,0 +1,120 @@
+/* Aero family (Vista / 7) — WebWINE shell parts. */
+
+@layer components {
+[data-theme~="aero"] {
+  .ww-desktop-icon.selected {
+    background: linear-gradient(to bottom, rgba(150, 210, 255, 0.45), rgba(90, 170, 240, 0.4));
+    border-color: rgba(170, 220, 255, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
+
+  .ww-tray-btn {
+    color: #fff;
+    border-radius: 3px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+
+  .ww-tray-btn:hover {
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  }
+
+  .ww-tray-menu {
+    color: #10233a;
+    border: 1px solid rgba(10, 25, 45, 0.75);
+    border-radius: 6px;
+    background: linear-gradient(to bottom, rgba(245, 250, 255, 0.97), rgba(220, 234, 248, 0.97));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 6px 24px rgba(0, 15, 40, 0.5);
+  }
+
+  /* classic start menu extras */
+
+  .ww-start-item.open {
+    background: linear-gradient(to bottom, rgba(220, 238, 252, 0.9), rgba(196, 224, 248, 0.9));
+  }
+
+  .ww-start-separator {
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.35), transparent);
+  }
+
+  .ww-start-menu-left .ww-start-separator {
+    background: linear-gradient(to right, transparent, #b8cfe4, transparent);
+  }
+
+  .ww-start-menu-right .ww-start-power {
+    margin: 6px 10px;
+    color: #fff;
+    border-color: rgba(10, 25, 45, 0.6);
+    border-radius: 3px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08) 50%, rgba(0, 0, 0, 0.1) 50%, rgba(255, 255, 255, 0.05));
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+
+  .ww-start-menu-right .ww-start-power:hover {
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.18) 50%, rgba(0, 0, 0, 0.05) 50%, rgba(255, 255, 255, 0.12));
+    box-shadow: 0 0 8px rgba(120, 200, 255, 0.6);
+  }
+
+  /* menus */
+
+  .ww-menu {
+    color: #000;
+    padding: 2px;
+    border: 1px solid #979797;
+    background:
+      linear-gradient(to right, transparent 27px, #e2e3e3 27px, #e2e3e3 28px, #fff 28px, #fff 29px, transparent 29px),
+      #f0f0f0;
+    box-shadow: 2px 2px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .ww-menu-item {
+    border-radius: 3px;
+  }
+
+  .ww-menu-item:hover,
+  .ww-menu-item.open {
+    border-color: #aecff7;
+    background: linear-gradient(to bottom, rgba(232, 241, 251, 0.9), rgba(196, 223, 251, 0.6));
+  }
+
+  .ww-menu-item:disabled {
+    color: #8d8d8d;
+  }
+
+  .ww-menu-item.danger {
+    color: #a4262c;
+  }
+
+  .ww-menu-sep {
+    background: #e0e0e0;
+    box-shadow: 0 1px 0 #fff;
+  }
+
+  .ww-menubar {
+    color: #000;
+    background: linear-gradient(to bottom, #fdfeff, #eef3fa);
+    border-bottom: 1px solid #d5dfe5;
+  }
+
+  .ww-menubar-item {
+    border-radius: 3px;
+  }
+
+  .ww-menubar-item:hover,
+  .ww-menubar-item.active {
+    border-color: #aecff7;
+    background: linear-gradient(to bottom, #f3f8fd, #d9e9fb);
+  }
+
+  .ww-menubar-item:disabled {
+    color: #8d8d8d;
+  }
+
+  /* menu bars placed on the glass (extendGlass windows) */
+  .ww-glass-panel .ww-menubar,
+  .ww-window > .ww-window-client > .ww-menubar {
+    background: transparent;
+    border-bottom: 0;
+  }
+}
+}

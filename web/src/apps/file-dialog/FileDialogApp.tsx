@@ -9,6 +9,7 @@ import { useWindowStore } from "@/state/windowStore";
 import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { UiEvent } from "@/core/wasm/worker";
 import { ExplorerApp } from "../explorer/ExplorerApp";
+import { iconUrl } from "@/shared/lib/personalization";
 
 type FileDialogEvent = Extract<UiEvent, { kind: "file_dialog" }>;
 
@@ -27,10 +28,12 @@ export function showFileDialog(ev: FileDialogEvent, runtime: RuntimeBridge): Pro
 
     winId = useWindowStore.getState().openWindow({
       title: ev.title || (ev.save ? "Save As" : "Open"),
-      icon: `${import.meta.env.BASE_URL}theme/icons/apps/explorer.webp`,
+      icon: iconUrl("apps/explorer"),
       variant: "dialog",
       width: 780,
       height: 520,
+      resizable: true,
+      extendGlass: true,
       content: <div />,
       onClose: () => finish(null),
     });

@@ -1,14 +1,49 @@
 @import "tailwindcss";
-@import "./variables.css";
+/* legacy design tokens used by the older (dark) app layouts — lowest priority */
+@import "./variables.css" layer(base);
+/* theme-agnostic structure of the shell; the themes paint it (src/themes) */
+@import "./base.css" layer(components);
 
-html,
-body {
+@layer base {
+  :root {
+    --system-font: var(--sans);
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
     height: 100%;
     overflow: hidden;
-    font-family: var(--system-font);
+  }
+
+  html,
+  body {
+    font-family: var(--sans);
     font-size: 13px;
     color: var(--text);
-    background: var(--desktop-wallpaper) var(--desktop-bg-fallback) center/cover no-repeat;
+    background: #000;
+  }
+}
+
+/* thin variant for tight scroll regions (Start menu lists, menus); themes still
+   paint the colours, this only shrinks the metrics and drops the arrow buttons */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-width: 2px;
+    border-radius: 4px;
+  }
 }
 
 pre.raw-viewer-content {
@@ -40,7 +75,7 @@ pre.raw-viewer-content {
 
 #log-panel {
     position: fixed;
-    bottom: 40px;
+    bottom: var(--ww-taskbar-h);
     right: 0;
     width: 380px;
     height: 200px;
@@ -61,23 +96,27 @@ pre.raw-viewer-content {
     height: 24px;
     border-bottom: 1px solid var(--log-border);
     font-size: 11px;
-    color: var(--text-muted);
+    color: #a6a6a6;
     user-select: none;
 }
 
-#log-clear-btn {
-    margin-left: auto;
+#log-panel-header button {
+    margin-left: 8px;
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: #a6a6a6;
     cursor: pointer;
     font-size: 11px;
     font-family: inherit;
     padding: 0;
 }
 
-#log-clear-btn:hover {
-    color: var(--text);
+#log-panel-header button:first-of-type {
+    margin-left: auto;
+}
+
+#log-panel-header button:hover {
+    color: #f2f2f2;
 }
 
 #log-output {
@@ -100,7 +139,7 @@ pre.raw-viewer-content {
 }
 
 .log-message {
-    color: var(--text);
+    color: #f2f2f2;
 }
 
 .log-line.log-warn .log-target {
@@ -120,9 +159,9 @@ pre.raw-viewer-content {
 }
 
 .log-line.log-trace .log-target {
-    color: var(--text-muted);
+    color: #a6a6a6;
 }
 
 .log-line.log-trace .log-message {
-    color: var(--text-muted);
+    color: #a6a6a6;
 }

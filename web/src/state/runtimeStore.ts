@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { RuntimeBridge } from "../core/bridge/runtime-bridge";
 import { useLogStore } from "./logStore";
 import { AppRegistry } from "../shared/lib/app-registry";
+import { playSound } from "../shared/lib/personalization";
 
 interface RuntimeStore {
   runtime: RuntimeBridge | null;
@@ -63,5 +64,6 @@ export const useRuntimeStore = create<RuntimeStore>((set) => ({
     });
 
     set({ runtime: rt, ready: true });
+    playSound("startup");
   },
 }));

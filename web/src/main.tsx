@@ -1,14 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 
-import { App } from "./App";
 import "@/shared/styles/main.css";
+import "./registry/themes";
+import { App } from "./App";
 
 const root = document.getElementById("root");
 if (root) {
-  createRoot(root).render(
-    <FluentProvider theme={webDarkTheme}>
-      <App />
-    </FluentProvider>,
-  );
+  createRoot(root).render(<App />);
 }

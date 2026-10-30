@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useWindowStore } from "@/state/windowStore";
+import { Button, DialogFooter } from "@/shared/ui";
 
 import type { UiEvent } from "@/core/wasm/worker";
+import { iconUrl, playSound } from "@/shared/lib/personalization";
+import type { SoundId } from "@/registry/sound-packs";
 
 // MB button groups
 const MB_OK = 0x00000000;
@@ -45,15 +48,30 @@ type MessageBoxButton = {
 function iconFor(style: number): string {
   switch (style & 0xf0) {
     case MB_ICONHAND:
-      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_error.webp`;
+      return iconUrl("shell/msg_error");
     case MB_ICONQUESTION:
-      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_question.webp`;
+      return iconUrl("shell/msg_question");
     case MB_ICONEXCLAMATION:
-      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_warning.webp`;
+      return iconUrl("shell/msg_warning");
     case MB_ICONASTERISK:
-      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_inform.webp`;
+      return iconUrl("shell/msg_inform");
     default:
-      return `${import.meta.env.BASE_URL}theme/icons/shell/msg_inform.webp`;
+      return iconUrl("shell/msg_inform");
+  }
+}
+
+function soundFor(style: number): SoundId {
+  switch (style & 0xf0) {
+    case MB_ICONHAND:
+      return "error";
+    case MB_ICONQUESTION:
+      return "question";
+    case MB_ICONEXCLAMATION:
+      return "warning";
+    case MB_ICONASTERISK:
+      return "info";
+    default:
+      return "default";
   }
 }
 
@@ -137,10 +155,12 @@ export function showMessageBox(
       resolve(result);
     };
 
+    playSound(soundFor(ev.style));
     winId = useWindowStore.getState().openWindow({
       title: ev.title || "Message",
       icon: iconFor(ev.style),
       variant: "dialog",
+      surface: "white",
       width: 420,
       content: <MessageBoxApp ev={ev} onClose={settle} />,
       onClose: () => settle(cancelButton(buttonsFor(ev.style)).id),
@@ -185,8 +205,8 @@ function MessageBoxApp({
   }, [cancel.id, defaultButton.id, defaultIndex, onClose]);
 
   return (
-    <div className="flex flex-col h-full bg-[#202020] text-[#f2f2f2] font-[var(--system-font)]">
-      <div className="flex flex-row gap-4 items-start flex-1 min-h-0 px-5 pt-5 pb-4 overflow-auto">
+    <div className="flex flex-col h-full">
+      <div className="flex gap-4 items-start flex-1 min-h-0 px-5 pt-5 pb-5 overflow-auto">
         <img
           src={iconFor(ev.style)}
           alt=""
@@ -194,41 +214,23 @@ function MessageBoxApp({
           draggable={false}
         />
 
-        <div className="pt-[1px] text-[12px] leading-[17px] whitespace-pre-wrap break-words text-[#f2f2f2]">
-          {ev.text}
-        </div>
+        <div className="pt-[1px] leading-[17px] whitespace-pre-wrap break-words">{ev.text}</div>
       </div>
 
-      <div className="flex justify-end gap-2 px-4 py-3 bg-[#1b1b1b] border-t border-[#2d2d2d]">
-        {buttons.map((button, index) => {
-          const isDefault = index === defaultIndex;
-
-          return (
-            <button
-              key={button.id}
-              ref={(node) => {
-                buttonRefs.current[index] = node;
-              }}
-              type="button"
-              className={[
-                "min-w-[76px] h-[26px] px-3",
-                "rounded-none border text-[12px] font-normal font-[var(--system-font)]",
-                "cursor-default outline-none",
-                "bg-[#333333] text-[#f2f2f2] border-[#555555]",
-                "hover:bg-[#3f3f3f] hover:border-[#6b6b6b]",
-                "active:bg-[#2b2b2b]",
-                "focus:border-[#0078d7] focus:shadow-[inset_0_0_0_1px_#0078d7]",
-                isDefault
-                  ? "border-[#0078d7] shadow-[inset_0_0_0_1px_#0078d7]"
-                  : "",
-              ].join(" ")}
-              onClick={() => onClose(button.id)}
-            >
-              {button.label}
-            </button>
-          );
-        })}
-      </div>
+      <DialogFooter>
+        {buttons.map((button, index) => (
+          <Button
+            key={button.id}
+            ref={(node) => {
+              buttonRefs.current[index] = node;
+            }}
+            isDefault={index === defaultIndex}
+            onClick={() => onClose(button.id)}
+          >
+            {button.label}
+          </Button>
+        ))}
+      </DialogFooter>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useWindowStore } from "@/state/windowStore";
 import type { NamedValue, RegValue, RuntimeBridge } from "@/core/bridge/runtime-bridge";
+import { iconUrl } from "@/shared/lib/personalization";
 
 const ROOTS = [
   "HKEY_CLASSES_ROOT",
@@ -22,7 +23,7 @@ const ROOTS = [
 export function openRegedit(runtime: RuntimeBridge) {
   const id = useWindowStore.getState().openWindow({
     title: "WebWINE: Registry Editor",
-    icon: `${import.meta.env.BASE_URL}theme/icons/apps/regedit.webp`,
+    icon: iconUrl("apps/regedit"),
     width: 880,
     height: 560,
     content: <div />,
@@ -117,7 +118,7 @@ function TreeNode({
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-1 py-[2px] cursor-pointer text-[13px] whitespace-nowrap ${isSel ? "bg-[var(--accent,#2563eb)] text-white" : "hover:bg-[rgba(127,127,127,0.15)]"}`}
+        className={`flex items-center gap-1 px-1 py-[2px] cursor-pointer text-[13px] whitespace-nowrap ${isSel ? "bg-[var(--accent,#2563eb)] text-white" : "hover:bg-[var(--ww-hover)]"}`}
         style={{ paddingLeft: depth * 14 + 4 }}
         onClick={() => onSelect(path)}
       >
@@ -217,16 +218,16 @@ function RegeditApp({ runtime }: { runtime: RuntimeBridge }) {
   return (
     <div className="flex flex-col h-full bg-[var(--window-bg,#1e1e1e)] text-[var(--text,#ddd)]">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-2 py-1 border-b border-[rgba(127,127,127,0.25)] text-[12px]">
-        <button className="px-2 py-[2px] rounded hover:bg-[rgba(127,127,127,0.2)]" onClick={onNewKey}>New Key</button>
-        <button className="px-2 py-[2px] rounded hover:bg-[rgba(127,127,127,0.2)]" onClick={() => onNewValue("Sz")}>New String</button>
-        <button className="px-2 py-[2px] rounded hover:bg-[rgba(127,127,127,0.2)]" onClick={() => onNewValue("Dword")}>New DWORD</button>
-        <button className="px-2 py-[2px] rounded hover:bg-[rgba(127,127,127,0.2)]" onClick={onDeleteKey}>Delete Key</button>
+      <div className="flex items-center gap-2 px-2 py-1 border-b border-[var(--ww-border)] text-[12px]">
+        <button className="px-2 py-[2px] rounded hover:bg-[var(--ww-hover)]" onClick={onNewKey}>New Key</button>
+        <button className="px-2 py-[2px] rounded hover:bg-[var(--ww-hover)]" onClick={() => onNewValue("Sz")}>New String</button>
+        <button className="px-2 py-[2px] rounded hover:bg-[var(--ww-hover)]" onClick={() => onNewValue("Dword")}>New DWORD</button>
+        <button className="px-2 py-[2px] rounded hover:bg-[var(--ww-hover)]" onClick={onDeleteKey}>Delete Key</button>
       </div>
 
       <div className="flex flex-1 min-h-0">
         {/* Key tree */}
-        <div className="w-1/3 min-w-[200px] overflow-auto border-r border-[rgba(127,127,127,0.25)] py-1">
+        <div className="w-1/3 min-w-[200px] overflow-auto border-r border-[var(--ww-border)] py-1">
           {ROOTS.map((r) => (
             <TreeNode
               key={r}
@@ -246,16 +247,16 @@ function RegeditApp({ runtime }: { runtime: RuntimeBridge }) {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="text-left sticky top-0 bg-[var(--window-bg,#1e1e1e)]">
-                <th className="font-normal px-2 py-1 border-b border-[rgba(127,127,127,0.25)]">Name</th>
-                <th className="font-normal px-2 py-1 border-b border-[rgba(127,127,127,0.25)]">Type</th>
-                <th className="font-normal px-2 py-1 border-b border-[rgba(127,127,127,0.25)]">Data</th>
+                <th className="font-normal px-2 py-1 border-b border-[var(--ww-border)]">Name</th>
+                <th className="font-normal px-2 py-1 border-b border-[var(--ww-border)]">Type</th>
+                <th className="font-normal px-2 py-1 border-b border-[var(--ww-border)]">Data</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr
                   key={row.name || "(default)"}
-                  className="hover:bg-[rgba(127,127,127,0.12)] cursor-default"
+                  className="hover:bg-[var(--ww-hover)] cursor-default"
                   onDoubleClick={() => onEdit(row)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -273,7 +274,7 @@ function RegeditApp({ runtime }: { runtime: RuntimeBridge }) {
       </div>
 
       {/* Status bar: current path */}
-      <div className="px-2 py-1 border-t border-[rgba(127,127,127,0.25)] text-[12px] opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
+      <div className="px-2 py-1 border-t border-[var(--ww-border)] text-[12px] opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
         {selected}
       </div>
     </div>

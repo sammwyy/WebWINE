@@ -213,7 +213,7 @@ function send(msg: OutMsg) {
   postMessage(msg);
 }
 
-// ---- registry persistence (IndexedDB; localStorage is unavailable in workers) ----
+// registry persistence (IndexedDB; localStorage is unavailable in workers)
 
 const IDB_NAME = "webwine";
 const IDB_STORE = "kv";

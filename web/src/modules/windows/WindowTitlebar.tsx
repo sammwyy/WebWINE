@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { clamp } from "@/shared/lib/utils";
 import { useWindowStore } from "@/state/windowStore";
+import { beginWindowDrag } from "./AppWindow";
 
 interface WindowTitlebarProps {
   windowId: string;
@@ -34,35 +34,7 @@ export function WindowTitlebar({
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!record) return;
       if ((e.target as HTMLElement).closest(".window-controls")) return;
-      if (record.maximized) return;
-
-      const el = document.getElementById(record.id);
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
-      el.style.left = `${rect.left}px`;
-      el.style.top = `${rect.top}px`;
-      el.style.transform = "none";
-
-      const ox = e.clientX - rect.left;
-      const oy = e.clientY - rect.top;
-
-      const onMove = (ev: PointerEvent) => {
-        const x = clamp(ev.clientX - ox, 0, window.innerWidth - rect.width);
-        const y = clamp(ev.clientY - oy, 0, window.innerHeight - 30);
-        el.style.left = `${x}px`;
-        el.style.top = `${y}px`;
-      };
-      const onUp = () => {
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        useWindowStore.getState().updateStyle(record.id, {
-          left: el.style.left,
-          top: el.style.top,
-        });
-      };
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
+      beginWindowDrag(record.id, e);
     },
     [record],
   );
@@ -88,6 +60,9 @@ export function WindowTitlebar({
     <div
       className={`flex items-center gap-[7px] bg-[var(--window-titlebar-bg)] pl-[10px] pr-[6px] h-[30px] cursor-move select-none flex-shrink-0 border-b border-[var(--window-titlebar-border)] ${className || ""}`}
       onPointerDown={onTitlePointerDown}
+      onDoubleClick={(e) => {
+        if (!(e.target as HTMLElement).closest(".window-controls") && record.resizable) onMaxClick();
+      }}
     >
       {children || (
         <>

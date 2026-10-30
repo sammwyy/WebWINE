@@ -1,71 +1,48 @@
-import {
-  PlayRegular,
-  VideoRegular,
-  MusicNote1Regular,
-} from "@fluentui/react-icons";
-import type { DirectoryEntry } from "@/core/bridge/runtime-bridge";
-import { isVideoFile } from "../lib/utils";
+import { iconUrl } from "@/shared/lib/personalization";
 
-interface MediaSidebarProps {
-  sidebarOpen: boolean;
-  initialPath: string;
-  playlist: DirectoryEntry[];
-  currentIndex: number;
-  loading: boolean;
-  onSelect: (index: number) => void;
+export type LibraryView = "playlists" | "music" | "videos";
+
+interface MediaLibraryTreeProps {
+  view: LibraryView;
+  counts: Record<LibraryView, number>;
+  onSelect: (view: LibraryView) => void;
 }
 
-export function MediaSidebar({
-  sidebarOpen,
-  initialPath,
-  playlist,
-  currentIndex,
-  loading,
-  onSelect,
-}: MediaSidebarProps) {
-  return (
+/** Windows Media Player 12 library navigation tree. */
+export function MediaLibraryTree({ view, counts, onSelect }: MediaLibraryTreeProps) {
+  const item = (id: LibraryView, label: string, icon: string, depth = 1) => (
     <div
-      className={`flex-none flex flex-col bg-[#1a1a1a] border-r border-[#333333] transition-all duration-300 ease-in-out ${
-        sidebarOpen ? "w-64" : "w-0 opacity-0 overflow-hidden"
-      }`}
+      className={`wmp-tree-item ${view === id ? "selected" : ""}`}
+      style={{ paddingLeft: 8 + depth * 14 }}
+      onClick={() => onSelect(id)}
     >
-      <div className="h-12 px-4 flex items-center border-b border-[#333333] font-semibold text-[13px] whitespace-nowrap">
-        {initialPath ? "Folder Playlist" : "Media Library"}
-      </div>
-      <div className="flex-1 overflow-y-auto py-2 px-1 custom-scrollbar">
-        {playlist.length === 0 && !loading && (
-          <div className="text-center text-[#888] text-[12px] mt-4">
-            No media found.
-          </div>
-        )}
-        {playlist.map((item, idx) => {
-          const active = idx === currentIndex;
-          return (
-            <div
-              key={item.path}
-              onClick={() => onSelect(idx)}
-              className={`flex items-center gap-3 px-3 py-2 mx-1 rounded cursor-pointer transition-colors text-[13px] ${
-                active
-                  ? "bg-[#333333] text-white"
-                  : "text-[#cccccc] hover:bg-[#2b2b2b]"
-              }`}
-            >
-              <div className="flex-none flex items-center justify-center w-4 text-[#888888]">
-                {active ? (
-                  <PlayRegular fontSize={14} className="text-white" />
-                ) : isVideoFile(item.name) ? (
-                  <VideoRegular fontSize={14} />
-                ) : (
-                  <MusicNote1Regular fontSize={14} />
-                )}
-              </div>
-              <div className="flex-1 truncate" title={item.name}>
-                {item.name}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <img src={iconUrl(icon)} alt="" draggable={false} />
+      <span className="truncate">{label}</span>
+      {counts[id] > 0 && <span className="wmp-tree-count">{counts[id]}</span>}
     </div>
+  );
+
+  return (
+    <nav className="wmp-tree">
+      <div className="wmp-tree-root">
+        <img src={iconUrl("places/documents")} alt="" draggable={false} />
+        <span>Library</span>
+      </div>
+      {item("playlists", "Playlists", "apps/mediaplayer")}
+      {item("music", "Music", "places/music")}
+      <div className="wmp-tree-sub">Artist</div>
+      <div className="wmp-tree-sub">Album</div>
+      <div className="wmp-tree-sub">Genre</div>
+      {item("videos", "Videos", "places/video")}
+      <div className="wmp-tree-item disabled" style={{ paddingLeft: 22 }}>
+        <img src={iconUrl("places/pictures")} alt="" draggable={false} />
+        <span>Pictures</span>
+      </div>
+      <div className="wmp-tree-sep" />
+      <div className="wmp-tree-root muted">
+        <img src={iconUrl("places/thispc")} alt="" draggable={false} />
+        <span>Other Libraries</span>
+      </div>
+    </nav>
   );
 }

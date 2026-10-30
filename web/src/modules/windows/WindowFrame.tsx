@@ -1,68 +1,84 @@
 /**
- * WindowFrame — the shared window chrome used by every surface on the desktop.
+ * WindowFrame — pure, presentational themed window frame (`ww-window`).
  *
- * Handles the title bar, window controls (minimize / maximize / close),
- * dragging, z-order focus, and resize. Content is passed as children.
+ * It knows nothing about the window store, so it can be used for previews,
+ * dialogs or custom shells. The look comes entirely from the active theme
+ * (src/themes/<id>/*.css). `AppWindow` connects it to the store.
  */
 
-import { useRef, useCallback } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
+import { TitleBar } from "./TitleBar";
+import { WindowControls } from "./WindowControls";
 
-import { clamp } from "@/shared/lib/utils";
-import { useWindowStore } from "@/state/windowStore";
-import type { WindowRecord } from "@/state/windowStore";
-import { WindowTitlebar } from "./WindowTitlebar";
-
-interface WindowFrameProps {
-  record: WindowRecord;
+export interface WindowFrameProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
+  ref?: Ref<HTMLDivElement>;
+  title: ReactNode;
+  icon?: ReactNode;
+  /** focused window: stronger glass tint, coloured close button… */
+  active?: boolean;
+  maximized?: boolean;
+  minimizable?: boolean;
+  maximizable?: boolean;
+  /** dialog frame (themes may draw it slightly differently) */
+  dialog?: boolean;
+  /** no caption and no frame: the content draws its own chrome */
+  frameless?: boolean;
+  onMinimize?: () => void;
+  onToggleMaximize?: () => void;
+  onClose?: () => void;
+  /** extra props for the caption (e.g. pointer handlers for dragging) */
+  captionProps?: HTMLAttributes<HTMLDivElement>;
+  /** rendered on top of the frame (e.g. resize handles) */
+  overlay?: ReactNode;
+  /** client area — sits on the frame; wrap content in <WindowBody> for an opaque surface */
+  children?: ReactNode;
 }
 
-export function WindowFrame({ record }: WindowFrameProps) {
-  // Narrow subscriptions: do NOT pull the whole store (that re-rendered every
-  // window on each title/style tick and fought with busy console content).
-  const focusWindow = useWindowStore((s) => s.focusWindow);
-  const isActive = useWindowStore((s) => s.activeId === record.id);
-
-  let variantClass = "min-w-[320px] min-h-[180px]";
-  if (record.variant === "dialog") variantClass = "min-w-[280px]";
-
-  let activeClass = isActive
-    ? "shadow-[0_0_0_1px_var(--window-focus-border),0_12px_32px_rgba(0,0,0,0.50)]"
-    : "";
-
-  if (isActive && record.maximized) {
-    activeClass = "shadow-[0_0_0_1px_var(--window-focus-border,#7ecbff)]";
-  }
-
-  const windowClasses = [
-    "absolute bg-[var(--window-frame-bg)] border border-[var(--window-frame-border)] rounded-[var(--window-frame-radius)] flex flex-col shadow-[0_12px_40px_rgba(0,0,0,0.55)] pointer-events-auto overflow-hidden",
-    variantClass,
-    record.resizable && !record.maximized ? "resize" : "",
-    record.maximized ? "!resize-none !rounded-none" : "",
-    activeClass,
+export function WindowFrame({
+  title,
+  icon,
+  active = true,
+  maximized = false,
+  minimizable = true,
+  maximizable = true,
+  dialog = false,
+  frameless = false,
+  onMinimize,
+  onToggleMaximize,
+  onClose,
+  captionProps,
+  overlay,
+  children,
+  className = "",
+  ...props
+}: WindowFrameProps) {
+  const classes = [
+    "ww-window",
+    active ? "active" : "inactive",
+    maximized && "maximized",
+    dialog && "dialog",
+    frameless && "frameless",
+    className,
   ]
     .filter(Boolean)
     .join(" ");
 
-  const style: React.CSSProperties = {
-    ...record.style,
-    display: record.minimized ? "none" : undefined,
-  };
-
   return (
-    <div
-      id={record.id}
-      className={windowClasses}
-      style={style}
-      onMouseDownCapture={() => focusWindow(record.id)}
-      onContextMenu={(e) => {
-        e.stopPropagation();
-      }}
-    >
-      {!record.hideTitlebar && <WindowTitlebar windowId={record.id} />}
-
-      <div className="flex-1 overflow-auto p-0 flex flex-col bg-[var(--window-content-bg)] text-[var(--window-content-text)] [--text:var(--window-content-text)] [--text-muted:var(--text-muted)] [--window-border:#2b2b2b] [--window-bg:var(--window-content-bg)]">
-        {record.content}
-      </div>
+    <div className={classes} {...props}>
+      {!frameless && (
+        <TitleBar icon={icon} title={title} {...captionProps}>
+          <WindowControls
+            maximized={maximized}
+            minimizable={minimizable}
+            maximizable={maximizable}
+            onMinimize={onMinimize}
+            onToggleMaximize={onToggleMaximize}
+            onClose={onClose}
+          />
+        </TitleBar>
+      )}
+      <div className="ww-window-client">{children}</div>
+      {overlay}
     </div>
   );
 }

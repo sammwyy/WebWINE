@@ -5,6 +5,7 @@ import { parseShortcutTarget, shortcutActionForName, shellActionForPath } from "
 import { normaliseImageBytes, extractPeIcon } from "./icon-extractor";
 import { ICON_REGISTRY, ICON_PLACEHOLDER, ICON_CANVAS_PX } from "./icon-registry";
 import { AppRegistry } from "../app-registry";
+import { iconFallbackUrl, iconUrl } from "../personalization";
 
 export interface ResolvedIcon {
   src: string;
@@ -46,7 +47,7 @@ async function doResolve(
   }
 
   if (/^[a-zA-Z]:\\$/.test(entry.path) || /^[a-zA-Z]:$/.test(entry.name)) {
-    const src = await themeAsset("shell/drive_generic.webp");
+    const src = await themeAsset("shell/drive_generic");
     if (src) return { src };
   }
 
@@ -72,7 +73,7 @@ async function doResolve(
 
   const dot = entry.name.lastIndexOf(".");
   const ext = dot !== -1 ? entry.name.slice(dot + 1).toLowerCase() : "";
-  const extAsset = ICON_REGISTRY.exts[ext] || `exts/${ext}.webp`;
+  const extAsset = ICON_REGISTRY.exts[ext] || `exts/${ext}`;
 
   const src =
     (await themeAsset(extAsset).catch(() => null)) ??
@@ -85,7 +86,7 @@ async function resolveLnk(
   entry: DirectoryEntry,
   runtime: RuntimeBridge,
 ): Promise<ResolvedIcon> {
-  const overlayPromise = themeAsset("shell/lnk.webp");
+  const overlayPromise = themeAsset("shell/lnk");
 
   try {
     const bytes = await runtime.readRawFile(entry.path);
@@ -134,7 +135,7 @@ async function resolveLnk(
   }
 
   const src =
-    (await themeAsset("exts/default.webp")) ?? ICON_PLACEHOLDER;
+    (await themeAsset("exts/default")) ?? ICON_PLACEHOLDER;
   const overlay = (await overlayPromise) ?? undefined;
   return { src, overlay };
 }
@@ -147,24 +148,29 @@ async function shortcutActionIcon(action: string): Promise<string> {
 
   switch (action) {
     case "this-pc":
-      return (await themeAsset("places/thispc.webp")) ?? ICON_PLACEHOLDER;
+      return (await themeAsset("places/thispc")) ?? ICON_PLACEHOLDER;
     case "documents":
-      return (await themeAsset("places/documents.webp")) ?? ICON_PLACEHOLDER;
+      return (await themeAsset("places/documents")) ?? ICON_PLACEHOLDER;
     case "pictures":
-      return (await themeAsset("places/pictures.webp")) ?? ICON_PLACEHOLDER;
+      return (await themeAsset("places/pictures")) ?? ICON_PLACEHOLDER;
     case "music":
-      return (await themeAsset("places/music.webp")) ?? ICON_PLACEHOLDER;
+      return (await themeAsset("places/music")) ?? ICON_PLACEHOLDER;
     case "videos":
-      return (await themeAsset("places/video.webp")) ?? ICON_PLACEHOLDER;
+      return (await themeAsset("places/video")) ?? ICON_PLACEHOLDER;
     default:
       return ICON_PLACEHOLDER;
   }
 }
 
-function themeAsset(relPath: string): Promise<string | null> {
-  const url = `${import.meta.env.BASE_URL}theme/icons/${relPath}`;
+/** Icon `id` from the active icon pack, falling back to the default pack. */
+function themeAsset(id: string): Promise<string | null> {
+  const url = iconUrl(id);
   if (!assetCache.has(url)) {
-    assetCache.set(url, fetchAndNormalise(url));
+    const fallback = iconFallbackUrl(id);
+    assetCache.set(
+      url,
+      fetchAndNormalise(url).then((src) => src ?? (fallback !== url ? fetchAndNormalise(fallback) : null)),
+    );
   }
   return assetCache.get(url)!;
 }

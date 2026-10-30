@@ -1,0 +1,132 @@
+/* Windows XP (Luna) — WebWINE shell parts. */
+
+@layer components {
+[data-theme~="xp"] {
+  .ww-desktop-icon.selected .label {
+    background: var(--xp-select);
+  }
+
+  .ww-desktop-icon.selected .ww-desktop-icon-img {
+    opacity: 0.7;
+    filter: drop-shadow(0 0 1px var(--xp-select));
+  }
+
+  /* notification area shares the clock's light-blue strip */
+  .ww-tray {
+    padding: 0 0 0 8px;
+    border-left: 1px solid #1042af;
+    background: linear-gradient(
+      to bottom,
+      #0c59b9 1%, #139ee9 6%, #18b5f2 10%, #139beb 14%, #1290e8 19%, #0d8dea 63%, #0d9ff1 81%,
+      #0f9eed 88%, #119be9 91%, #1392e2 94%, #137ed7 97%, #095bc9
+    );
+    box-shadow: inset 1px 0 1px #18bbff;
+  }
+
+  .ww-tray .ww-clock {
+    border-left: 0;
+    background: none;
+    box-shadow: none;
+    padding: 0 10px 0 6px;
+  }
+
+  .ww-tray-btn {
+    color: #fff;
+  }
+
+  .ww-tray-btn:hover {
+    filter: brightness(1.2);
+  }
+
+  .ww-tray-menu {
+    color: #000;
+    border: 1px solid #0831d9;
+    border-radius: 6px 6px 0 0;
+    background: #fff;
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+  }
+
+  /* classic start menu extras */
+
+  .ww-start-item.open {
+    color: #fff;
+    background: var(--xp-select);
+  }
+
+  .ww-start-separator {
+    background: linear-gradient(to right, transparent, #adc8ef, transparent);
+  }
+
+  .ww-start-menu-left .ww-start-separator {
+    background: linear-gradient(to right, transparent, #d6d6d6, transparent);
+  }
+
+  .ww-start-item .label {
+    font-weight: normal;
+  }
+
+  /* XP has its own footer with Log Off / Turn Off */
+  .ww-start-power-inline {
+    display: none;
+  }
+
+  .ww-start-item.pinned .label {
+    font-weight: bold;
+  }
+
+  /* menus */
+
+  .ww-menu {
+    color: #000;
+    padding: 2px;
+    border: 1px solid #aca899;
+    background: #fff;
+    box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.35);
+  }
+
+  .ww-menu-item {
+    border: 0;
+  }
+
+  .ww-menu-item:hover,
+  .ww-menu-item.open {
+    color: #fff;
+    background: var(--xp-select);
+  }
+
+  .ww-menu-item:disabled {
+    color: #aca899;
+  }
+
+  .ww-menu-sep {
+    margin-left: 2px;
+    background: #aca899;
+  }
+
+  .ww-menubar {
+    color: #000;
+    background: var(--xp-face);
+    border-bottom: 1px solid #fff;
+    box-shadow: 0 1px 0 #d6d2c2;
+  }
+
+  .ww-menubar-item:hover,
+  .ww-menubar-item.active {
+    color: #fff;
+    background: var(--xp-select);
+  }
+
+  .ww-menubar-item:disabled {
+    color: #aca899;
+  }
+
+  /* XP has no glass: frame-extended content sits on the window face */
+  .ww-window > .ww-window-client {
+    background: var(--xp-face);
+  }
+
+  .ww-window.frameless > .ww-window-client {
+    background: none;
+  }
+}
+}

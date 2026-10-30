@@ -345,7 +345,7 @@ export class RuntimeBridge {
     this.send({ type: "import_vfs", bytes: bytes.buffer });
   }
 
-  // ---- registry ----
+  // registry
 
   async regListSubkeys(path: string): Promise<string[]> {
     const requestId = this.nextId();

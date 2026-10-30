@@ -15,24 +15,25 @@ export const ICON_CANVAS_PX = ICON_CSS_PX * Math.min(Math.ceil(window.devicePixe
 /** Guest user profile root (matches the VM's path conventions) */
 export const GUEST_PROFILE = "C:\\Users\\guest";
 
+/** Icon ids (see src/registry/icon-packs.ts) used for kinds, extensions and known paths. */
 export const ICON_REGISTRY = {
   kinds: {
-    executable: "shell/default_executable.webp",
-    directory: "shell/folder.webp",
-    default: "exts/default.webp",
+    executable: "shell/default_executable",
+    directory: "shell/folder",
+    default: "exts/default",
   },
   exts: {
-    exe: "shell/default_executable.webp",
-    dll: "exts/dll.webp",
-    txt: "exts/txt.webp",
+    exe: "shell/default_executable",
+    dll: "exts/dll",
+    txt: "exts/txt",
   } as Record<string, string>,
   paths: {
-    "C:\\": "shell/drive_main.webp",
-    [`${GUEST_PROFILE}\\Desktop`]: "places/desktop.webp",
-    [`${GUEST_PROFILE}\\Documents`]: "places/documents.webp",
-    [`${GUEST_PROFILE}\\Music`]: "places/music.webp",
-    [`${GUEST_PROFILE}\\Pictures`]: "places/pictures.webp",
-    [`${GUEST_PROFILE}\\Videos`]: "places/video.webp",
-    "C:\\$Recycle.Bin": "places/recycle.webp",
+    "C:\\": "shell/drive_main",
+    [`${GUEST_PROFILE}\\Desktop`]: "places/desktop",
+    [`${GUEST_PROFILE}\\Documents`]: "places/documents",
+    [`${GUEST_PROFILE}\\Music`]: "places/music",
+    [`${GUEST_PROFILE}\\Pictures`]: "places/pictures",
+    [`${GUEST_PROFILE}\\Videos`]: "places/video",
+    "C:\\$Recycle.Bin": "places/recycle",
   } as Record<string, string>,
 };

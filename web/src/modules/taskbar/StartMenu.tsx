@@ -5,8 +5,15 @@ import type { RuntimeBridge } from "@/core/bridge/runtime-bridge";
 import type { DirectoryEntry } from "@/core/wasm/worker";
 import { ICON_PLACEHOLDER, resolveIcon } from "@/shared/lib/icons/icon-resolver";
 import { exportVfsToFile, importVfsFromFile } from "@/shared/lib/vfs-storage";
-import { launchGuestPath } from "@/shared/lib/guest-launch";
+import { launchGuestPath, requestShellAction } from "@/shared/lib/guest-launch";
 import { AppRegistry } from "@/shared/lib/app-registry";
+import { useCurrentTheme } from "@/shared/lib/theme-registry";
+import { Icon } from "@/shared/ui";
+import { SystemIcon } from "@/shared/icons";
+import { openControlPanel } from "@/apps/control-panel/ControlPanelApp";
+import { iconUrl } from "@/shared/lib/personalization";
+
+const folderIcon = () => iconUrl("shell/folder");
 
 const START_MENU_PROGRAMS_ROOT =
   "C:\\Users\\guest\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs";
@@ -62,16 +69,14 @@ type StartGroup = {
   entries: DirectoryEntry[];
 };
 
+/** Picks the layout requested by the active theme (`ThemeDefinition.startMenu`). */
 export function StartMenu({ onClose }: StartMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const appListRef = useRef<HTMLDivElement>(null);
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const theme = useCurrentTheme();
+  return theme?.startMenu === "classic" ? <ClassicStartMenu onClose={onClose} /> : <ModernStartMenu onClose={onClose} />;
+}
 
-  const { runtime } = useRuntimeStore();
-
-  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
-  const [letterPickerOpen, setLetterPickerOpen] = useState(false);
-
+/** Close the menu on any click outside of it (or of the start button). */
+function useDismiss(menuRef: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -83,7 +88,42 @@ export function StartMenu({ onClose }: StartMenuProps) {
 
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [onClose]);
+  }, [menuRef, onClose]);
+}
+
+/** Resolve the icon of a start menu entry, with a folder fallback. */
+function useEntryIcon(entry: DirectoryEntry, runtime: RuntimeBridge | null, initial = ICON_PLACEHOLDER): string {
+  const [iconSrc, setIconSrc] = useState(initial);
+
+  useEffect(() => {
+    let alive = true;
+
+    if (!runtime) {
+      // Before the VFS is up the entries are the registered apps' shortcuts.
+      const app = AppRegistry.getAppByName(displayLabel(entry.name));
+      setIconSrc(app ? iconUrl(app.icon) : folderIcon());
+      return;
+    }
+
+    resolveIcon(entry, runtime)
+      .then((resolved) => {
+        if (alive) setIconSrc(resolved.src);
+      })
+      .catch(() => {
+        if (alive) setIconSrc(folderIcon());
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [entry, runtime]);
+
+  return iconSrc;
+}
+
+/** Programs folder contents (falls back to the registered apps before the VFS is ready). */
+function useStartMenuEntries(runtime: RuntimeBridge | null): DirectoryEntry[] {
+  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -119,10 +159,22 @@ export function StartMenu({ onClose }: StartMenuProps) {
     };
   }, [runtime]);
 
-  const visibleEntries = useMemo(
+  return useMemo(
     () => (entries.length > 0 ? sortEntries(entries) : getDefaultStartMenuEntries()),
     [entries],
   );
+}
+
+function ModernStartMenu({ onClose }: StartMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const appListRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const { runtime } = useRuntimeStore();
+  const visibleEntries = useStartMenuEntries(runtime);
+  const [letterPickerOpen, setLetterPickerOpen] = useState(false);
+
+  useDismiss(menuRef, onClose);
 
   const groups = useMemo(() => groupEntriesByLetter(visibleEntries), [visibleEntries]);
 
@@ -156,7 +208,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
   return (
     <div
       id="start-menu"
-      className="fixed bottom-[40px] left-0 z-[9500] rounded-none shadow-[0_12px_32px_rgba(0,0,0,0.52)] text-[var(--menu-text)] overflow-hidden flex flex-col border-0 border-t border-r border-[rgba(255,255,255,0.10)] w-[min(648px,calc(100vw-12px))] h-[min(520px,calc(100vh-52px))] min-h-[390px] max-[560px]:w-[calc(100vw-8px)] max-[560px]:h-[min(520px,calc(100vh-48px))]"
+      className="absolute bottom-[var(--ww-taskbar-h)] left-0 z-[9500] rounded-none shadow-[0_12px_32px_rgba(0,0,0,0.52)] text-[var(--menu-text)] overflow-hidden flex flex-col border-0 border-t border-r border-[rgba(255,255,255,0.10)] w-[min(648px,calc(100vw-12px))] h-[min(520px,calc(100vh-52px))] min-h-[390px] max-[560px]:w-[calc(100vw-8px)] max-[560px]:h-[min(520px,calc(100vh-48px))]"
       style={{
         background:
           "linear-gradient(90deg, rgba(0,0,0,0.38) 0 48px, transparent 48px), rgba(31,31,31,0.96)",
@@ -168,7 +220,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
       onClick={(e) => e.stopPropagation()}
     >
       <div className="grid grid-cols-[48px_minmax(220px,252px)_minmax(268px,1fr)] max-[560px]:grid-cols-[48px_1fr] h-full">
-        <StartRail runtime={runtime} />
+        <StartRail runtime={runtime} onClose={onClose} />
 
         <div className="relative min-w-0 pt-3 pr-1.5 pb-2.5 pl-2 overflow-hidden">
           <div className="mb-1.5 px-2 text-[var(--shell-muted)] text-[12px] font-normal">
@@ -243,7 +295,7 @@ export function StartMenu({ onClose }: StartMenuProps) {
   );
 }
 
-function StartRail({ runtime }: { runtime: RuntimeBridge | null }) {
+function StartRail({ runtime, onClose }: { runtime: RuntimeBridge | null; onClose: () => void }) {
   return (
     <div className="flex flex-col justify-between items-stretch py-1">
       <div className="flex flex-col items-stretch gap-0.5">
@@ -261,6 +313,28 @@ function StartRail({ runtime }: { runtime: RuntimeBridge | null }) {
       </div>
 
       <div className="flex flex-col items-stretch gap-0.5">
+        <button
+          className="w-12 h-12 grid place-items-center bg-transparent border-none text-[var(--menu-text)] cursor-pointer rounded-none hover:bg-[rgba(255,255,255,0.11)] active:bg-[rgba(255,255,255,0.16)]"
+          type="button"
+          title="Settings"
+          aria-label="Settings"
+          onClick={() => {
+            if (!runtime) return;
+            openControlPanel(runtime);
+            onClose();
+          }}
+        >
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+            <path
+              d="M10 6.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm7.2 4.6v-2.4l-2.1-.5a5.4 5.4 0 0 0-.6-1.4l1.1-1.9-1.7-1.7-1.9 1.1a5.4 5.4 0 0 0-1.4-.6L10.1 1.7H7.7l-.5 2.1a5.4 5.4 0 0 0-1.4.6L3.9 3.3 2.2 5l1.1 1.9a5.4 5.4 0 0 0-.6 1.4l-2.1.5v2.4l2.1.5c.1.5.3 1 .6 1.4l-1.1 1.9 1.7 1.7 1.9-1.1c.4.3.9.5 1.4.6l.5 2.1h2.4l.5-2.1c.5-.1 1-.3 1.4-.6l1.9 1.1 1.7-1.7-1.1-1.9c.3-.4.5-.9.6-1.4Z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.1"
+              transform="translate(1 0)"
+            />
+          </svg>
+        </button>
+
         <button
           className="w-12 h-12 grid place-items-center bg-transparent border-none text-[var(--menu-text)] cursor-pointer rounded-none hover:bg-[rgba(255,255,255,0.11)] active:bg-[rgba(255,255,255,0.16)]"
           type="button"
@@ -360,30 +434,7 @@ function ExpandableFolder({
   const [children, setChildren] = useState<DirectoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [iconSrc, setIconSrc] = useState(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-
-  useEffect(() => {
-    let alive = true;
-
-    if (!runtime) {
-      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      return;
-    }
-
-    resolveIcon(entry, runtime)
-      .then((resolved) => {
-        if (!alive) return;
-        setIconSrc(resolved.src);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [entry, runtime]);
+  const iconSrc = useEntryIcon(entry, runtime, folderIcon());
 
   const toggle = async () => {
     const nextOpen = !open;
@@ -431,7 +482,7 @@ function ExpandableFolder({
           className="flex-none w-6 h-6 object-contain"
           draggable={false}
           onError={(e) => {
-            e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
+            e.currentTarget.src = folderIcon();
           }}
         />
 
@@ -487,30 +538,7 @@ function ShortcutButton({
   depth: number;
   onLaunch: (entry: DirectoryEntry) => Promise<void>;
 }) {
-  const [iconSrc, setIconSrc] = useState(ICON_PLACEHOLDER);
-
-  useEffect(() => {
-    let alive = true;
-
-    if (!runtime) {
-      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      return;
-    }
-
-    resolveIcon(entry, runtime)
-      .then((resolved) => {
-        if (!alive) return;
-        setIconSrc(resolved.src);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [entry, runtime]);
+  const iconSrc = useEntryIcon(entry, runtime);
 
   return (
     <button
@@ -528,7 +556,7 @@ function ShortcutButton({
         className="flex-none w-6 h-6 object-contain"
         draggable={false}
         onError={(e) => {
-          e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
+          e.currentTarget.src = folderIcon();
         }}
       />
 
@@ -616,30 +644,7 @@ function ShortcutTile({
   onLaunch: (entry: DirectoryEntry) => Promise<void>;
   index?: number;
 }) {
-  const [iconSrc, setIconSrc] = useState(ICON_PLACEHOLDER);
-
-  useEffect(() => {
-    let alive = true;
-
-    if (!runtime) {
-      setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      return;
-    }
-
-    resolveIcon(entry, runtime)
-      .then((resolved) => {
-        if (!alive) return;
-        setIconSrc(resolved.src);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setIconSrc(`${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [entry, runtime]);
+  const iconSrc = useEntryIcon(entry, runtime);
 
   const bgClass =
     index !== undefined && index % 2 !== 0
@@ -660,7 +665,7 @@ function ShortcutTile({
         className="w-[34px] h-[34px] object-contain flex-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.32)]"
         draggable={false}
         onError={(e) => {
-          e.currentTarget.src = `${import.meta.env.BASE_URL}theme/icons/shell/folder.webp`;
+          e.currentTarget.src = folderIcon();
         }}
       />
 
@@ -668,6 +673,178 @@ function ShortcutTile({
         {displayLabel(entry.name)}
       </span>
     </button>
+  );
+}
+
+/* Classic layout (XP / Vista / 7): programs on the left, places and */
+/* system links on the right, power buttons in the footer. */
+
+type ClassicLink =
+  | { label: string; icon: string; path: string }
+  | { label: string; icon: string; run: (runtime: RuntimeBridge) => void }
+  | "---";
+
+const CLASSIC_LINKS: ClassicLink[] = [
+  { label: "Documents", icon: "places/documents", path: "C:\\Users\\guest\\Documents" },
+  { label: "Pictures", icon: "places/pictures", path: "C:\\Users\\guest\\Pictures" },
+  { label: "Music", icon: "places/music", path: "C:\\Users\\guest\\Music" },
+  { label: "Videos", icon: "places/video", path: "C:\\Users\\guest\\Videos" },
+  { label: "Computer", icon: "places/thispc", path: "" },
+  "---",
+  { label: "Control Panel", icon: "apps/controlpanel", run: (rt) => openControlPanel(rt) },
+  { label: "Personalization", icon: "apps/controlpanel", run: (rt) => openControlPanel(rt, "personalization") },
+  { label: "Task Manager", icon: "apps/taskmgr", path: "C:\\Windows\\System32\\Taskmgr.exe" },
+  "---",
+  { label: "Upload File…", icon: "exts/default", run: () => requestShellAction("upload-file") },
+  { label: "Upload Folder…", icon: "shell/folder", run: () => requestShellAction("upload-folder") },
+  { label: "Import VFS…", icon: "shell/drive_main", run: (rt) => void importVfsFromFile(rt) },
+  { label: "Export VFS…", icon: "shell/drive_generic", run: (rt) => void exportVfsToFile(rt) },
+];
+
+function ClassicStartMenu({ onClose }: StartMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const { runtime } = useRuntimeStore();
+  const entries = useStartMenuEntries(runtime);
+
+  useDismiss(menuRef, onClose);
+
+  const launchEntry = async (entry: DirectoryEntry) => {
+    if (!runtime) return;
+    await launchGuestPath(entry.path, runtime);
+    onClose();
+  };
+
+  const runLink = (link: Exclude<ClassicLink, "---">) => {
+    if (!runtime) return;
+    if ("run" in link) link.run(runtime);
+    else void launchGuestPath(link.path, runtime);
+    onClose();
+  };
+
+  return (
+    <div
+      id="start-menu"
+      ref={menuRef}
+      className="ww-start-menu classic"
+      role="menu"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="ww-start-menu-left">
+        <div className="ww-start-heading">Programs</div>
+        <div className="ww-start-list">
+          {entries.map((entry) => (
+            <ClassicEntry key={entry.path} entry={entry} runtime={runtime} depth={0} onLaunch={launchEntry} />
+          ))}
+        </div>
+      </div>
+
+      <div className="ww-start-menu-right">
+        <div className="ww-start-user" title="guest">
+          <SystemIcon name="user-identity" size={48} />
+        </div>
+        {CLASSIC_LINKS.map((link, i) =>
+          link === "---" ? (
+            <div key={`sep-${i}`} className="ww-start-separator" />
+          ) : (
+            <div key={link.label} className="ww-start-link" role="menuitem" onClick={() => runLink(link)}>
+              <Icon icon={iconUrl(link.icon)} size={22} />
+              {link.label}
+            </div>
+          ),
+        )}
+        <div className="flex-1" />
+        <button type="button" className="ww-start-power ww-start-power-inline" onClick={onClose}>
+          <PowerGlyph />
+          <span>Shut down</span>
+        </button>
+      </div>
+
+      <div className="ww-start-footer">
+        <button type="button" className="ww-start-power" onClick={onClose}>
+          <LogOffGlyph />
+          <span>Log Off</span>
+        </button>
+        <button type="button" className="ww-start-power" onClick={onClose}>
+          <PowerGlyph />
+          <span>Turn Off Computer</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ClassicEntry({
+  entry,
+  runtime,
+  depth,
+  onLaunch,
+}: {
+  entry: DirectoryEntry;
+  runtime: RuntimeBridge | null;
+  depth: number;
+  onLaunch: (entry: DirectoryEntry) => Promise<void>;
+}) {
+  const isFolder = entry.kind === "directory";
+  const iconSrc = useEntryIcon(entry, runtime, isFolder ? folderIcon() : ICON_PLACEHOLDER);
+  const [open, setOpen] = useState(false);
+  const [children, setChildren] = useState<DirectoryEntry[] | null>(null);
+  const size = depth === 0 ? 32 : 16;
+
+  const toggle = async () => {
+    setOpen((v) => !v);
+    if (children || !runtime) return;
+    try {
+      setChildren(sortEntries(await runtime.listDir(entry.path)));
+    } catch {
+      setChildren([]);
+    }
+  };
+
+  return (
+    <>
+      <div
+        className={`ww-start-item ${depth > 0 ? "sub" : ""} ${open ? "open" : ""}`}
+        style={depth > 0 ? { paddingLeft: 14 + depth * 18 } : undefined}
+        role="menuitem"
+        aria-expanded={isFolder ? open : undefined}
+        onClick={() => (isFolder ? void toggle() : void onLaunch(entry))}
+      >
+        <Icon icon={iconSrc} size={size} />
+        <span className="label">{displayLabel(entry.name)}</span>
+        {isFolder && <span className="chevron">▶</span>}
+      </div>
+      {open && children?.length === 0 && (
+        <div className="ww-start-item sub empty" style={{ paddingLeft: 32 + depth * 18 }}>
+          (Empty)
+        </div>
+      )}
+      {open &&
+        children?.map((child) => (
+          <ClassicEntry key={child.path} entry={child} runtime={runtime} depth={depth + 1} onLaunch={onLaunch} />
+        ))}
+    </>
+  );
+}
+
+function LogOffGlyph() {
+  return (
+    <svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="21" height="21" rx="3" fill="#f0a830" stroke="#a0620c" />
+      <rect x="1.5" y="1.5" width="19" height="9" rx="2" fill="#fff" opacity="0.3" />
+      <circle cx="8" cy="11" r="3.2" fill="none" stroke="#fff" strokeWidth="2" />
+      <path d="M11 11h7M15.5 11v3M17.5 11v2" stroke="#fff" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function PowerGlyph() {
+  return (
+    <svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="21" height="21" rx="3" fill="#e2481c" stroke="#8c2408" />
+      <rect x="1.5" y="1.5" width="19" height="9" rx="2" fill="#fff" opacity="0.3" />
+      <path d="M7.4 7.2a5.2 5.2 0 1 0 7.2 0" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      <path d="M11 4.5v6" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 
